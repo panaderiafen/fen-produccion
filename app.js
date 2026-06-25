@@ -487,25 +487,34 @@ async function guardarReceta(recetaId) {
   bloquearBtn(btnGuardar, esEdicion ? 'Guardando cambios...' : 'Creando receta...');
 
   try {
-    await escribirEnSheet('guardar_receta', datos);
+    const resultado = await escribirEnSheet('guardar_receta', datos);
+    if (!resultado || resultado.ok === false) {
+      throw new Error(resultado?.msg || 'Error desconocido');
+    }
+
+    // Actualizar estado local solo si Sheet confirmó
+    if (recetaId) {
+      const idx = App.recetas.findIndex(r => r.ID_receta === recetaId);
+      if (idx >= 0) App.recetas[idx] = { ...App.recetas[idx], ...datos };
+    } else {
+      App.recetas.push(datos);
+    }
+
+    Cache.invalidar(App.area.hoja_recetas);
+    verificarAlertas();
+    desbloquearBtn(btnGuardar, esEdicion
+      ? '<i class="ti ti-device-floppy"></i> Guardar cambios'
+      : '<i class="ti ti-device-floppy"></i> Crear receta', true);
+    toast(recetaId ? 'Receta actualizada' : 'Receta creada');
+    setTimeout(() => navegarA('mis-recetas'), 1500);
+
   } catch(e) {
-    console.warn('Error guardando en Sheet:', e);
+    console.error('Error guardando receta:', e);
+    desbloquearBtn(btnGuardar, esEdicion
+      ? '<i class="ti ti-device-floppy"></i> Guardar cambios'
+      : '<i class="ti ti-device-floppy"></i> Crear receta', false);
+    toast('Error al guardar: ' + e.message, 'error');
   }
-  desbloquearBtn(btnGuardar, esEdicion
-    ? '<i class="ti ti-device-floppy"></i> Guardar cambios'
-    : '<i class="ti ti-device-floppy"></i> Crear receta', true);
-
-  if (recetaId) {
-    const idx = App.recetas.findIndex(r => r.ID_receta === recetaId);
-    if (idx >= 0) App.recetas[idx] = { ...App.recetas[idx], ...datos };
-  } else {
-    App.recetas.push(datos);
-  }
-
-  Cache.invalidar(App.area.hoja_recetas);
-  verificarAlertas();
-  toast(recetaId ? 'Receta actualizada' : 'Receta creada');
-  navegarA('mis-recetas');
 }
 
 async function enviarARevision(recetaId) {
