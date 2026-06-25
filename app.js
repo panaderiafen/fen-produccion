@@ -178,13 +178,7 @@ async function cargarPlanSemana() {
   const semana  = obtenerSemanaActual();
   const claveLS = `fen_plan_${App.areaCodigo}_${semana}`;
 
-  // 1. Cargar localStorage primero (instantaneo, persiste entre sesiones)
-  try {
-    const local = localStorage.getItem(claveLS);
-    if (local) App.planSemana = JSON.parse(local);
-  } catch(e) {}
-
-  // 2. Leer desde Sheet (puede tardar o fallar)
+  // Fuente principal: Sheet (compartido entre todos los dispositivos)
   try {
     const hoja     = FEN.AREAS[App.areaCodigo].hoja_plan;
     const datos    = await leerHoja(hoja);
@@ -194,14 +188,21 @@ async function cargarPlanSemana() {
       const rid = fila.ID_receta;
       if (rid) planSheet[rid] = diasCols.map(d => parseInt(fila[d]) || 0);
     });
-    // Solo reemplazar si Sheet tiene datos reales
     if (Object.keys(planSheet).length > 0) {
       App.planSemana = planSheet;
-      localStorage.setItem(claveLS, JSON.stringify(planSheet));
+      // Guardar local como caché para carga rápida
+      try { localStorage.setItem(claveLS, JSON.stringify(planSheet)); } catch(e) {}
+      return;
     }
   } catch(e) {
-    console.warn('Plan desde Sheet no disponible, usando local:', e);
+    console.warn('Sheet no disponible, usando caché local:', e);
   }
+
+  // Fallback: localStorage (mismo dispositivo)
+  try {
+    const local = localStorage.getItem(claveLS);
+    if (local) App.planSemana = JSON.parse(local);
+  } catch(e) {}
 }
 
 function guardarPlanLocal(plan) {
@@ -755,22 +756,40 @@ function renderVistaRecetasDelDia() {
   const diaIdx = hoy === 0 ? 6 : hoy - 1;
 
   const vista = document.getElementById('vista-recetas-dia');
+  const diaActual = diasNombres[diaIdx];
   vista.innerHTML = `
     <div class="vista-header">
       <div>
         <div class="vista-eyebrow">${App.area?.nombre}</div>
         <h1 class="vista-titulo">Recetas del día</h1>
       </div>
-      <select id="selector-dia" onchange="renderDia(this.value)"
-        style="padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-md);font-size:13px;font-family:inherit">
-        ${diasNombres.map((d,i) =>
-          `<option value="${i}" ${i===diaIdx?'selected':''}>${d}</option>`).join('')}
-      </select>
+    </div>
+    <div class="dia-selector-wrap">
+      ${diasNombres.map((d,i) => `
+        <button class="dia-btn ${i===diaIdx?'dia-btn-activo':''}"
+          onclick="cambiarDia(${i},this)">
+          ${d}
+        </button>`).join('')}
+    </div>
+    <div class="dia-activo-label">
+      <i class="ti ti-chef-hat"></i>
+      <span id="dia-activo-txt">${diaActual}</span>
     </div>
     <div id="contenedor-dia"></div>
   `;
   renderDia(diaIdx);
   mostrarVista('recetas-dia');
+}
+
+function cambiarDia(diaIdx, btn) {
+  // Actualizar botones activos
+  document.querySelectorAll('.dia-btn').forEach(b => b.classList.remove('dia-btn-activo'));
+  btn.classList.add('dia-btn-activo');
+  // Actualizar label
+  const diasNombres = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+  const label = document.getElementById('dia-activo-txt');
+  if (label) label.textContent = diasNombres[diaIdx];
+  renderDia(diaIdx);
 }
 
 function renderDia(diaIdx) {
