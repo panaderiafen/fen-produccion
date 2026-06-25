@@ -115,7 +115,7 @@ function renderSidebar() {
   nav.innerHTML = '';
   if (App.rol === 'jefa') {
     const items = [
-      { id: 'nueva-receta',      icon: 'ti-plus',           label: 'Nueva receta'       },
+      { id: 'nueva-receta',      icon: 'ti-plus',           label: 'Nueva receta / sub receta' },
       { id: 'mis-recetas',       icon: 'ti-clipboard-list', label: 'Mis recetas'        },
       { id: 'planificacion',     icon: 'ti-calendar-week',  label: 'Plan semanal'       },
       { id: 'recetas-del-dia',   icon: 'ti-chef-hat',       label: 'Recetas del día'   },
@@ -158,7 +158,7 @@ function navegarA(vistaId) {
   actualizarNavActivo(vistaId);
   document.querySelectorAll('.vista').forEach(v => v.classList.remove('active'));
   switch(vistaId) {
-    case 'nueva-receta':    renderVistaFormReceta(null); break;
+    case 'nueva-receta':    renderVistaFormReceta(null, 'receta'); break;
     case 'mis-recetas':     renderVistaMisRecetas(); break;
     case 'planificacion':   renderVistaPlanificacion(); break;
     case 'recetas-del-dia': renderVistaRecetasDelDia(); break;
@@ -251,7 +251,7 @@ function verificarAlertas() {
 }
 
 // ── FORMULARIO NUEVA / EDITAR RECETA ─────────────────────────
-function renderVistaFormReceta(recetaId) {
+function renderVistaFormReceta(recetaId, tipoForzado) {
   const receta = recetaId ? App.recetas.find(r => r.ID_receta === recetaId) : null;
   const esPan  = App.areaCodigo === 'PAN';
   const esEdicion = !!receta;
@@ -261,21 +261,45 @@ function renderVistaFormReceta(recetaId) {
     pasos = (receta.observaciones_procedimiento || '').split('.').filter(s => s.trim());
   }
 
+  // Determinar tipo: receta o sub_receta
+  const tipoActual = tipoForzado || receta?.tipo_receta || 'receta';
+
   const vista = document.getElementById('vista-form-receta');
   vista.innerHTML = `
     <div class="vista-header">
       <div>
-        <div class="vista-eyebrow">${esEdicion ? 'Editar receta' : 'Nueva receta'}</div>
-        <h1 class="vista-titulo">${esEdicion ? receta.nombre : 'Crear receta'}</h1>
+        <div class="vista-eyebrow">${esEdicion ? 'Editar' : 'Nueva'} ${tipoActual === 'sub_receta' ? 'sub receta' : 'receta'}</div>
+        <h1 class="vista-titulo">${esEdicion ? receta.nombre : (tipoActual === 'sub_receta' ? 'Crear sub receta' : 'Crear receta')}</h1>
       </div>
     </div>
+
+    ${!esEdicion ? `
+    <div class="tipo-selector-wrap">
+      <button class="tipo-btn ${tipoActual==='receta'?'tipo-btn-activo':''}"
+        onclick="renderVistaFormReceta(null,'receta')">
+        <i class="ti ti-clipboard-text"></i>
+        <span class="tipo-btn-label">Receta</span>
+        <span class="tipo-btn-desc">Va al maestro de recetas y planificación</span>
+      </button>
+      <button class="tipo-btn ${tipoActual==='sub_receta'?'tipo-btn-activo':''}"
+        onclick="renderVistaFormReceta(null,'sub_receta')">
+        <i class="ti ti-puzzle"></i>
+        <span class="tipo-btn-label">Sub receta</span>
+        <span class="tipo-btn-desc">Se convierte en ingrediente para otras recetas</span>
+      </button>
+    </div>` : ''}
+
     ${esEdicion && receta.estado === 'en_prueba' ? `
       <div class="alerta-prueba">
         <i class="ti ti-flask"></i>
-        <span>Esta receta está <strong>en prueba</strong>. Envíala a revisión cuando esté lista.</span>
+        <span>Esta ${tipoActual === 'sub_receta' ? 'sub receta' : 'receta'} está <strong>en prueba</strong>. Envíala a revisión cuando esté lista.</span>
       </div>` : ''}
+    <input type="hidden" id="f-tipo" value="${tipoActual}">
     <div class="card" style="margin-bottom:16px">
-      <div class="card-head"><i class="ti ti-info-circle"></i> Datos generales</div>
+      <div class="card-head">
+        <i class="ti ${tipoActual==='sub_receta'?'ti-puzzle':'ti-info-circle'}"></i>
+        Datos ${tipoActual === 'sub_receta' ? 'de la sub receta' : 'generales'}
+      </div>
       <div class="form-grid">
         <div class="campo">
           <label>Nombre de la receta <span class="req">*</span></label>
@@ -377,11 +401,24 @@ function agregarIngrediente(data = {}) {
   const esPan = App.areaCodigo === 'PAN';
   const tbody = document.getElementById('tbody-ingr');
   const tr = document.createElement('tr');
-  const mpActivas = App.materiasPrimas.filter(m => m.estado === 'activa');
-  const options = mpActivas.map(m =>
+  const mpActivas   = App.materiasPrimas.filter(m => m.estado === 'activa' && m.tipo !== 'sub_receta');
+  const subRecetas  = App.materiasPrimas.filter(m => m.estado === 'activa' && m.tipo === 'sub_receta');
+
+  const optionsMP = mpActivas.map(m =>
     `<option value="${m.ID_MP}" data-costo="${m.costo_por_gramo || 0}"
       ${m.ID_MP === data.id ? 'selected' : ''}>${m.nombre}</option>`
   ).join('');
+
+  const optionsSR = subRecetas.length
+    ? `<optgroup label="⟳ Sub recetas">
+        ${subRecetas.map(m =>
+          `<option value="${m.ID_MP}" data-costo="${m.costo_por_gramo || 0}"
+            ${m.ID_MP === data.id ? 'selected' : ''}>⟳ ${m.nombre}</option>`
+        ).join('')}
+      </optgroup>`
+    : '';
+
+  const options = optionsMP + optionsSR;
 
   tr.innerHTML = `
     <td>
@@ -442,7 +479,6 @@ function renumerarPasos() {
 // ── GUARDAR RECETA ────────────────────────────────────────────
 async function guardarReceta(recetaId) {
   const esEdicion = !!recetaId;
-  const nombre   = document.getElementById('f-nombre').value.trim();
   const porciones = document.getElementById('f-porciones').value;
   if (!nombre)   { toast('El nombre es requerido', 'error'); return; }
   if (!porciones){ toast('El rendimiento es requerido', 'error'); return; }
@@ -470,6 +506,7 @@ async function guardarReceta(recetaId) {
     if (ta.value.trim()) pasos.push(ta.value.trim());
   });
 
+  const tipoReceta = document.getElementById('f-tipo')?.value || 'receta';
   const datos = {
     ID_receta:                   recetaId || generarId(App.areaCodigo),
     nombre,
@@ -480,6 +517,7 @@ async function guardarReceta(recetaId) {
     ingredientes_JSON:           JSON.stringify(ingredientes),
     observaciones_procedimiento: document.getElementById('f-desc').value.trim(),
     'sistematización_notas':     document.getElementById('f-notas').value.trim(),
+    tipo_receta:                 tipoReceta,
     versión:                     recetaId ? ((App.recetas.find(r=>r.ID_receta===recetaId)?.versión || 1) + 1) : 1,
     hoja:                        App.area.hoja_recetas,
     esEdicion:                   !!recetaId,
