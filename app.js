@@ -312,6 +312,7 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
             <option value="en_prueba" ${(receta?.estado==='en_prueba' || receta?.estado==='consolidada' || receta?.estado==='pendiente_aprobación') ? 'selected':''}>En prueba</option>
           </select>
           ${esEdicion && receta?.estado==='consolidada' ? '<p style="font-size:11px;color:#F57C00;margin-top:4px"><i class="ti ti-info-circle"></i> Al guardar cambios volverá a "en prueba" para re-aprobación.</p>' : ''}
+          ${esEdicion && receta?.estado==='pendiente_aprobación' ? '<p style="font-size:11px;color:#1565C0;margin-top:4px"><i class="ti ti-info-circle"></i> Al guardar cambios volverá a "en prueba" — deberás enviarla de nuevo a revisión.</p>' : ''}
         </div>
         <div class="campo">
           <label>Rendimiento / unidades <span class="req">*</span></label>
@@ -542,7 +543,15 @@ async function guardarReceta(recetaId) {
   const datos = {
     ID_receta:                   recetaId || generarId(App.areaCodigo),
     nombre,
-    estado:                      document.getElementById('f-estado').value || 'borrador',
+    estado:                      (() => {
+      const sel = document.getElementById('f-estado').value;
+      // Si es edición y receta ya estaba en prueba/pendiente, mantener en_prueba
+      if (esEdicion) {
+        const recetaActual = App.recetas.find(r => r.ID_receta === recetaId);
+        if (recetaActual?.estado === 'pendiente_aprobación') return 'en_prueba';
+      }
+      return sel || 'borrador';
+    })(),
     área:                        App.area.nombre,
     porciones_base:              parseInt(porciones),
     peso_harina_total_g:         App.areaCodigo === 'PAN' ? (document.getElementById('f-harina')?.value || '') : '',
