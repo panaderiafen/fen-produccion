@@ -194,10 +194,11 @@ function renderElaboracionesPrevias(diaIdx) {
     const filasDesglose = desglose.map(comp => `
       <div class="elab-fila ${comp.esPie ? 'elab-pie' : ''}">
         <span class="elab-comp-nombre">${comp.nombre}</span>
-        <span class="elab-comp-val">${formatearGramos(comp.gramos)}</span>
+        <span class="elab-comp-val">${formatearGramos(comp.gramos, true)}</span>
       </div>`).join('');
 
     const totalDesglose = desglose.reduce((s, c) => s + c.gramos, 0);
+    const totalStr = formatearGramos(totalDesglose, true);
 
     // Recetas que usan esta sub receta
     const usadaEn = sr.recetasQueUsan.map(u =>
@@ -216,13 +217,13 @@ function renderElaboracionesPrevias(diaIdx) {
             <strong class="elab-nombre">${sr.nombre}</strong>
             <div class="elab-usado-wrap">${usadaEn}</div>
           </div>
-          <span class="elab-total-badge">${formatearGramos(totalDesglose)}</span>
+          <span class="elab-total-badge">${totalStr}</span>
         </div>
         <div class="elab-desglose" id="desglose-${sr.id}">
           ${filasDesglose}
           <div class="elab-fila elab-total-fila">
             <span class="elab-comp-nombre">Total</span>
-            <span class="elab-comp-val elab-total-val">${formatearGramos(totalDesglose)}</span>
+            <span class="elab-comp-val elab-total-val">${totalStr}</span>
           </div>
         </div>
       </div>`;
@@ -493,7 +494,7 @@ function guardarConfigDesdeForm(btn) {
 }
 
 // ── UTILIDAD: formatear gramos ────────────────────────────────
-function formatearGramos(gramos) {
-  if (gramos >= 1000) return (gramos / 1000).toFixed(2).replace('.', ',') + ' kg';
+function formatearGramos(gramos, forzarGramos = false) {
+  if (!forzarGramos && gramos >= 10000) return (gramos / 1000).toFixed(2).replace('.', ',') + ' kg';
   return Math.round(gramos) + ' g';
 }
