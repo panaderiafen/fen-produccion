@@ -81,15 +81,36 @@ async function escribirEnSheet(accion, datos) {
     console.warn('WEBAPP_URL no configurada');
     return { ok: false, msg: 'Sin conexión al Sheet' };
   }
-  try {
-    // Usar no-cors con payload en URL para evitar CORS preflight
-    const payload = encodeURIComponent(JSON.stringify({ accion, ...datos }));
-    const url = FEN.WEBAPP_URL + '?payload=' + payload;
-    const res = await fetch(url, { method: 'GET' });
-    return await res.json();
-  } catch(e) {
-    console.error('Error escribiendo en Sheet:', e);
-    return { ok: false, msg: e.message };
+
+  const body = JSON.stringify({ accion, ...datos });
+
+  // Si el payload es pequeño usamos GET (sin CORS preflight)
+  // Si es grande usamos POST con no-cors (no podemos leer respuesta pero sí escribe)
+  if (body.length < 1500) {
+    try {
+      const payload = encodeURIComponent(body);
+      const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
+      return await res.json();
+    } catch(e) {
+      console.error('Error GET Sheet:', e);
+      return { ok: false, msg: e.message };
+    }
+  } else {
+    // POST con no-cors para payloads grandes — no podemos leer respuesta
+    // pero Apps Script sí recibe y procesa
+    try {
+      await fetch(FEN.WEBAPP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body
+      });
+      // Con no-cors asumimos éxito — verificar en Sheet si hay dudas
+      return { ok: true, msg: 'Enviado' };
+    } catch(e) {
+      console.error('Error POST Sheet:', e);
+      return { ok: false, msg: e.message };
+    }
   }
 }
 
