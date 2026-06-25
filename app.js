@@ -84,6 +84,24 @@ async function entrar(areaCodigo, rol) {
   else navegarA('mis-recetas');
 }
 
+// ── SINCRONIZAR TODO ──────────────────────────────────────────
+async function sincronizarTodo(btn) {
+  const icon = btn.querySelector('i');
+  btn.disabled = true;
+  icon.style.animation = 'spin .7s linear infinite';
+  Cache.invalidarTodo();
+  try { localStorage.clear(); } catch(e) {}
+  await cargarMP();
+  await cargarRecetas();
+  await cargarPlanSemana();
+  verificarAlertas();
+  // Re-renderizar vista actual
+  if (App.vistaActual) navegarA(App.vistaActual);
+  btn.disabled = false;
+  icon.style.animation = '';
+  toast('Datos sincronizados');
+}
+
 function salir() {
   App.rol = null; App.area = null; App.areaCodigo = null;
   App.recetas = []; App.planSemana = {};
@@ -663,9 +681,14 @@ function renderVistaPlanificacion() {
         <div class="vista-eyebrow">${App.area?.nombre} · Semana ${semana}</div>
         <h1 class="vista-titulo">Plan semanal</h1>
       </div>
-      <button class="btn-primario" onclick="guardarPlanificacion()">
-        <i class="ti ti-device-floppy"></i> Guardar plan
-      </button>
+      <div style="display:flex;gap:8px">
+        <button class="btn-secundario" onclick="sincronizarPlan(this)" id="btn-sync-plan">
+          <i class="ti ti-refresh"></i> Sincronizar
+        </button>
+        <button class="btn-primario" onclick="guardarPlanificacion()">
+          <i class="ti ti-device-floppy"></i> Guardar plan
+        </button>
+      </div>
     </div>
     <p style="font-size:12px;color:var(--txt3);margin-bottom:14px">
       <i class="ti ti-info-circle"></i>
@@ -747,6 +770,26 @@ async function guardarPlanificacion() {
     desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan', false);
     toast('Guardado local OK (Sheet no disponible)', 'error');
   }
+}
+
+// ── SINCRONIZAR PLAN ─────────────────────────────────────────
+async function sincronizarPlan(btn) {
+  bloquearBtn(btn, 'Sincronizando...');
+  // Invalidar caché y recargar desde Sheet
+  if (App.areaCodigo && FEN.AREAS[App.areaCodigo].hoja_plan) {
+    Cache.invalidar(FEN.AREAS[App.areaCodigo].hoja_plan);
+  }
+  const semana  = obtenerSemanaActual();
+  const claveLS = `fen_plan_${App.areaCodigo}_${semana}`;
+  try {
+    localStorage.removeItem(claveLS);
+  } catch(e) {}
+
+  await cargarPlanSemana();
+  desbloquearBtn(btn, '<i class="ti ti-refresh"></i> Sincronizar', true);
+  // Re-renderizar el plan con datos frescos
+  renderVistaPlanificacion();
+  toast('Plan sincronizado desde Sheet');
 }
 
 // ── RECETAS DEL DÍA ───────────────────────────────────────────
