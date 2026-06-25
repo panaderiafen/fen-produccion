@@ -601,22 +601,28 @@ async function guardarReceta(recetaId) {
 async function enviarARevision(recetaId) {
   const btn = document.querySelector(`[onclick="enviarARevision('${recetaId}')"]`);
   bloquearBtn(btn, 'Enviando...');
-  try {
-    await escribirEnSheet('cambiar_estado', {
-      ID_receta: recetaId, estado: 'pendiente_aprobación', hoja: App.area.hoja_recetas
-    });
-    // Actualizar estado local inmediatamente sin esperar recarga
-    const r = App.recetas.find(x => x.ID_receta === recetaId);
-    if (r) r.estado = 'pendiente_aprobación';
-    // Invalidar caché para próxima carga
-    Cache.invalidar(App.area.hoja_recetas);
-    verificarAlertas();
-    toast('Receta enviada a revisión');
-    setTimeout(() => navegarA('mis-recetas'), 1200);
-  } catch(e) {
-    desbloquearBtn(btn, '<i class="ti ti-send"></i> Enviar a revisión', false);
-    toast('Error al enviar: ' + e.message, 'error');
-  }
+
+  // Actualizar estado local ANTES de enviar al Sheet
+  const r = App.recetas.find(x => x.ID_receta === recetaId);
+  if (r) r.estado = 'pendiente_aprobación';
+  verificarAlertas();
+
+  // Enviar al Sheet en segundo plano
+  escribirEnSheet('cambiar_estado', {
+    ID_receta: recetaId, estado: 'pendiente_aprobación', hoja: App.area.hoja_recetas
+  }).catch(e => console.warn('Error actualizando Sheet:', e));
+
+  // Invalidar caché para que próxima sincronización traiga el estado correcto
+  Cache.invalidar(App.area.hoja_recetas);
+
+  toast('Receta enviada a revisión');
+  setTimeout(() => {
+    // Renderizar mis-recetas con el estado local ya actualizado
+    renderVistaMisRecetas();
+    mostrarVista('mis-recetas');
+    actualizarNavActivo('mis-recetas');
+    App.vistaActual = 'mis-recetas';
+  }, 800);
 }
 
 // ── VISTA MIS RECETAS ─────────────────────────────────────────
