@@ -115,13 +115,18 @@ function renderSidebar() {
   nav.innerHTML = '';
   if (App.rol === 'jefa') {
     const items = [
-      { id: 'nueva-receta',    icon: 'ti-plus',           label: 'Nueva receta'       },
-      { id: 'mis-recetas',     icon: 'ti-clipboard-list', label: 'Mis recetas'        },
-      { id: 'planificacion',   icon: 'ti-calendar-week',  label: 'Plan semanal'       },
-      { id: 'recetas-del-dia', icon: 'ti-chef-hat',       label: 'Recetas del día'   },
-      { id: 'maestro',         icon: 'ti-book',           label: 'Maestro de recetas' },
+      { id: 'nueva-receta',      icon: 'ti-plus',           label: 'Nueva receta'       },
+      { id: 'mis-recetas',       icon: 'ti-clipboard-list', label: 'Mis recetas'        },
+      { id: 'planificacion',     icon: 'ti-calendar-week',  label: 'Plan semanal'       },
+      { id: 'recetas-del-dia',   icon: 'ti-chef-hat',       label: 'Recetas del día'   },
+      { id: 'maestro',           icon: 'ti-book',           label: 'Maestro de recetas' },
     ];
     if (App.areaCodigo === 'CAF') items.splice(2, 2);
+    // Panadería tiene secciones extra
+    if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL') {
+      items.push({ id: 'resumen-semanal',     icon: 'ti-chart-grid-dots', label: 'Resumen semanal' });
+      items.push({ id: 'config-subrecetas',   icon: 'ti-adjustments',     label: 'Config sub recetas' });
+    }
     items.forEach(item => nav.appendChild(crearNavItem(item)));
   } else {
     [
@@ -161,7 +166,9 @@ function navegarA(vistaId) {
     case 'aprobaciones':    renderVistaAprobaciones(); break;
     case 'materias-primas': renderVistaMP(); break;
     case 'maestro-admin':   renderVistaMaestroAdmin(); break;
-    case 'costos':          renderVistaCostos(); break;
+    case 'costos':              renderVistaCostos(); break;
+    case 'config-subrecetas':   renderVistaConfigSubrecetas(); break;
+    case 'resumen-semanal':     renderVistaResumenSemanal(); break;
     default: mostrarVista('empty');
   }
 }
@@ -929,7 +936,12 @@ function renderDia(diaIdx) {
 
   const esPan = App.areaCodigo === 'PAN';
 
-  contenedor.innerHTML = recetasHoy.map(({ receta: r, unidades }) => {
+  // Bloque elaboraciones previas (sub recetas + insumos)
+  const htmlElaboraciones = (typeof renderElaboracionesPrevias === 'function')
+    ? renderElaboracionesPrevias(idx)
+    : '';
+
+  const htmlRecetas = recetasHoy.map(({ receta: r, unidades }) => {
     let ingredientes = [];
     try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
     const porciones = parseInt(r.porciones_base) || 1;
@@ -1018,6 +1030,8 @@ function renderDia(diaIdx) {
       </div>`;
   }).join('');
 
+  contenedor.innerHTML = htmlElaboraciones + htmlRecetas.join('');
+
   // Restaurar estados guardados
   recetasHoy.forEach(({ receta: r }) => {
     const terminada = obtenerEstadoTerminada(r.ID_receta, idx);
@@ -1065,6 +1079,23 @@ async function renderVistaMaestro() {
       </div>`}
   `;
   mostrarVista('maestro');
+}
+
+// ── RESUMEN SEMANAL ──────────────────────────────────────────
+function renderVistaResumenSemanal() {
+  const vista = document.getElementById('vista-resumen-semanal');
+  const semana = obtenerSemanaActual();
+  const html = (typeof renderResumenSemanal === 'function') ? renderResumenSemanal() : '';
+  vista.innerHTML = `
+    <div class="vista-header">
+      <div>
+        <div class="vista-eyebrow">${App.area?.nombre} · Semana ${semana}</div>
+        <h1 class="vista-titulo">Resumen semanal</h1>
+      </div>
+    </div>
+    <div class="rsm-wrap">${html}</div>
+  `;
+  mostrarVista('resumen-semanal');
 }
 
 // ── ADMIN: APROBACIONES ───────────────────────────────────────
