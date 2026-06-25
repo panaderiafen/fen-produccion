@@ -176,7 +176,7 @@ async function cargarRecetas() {
 async function cargarPlanSemana() {
   if (!App.areaCodigo || !FEN.AREAS[App.areaCodigo].hoja_plan) return;
   const semana  = obtenerSemanaActual();
-  const claveLS = \`fen_plan_\${App.areaCodigo}_\${semana}\`;
+  const claveLS = `fen_plan_${App.areaCodigo}_${semana}`;
 
   // 1. Cargar localStorage primero (instantaneo, persiste entre sesiones)
   try {
@@ -206,7 +206,7 @@ async function cargarPlanSemana() {
 
 function guardarPlanLocal(plan) {
   const semana  = obtenerSemanaActual();
-  const claveLS = \`fen_plan_\${App.areaCodigo}_\${semana}\`;
+  const claveLS = `fen_plan_${App.areaCodigo}_${semana}`;
   try { localStorage.setItem(claveLS, JSON.stringify(plan)); } catch(e) {}
 }
 
