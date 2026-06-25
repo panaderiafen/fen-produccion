@@ -59,11 +59,16 @@ function calcularElaboracionesDia(diaIdx) {
   const insumosMap = {};
 
   // IDs de sub recetas (tipo = sub_receta en MP_maestro)
+  // También detectar por ID que empiece con SR
   const idsSubRecetas = new Set(
     App.materiasPrimas
-      .filter(m => m.tipo === 'sub_receta')
+      .filter(m => m.tipo === 'sub_receta' || (m.ID_MP && m.ID_MP.toString().startsWith('SR')))
       .map(m => m.ID_MP)
   );
+
+  console.log('[fën] Sub recetas en MP_maestro:', [...idsSubRecetas]);
+  console.log('[fën] Total materias primas cargadas:', App.materiasPrimas.length);
+  console.log('[fën] Recetas del día:', recetasDelDia.map(x => x.receta?.nombre));
 
   recetasDelDia.forEach(({ receta: r, unidades }) => {
     let ingredientes = [];
@@ -176,6 +181,8 @@ function renderElaboracionesPrevias(diaIdx) {
   const { subRecetasMap, insumosMap } = calcularElaboracionesDia(diaIdx);
   const subRecetas = Object.values(subRecetasMap);
 
+  console.log('[fën] Sub recetas detectadas:', subRecetas.map(s => s.nombre));
+  console.log('[fën] Insumos detectados:', Object.keys(insumosMap));
   if (!subRecetas.length && !Object.keys(insumosMap).length) return '';
 
   // ── Sub recetas (elaboraciones previas)
