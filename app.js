@@ -542,7 +542,7 @@ async function guardarReceta(recetaId) {
   const datos = {
     ID_receta:                   recetaId || generarId(App.areaCodigo),
     nombre,
-    estado:                      document.getElementById('f-estado').value,
+    estado:                      document.getElementById('f-estado').value || 'borrador',
     área:                        App.area.nombre,
     porciones_base:              parseInt(porciones),
     peso_harina_total_g:         App.areaCodigo === 'PAN' ? (document.getElementById('f-harina')?.value || '') : '',
@@ -596,8 +596,11 @@ async function enviarARevision(recetaId) {
     await escribirEnSheet('cambiar_estado', {
       ID_receta: recetaId, estado: 'pendiente_aprobación', hoja: App.area.hoja_recetas
     });
+    // Actualizar estado local inmediatamente sin esperar recarga
     const r = App.recetas.find(x => x.ID_receta === recetaId);
     if (r) r.estado = 'pendiente_aprobación';
+    // Invalidar caché para próxima carga
+    Cache.invalidar(App.area.hoja_recetas);
     verificarAlertas();
     toast('Receta enviada a revisión');
     setTimeout(() => navegarA('mis-recetas'), 1200);
