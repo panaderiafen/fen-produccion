@@ -322,7 +322,7 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
           <label>Peso total de harina base (g) <span class="req">*</span></label>
           <input type="number" id="f-harina" placeholder="Ej: 505" min="0"
             value="${receta?.peso_harina_total_g || ''}"
-            oninput="actualizarPctPanadero()">
+            oninput="actualizarGramosDesdeHarina()">
         </div>` : `
         <div class="campo">
           <label>Área</label>
@@ -352,10 +352,13 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
             <tr>
               <th style="min-width:200px">Ingrediente</th>
               <th>Gramos</th>
-              ${esPan ? '<th>% panadero</th>' : ''}
+              ${esPan ? '<th style="color:var(--area-color)">% panadero</th>' : ''}
               <th></th>
             </tr>
           </thead>
+          ${esPan ? `<tfoot><tr><td colspan="4" style="padding:6px 12px;font-size:11px;color:var(--txt3)">
+            <i class="ti ti-info-circle"></i> Puedes ingresar el % y los gramos se calculan solos, o viceversa.
+          </td></tr></tfoot>` : ''}
           <tbody id="tbody-ingr"></tbody>
         </table>
       </div>
@@ -428,11 +431,13 @@ function agregarIngrediente(data = {}) {
         <option value="__nueva__">+ Solicitar nueva MP</option>
       </select>
     </td>
-    <td><input type="number" placeholder="0" value="${data.gramos || ''}" min="0" step="0.01"
-      oninput="calcularCostoFila(this)"></td>
-    ${esPan ? `<td><input type="number" placeholder="0.00" value="${data.pct ? (data.pct*100).toFixed(2) : ''}"
-      step="0.01" style="max-width:70px;color:var(--txt3)" readonly tabindex="-1"></td>` : ''}
-    <td><button class="btn-fila-del" onclick="this.closest('tr').remove();actualizarPctPanadero()"
+    <td><input type="number" placeholder="0" value="${data.gramos ? parseFloat(data.gramos).toFixed(1) : ''}"
+      min="0" step="0.01" oninput="desdeGramos(this)" style="max-width:90px"></td>
+    ${esPan ? `<td><input type="number" placeholder="0.00"
+      value="${data.pct ? (data.pct*100).toFixed(2) : ''}"
+      step="0.01" style="max-width:70px;color:var(--area-color);font-weight:500"
+      oninput="desdePct(this)" title="% relativo al peso de harina"></td>` : ''}
+    <td><button class="btn-fila-del" onclick="this.closest('tr').remove()"
       aria-label="Eliminar"><i class="ti ti-x"></i></button></td>
   `;
   tbody.appendChild(tr);
@@ -442,20 +447,46 @@ function calcularCostoFila(el) {
   const tr = el.closest('tr');
   const select = tr.querySelector('select');
   if (select.value === '__nueva__') { solicitarNuevaMP(); select.value = ''; return; }
-  if (App.areaCodigo === 'PAN') actualizarPctPanadero();
 }
 
-function actualizarPctPanadero() {
+// Ingresa gramos → calcula %
+function desdeGramos(inputGr) {
+  if (App.areaCodigo !== 'PAN') return;
+  const tr       = inputGr.closest('tr');
+  const inputPct = tr.querySelectorAll('input[type="number"]')[1];
+  if (!inputPct) return;
+  const pesoHarina = parseFloat(document.getElementById('f-harina')?.value) || 0;
+  if (!pesoHarina) return;
+  const gramos = parseFloat(inputGr.value) || 0;
+  inputPct.value = (gramos / pesoHarina * 100).toFixed(2);
+}
+
+// Ingresa % → calcula gramos
+function desdePct(inputPct) {
+  if (App.areaCodigo !== 'PAN') return;
+  const tr       = inputPct.closest('tr');
+  const inputGr  = tr.querySelectorAll('input[type="number"]')[0];
+  if (!inputGr) return;
+  const pesoHarina = parseFloat(document.getElementById('f-harina')?.value) || 0;
+  if (!pesoHarina) { inputGr.value = ''; return; }
+  const pct = parseFloat(inputPct.value) || 0;
+  inputGr.value = (pesoHarina * pct / 100).toFixed(1);
+}
+
+// Al cambiar el peso de harina base → recalcular todos los gramos desde sus %
+function actualizarGramosDesdeHarina() {
   const pesoHarina = parseFloat(document.getElementById('f-harina')?.value) || 0;
   if (!pesoHarina) return;
   document.querySelectorAll('#tbody-ingr tr').forEach(tr => {
     const inputs = tr.querySelectorAll('input[type="number"]');
     if (inputs.length >= 2) {
-      const gramos = parseFloat(inputs[0].value) || 0;
-      inputs[1].value = pesoHarina > 0 ? (gramos / pesoHarina * 100).toFixed(2) : '0.00';
+      const pct = parseFloat(inputs[1].value) || 0;
+      if (pct > 0) inputs[0].value = (pesoHarina * pct / 100).toFixed(1);
     }
   });
 }
+
+function actualizarPctPanadero() { actualizarGramosDesdeHarina(); }
 
 // ── PASOS ─────────────────────────────────────────────────────
 function agregarPaso(texto = '') {
@@ -495,7 +526,7 @@ async function guardarReceta(recetaId) {
         id:     select.value,
         nombre: opcion.text,
         gramos,
-        pct:    App.areaCodigo === 'PAN' ? (parseFloat(inputs[1]?.value) || 0) / 100 : 0,
+        pct:    App.areaCodigo === 'PAN' ? ((parseFloat(inputs[1]?.value) || 0) / 100) : 0,
         costo:  costoPorGramo * gramos,
       });
     }
