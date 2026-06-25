@@ -26,8 +26,7 @@ const FEN = {
   },
 
   // URL para Google Apps Script Web App (escritura)
-  // Se completa después de publicar el Apps Script como Web App
-  WEBAPP_URL: '',
+  WEBAPP_URL: 'https://script.google.com/macros/s/AKfycbw-D1gOezUuFEhhqXQ69zYR0Sp4Bekg3CHhy3lEMzB8CV9kp6ty0iXTreyq5aULmz5L8g/exec',
 };
 
 // ── Leer hoja como array de objetos ─────────────────────────
