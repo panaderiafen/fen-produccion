@@ -1232,21 +1232,41 @@ function renderVistaAprobaciones() {
               ${ingredientes.length ? `
               <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px">
                 <thead><tr>
-                  <th style="text-align:left;padding:5px 8px;background:var(--bg);border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Ingrediente</th>
-                  <th style="text-align:right;padding:5px 8px;background:var(--bg);border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Gramos</th>
+                  <th style="text-align:left;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Ingrediente</th>
+                  <th style="text-align:right;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Gramos</th>
+                  ${r._area === 'PAN' || r.área === 'Panadería' ? `<th style="text-align:right;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border);color:#E65100;font-weight:600;text-transform:uppercase;letter-spacing:.3px">% pan.</th>` : ''}
+                  <th style="text-align:right;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Costo</th>
                 </tr></thead>
                 <tbody>
                   ${ingredientes.map(ing => `
                     <tr>
-                      <td style="padding:5px 8px;border-bottom:1px solid var(--border);color:var(--txt2)">${ing.nombre}</td>
-                      <td style="padding:5px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:600">${parseFloat(ing.gramos||0).toFixed(0)}g</td>
+                      <td style="padding:6px 10px;border-bottom:1px solid var(--border);color:var(--txt);font-weight:500">${ing.nombre}</td>
+                      <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:600">${parseFloat(ing.gramos||0).toFixed(1)}g</td>
+                      ${r._area === 'PAN' || r.área === 'Panadería' ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:#E65100">${((parseFloat(ing.pct)||0)*100).toFixed(1)}%</td>` : ''}
+                      <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2);font-size:11px">$${parseFloat(ing.costo||0).toFixed(0)}</td>
                     </tr>`).join('')}
+                  <tr style="background:var(--bg);font-weight:600">
+                    <td style="padding:6px 10px">Total ingredientes</td>
+                    <td style="padding:6px 10px;text-align:right;font-family:'DM Mono',monospace">
+                      ${ingredientes.reduce((s,i)=>s+(parseFloat(i.gramos)||0),0).toFixed(1)}g
+                    </td>
+                    ${r._area === 'PAN' || r.área === 'Panadería' ? '<td></td>' : ''}
+                    <td style="padding:6px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:11px">
+                      $${ingredientes.reduce((s,i)=>s+(parseFloat(i.costo)||0),0).toFixed(0)}
+                    </td>
+                  </tr>
                 </tbody>
               </table>` : ''}
-              ${r.observaciones_procedimiento ?
-                `<p style="font-size:13px;color:var(--txt2);line-height:1.6">${r.observaciones_procedimiento}</p>` : ''}
-              ${r['sistematización_notas'] ?
-                `<p style="font-size:12px;color:var(--txt3);margin-top:8px;font-style:italic">${r['sistematización_notas']}</p>` : ''}
+              ${r.observaciones_procedimiento ? `
+                <div style="margin-top:12px">
+                  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);margin-bottom:5px">Procedimiento / observaciones</div>
+                  <p style="font-size:13px;color:var(--txt2);line-height:1.6;background:var(--bg);padding:10px 12px;border-radius:var(--r-md)">${r.observaciones_procedimiento}</p>
+                </div>` : ''}
+              ${r['sistematización_notas'] ? `
+                <div style="margin-top:10px">
+                  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);margin-bottom:5px">Notas de sistematización</div>
+                  <p style="font-size:12px;color:var(--txt3);font-style:italic;background:var(--bg);padding:8px 12px;border-radius:var(--r-md)">${r['sistematización_notas']}</p>
+                </div>` : ''}
             </div>
           </div>`;
       }).join('')}
