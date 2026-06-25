@@ -78,15 +78,14 @@ function parseCsvLinea(linea) {
 // ── Escribir en Sheet via Apps Script Web App ────────────────
 async function escribirEnSheet(accion, datos) {
   if (!FEN.WEBAPP_URL) {
-    console.warn('WEBAPP_URL no configurada — guardando solo en local');
+    console.warn('WEBAPP_URL no configurada');
     return { ok: false, msg: 'Sin conexión al Sheet' };
   }
   try {
-    const res = await fetch(FEN.WEBAPP_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accion, ...datos })
-    });
+    // Usar no-cors con payload en URL para evitar CORS preflight
+    const payload = encodeURIComponent(JSON.stringify({ accion, ...datos }));
+    const url = FEN.WEBAPP_URL + '?payload=' + payload;
+    const res = await fetch(url, { method: 'GET' });
     return await res.json();
   } catch(e) {
     console.error('Error escribiendo en Sheet:', e);
