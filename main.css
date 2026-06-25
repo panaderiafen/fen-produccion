@@ -172,8 +172,10 @@ input, select, textarea { font-family: inherit; }
   background: var(--surface);
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
 }
+.sidebar::-webkit-scrollbar { width: 3px; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 .sidebar-nav {
   padding: 10px 8px;
   border-bottom: 1px solid var(--border);
@@ -1031,4 +1033,47 @@ input, select, textarea { font-family: inherit; }
   font-size: 12px;
   color: var(--txt2);
   line-height: 1.4;
+}
+
+/* ── SIDEBAR MÓVIL ───────────────────────────── */
+@media (max-width: 768px) {
+  .sidebar { width: 200px; }
+  .nav-item { padding: 7px 10px; font-size: 12px; }
+  .nav-item i { font-size: 15px; }
+}
+
+@media (max-width: 600px) {
+  .layout { flex-direction: column; }
+  .sidebar {
+    width: 100%;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-direction: row;
+    padding: 4px 8px;
+    gap: 4px;
+  }
+  .sidebar-nav {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+    padding: 0;
+    border-bottom: none;
+    width: max-content;
+  }
+  .nav-item {
+    flex-direction: column;
+    padding: 6px 10px;
+    font-size: 10px;
+    gap: 2px;
+    min-width: 60px;
+    text-align: center;
+    border-radius: var(--r-md);
+    white-space: nowrap;
+  }
+  .nav-item i { font-size: 18px; margin: 0; }
+  .content { overflow-y: auto; }
+  .vista { padding: 16px; }
 }
