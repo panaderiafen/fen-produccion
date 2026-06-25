@@ -624,3 +624,50 @@ input, select, textarea { font-family: inherit; }
   .sidebar { width: 100%; height: auto; max-height: 180px; border-right: none; border-bottom: 1px solid var(--border); }
   .stats-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* ── SELECTOR DE DÍA (recetas del día) ───────── */
+.dia-selector-wrap {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.dia-btn {
+  padding: 7px 14px;
+  border-radius: var(--r-md);
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--txt2);
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.dia-btn:hover {
+  border-color: var(--area-color);
+  color: var(--area-color);
+}
+.dia-btn-activo {
+  background: var(--area-color);
+  color: #fff !important;
+  border-color: var(--area-color);
+  font-weight: 600;
+}
+.dia-activo-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  background: var(--area-color);
+  color: #fff;
+  border-radius: var(--r-lg);
+  margin-bottom: 20px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+.dia-activo-label i {
+  font-size: 24px;
+  opacity: .85;
+}
