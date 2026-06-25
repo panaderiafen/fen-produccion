@@ -526,7 +526,24 @@ input, select, textarea { font-family: inherit; }
   font-family: 'DM Mono', monospace;
   font-weight: 600; color: var(--area-color);
 }
-.dia-hoy { background: var(--area-bg) !important; }
+.dia-hoy {
+  background: var(--area-color) !important;
+  color: #fff !important;
+}
+.plan-tabla th.dia-hoy {
+  background: var(--area-color) !important;
+  color: #fff !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  border-radius: 0;
+}
+.plan-tabla td.dia-hoy {
+  background: color-mix(in srgb, var(--area-color) 10%, white) !important;
+}
+.plan-tabla td.dia-hoy input[type="number"] {
+  font-weight: 600;
+  color: var(--area-color);
+}
 
 /* ── ALERTA PENDIENTE ────────────────────────── */
 .alerta-prueba {
