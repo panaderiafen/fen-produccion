@@ -285,8 +285,9 @@ function renderVistaFormReceta(recetaId) {
           <label>Estado</label>
           <select id="f-estado">
             <option value="borrador"  ${(!receta || receta.estado==='borrador') ? 'selected':''}>Borrador</option>
-            <option value="en_prueba" ${receta?.estado==='en_prueba' ? 'selected':''}>En prueba</option>
+            <option value="en_prueba" ${(receta?.estado==='en_prueba' || receta?.estado==='consolidada' || receta?.estado==='pendiente_aprobación') ? 'selected':''}>En prueba</option>
           </select>
+          ${esEdicion && receta?.estado==='consolidada' ? '<p style="font-size:11px;color:#F57C00;margin-top:4px"><i class="ti ti-info-circle"></i> Al guardar cambios volverá a "en prueba" para re-aprobación.</p>' : ''}
         </div>
         <div class="campo">
           <label>Rendimiento / unidades <span class="req">*</span></label>
@@ -519,14 +520,21 @@ async function guardarReceta(recetaId) {
 }
 
 async function enviarARevision(recetaId) {
-  await escribirEnSheet('cambiar_estado', {
-    ID_receta: recetaId, estado: 'pendiente_aprobación', hoja: App.area.hoja_recetas
-  });
-  const r = App.recetas.find(x => x.ID_receta === recetaId);
-  if (r) r.estado = 'pendiente_aprobación';
-  verificarAlertas();
-  toast('Receta enviada a revisión');
-  navegarA('mis-recetas');
+  const btn = document.querySelector(`[onclick="enviarARevision('${recetaId}')"]`);
+  bloquearBtn(btn, 'Enviando...');
+  try {
+    await escribirEnSheet('cambiar_estado', {
+      ID_receta: recetaId, estado: 'pendiente_aprobación', hoja: App.area.hoja_recetas
+    });
+    const r = App.recetas.find(x => x.ID_receta === recetaId);
+    if (r) r.estado = 'pendiente_aprobación';
+    verificarAlertas();
+    toast('Receta enviada a revisión');
+    setTimeout(() => navegarA('mis-recetas'), 1200);
+  } catch(e) {
+    desbloquearBtn(btn, '<i class="ti ti-send"></i> Enviar a revisión', false);
+    toast('Error al enviar: ' + e.message, 'error');
+  }
 }
 
 // ── VISTA MIS RECETAS ─────────────────────────────────────────
@@ -568,8 +576,12 @@ function renderVistaMisRecetas() {
           <tbody>
             ${recetas.map(r => {
               const est = FEN.ESTADOS[r.estado] || FEN.ESTADOS.borrador;
+              const esConsolidada = r.estado === 'consolidada';
               return `<tr>
-                <td class="td-nombre">${r.nombre || r.ID_receta}</td>
+                <td class="td-nombre">
+                  ${r.nombre || r.ID_receta}
+                  ${esConsolidada ? '<span style="font-size:10px;color:#2E7D32;margin-left:6px"><i class="ti ti-lock"></i> En maestro</span>' : ''}
+                </td>
                 <td style="text-align:center">
                   <span class="estado-badge" style="color:${est.color};background:${est.bg}">${est.label}</span>
                 </td>
@@ -578,10 +590,11 @@ function renderVistaMisRecetas() {
                     onclick="verReceta('${r.ID_receta}')"><i class="ti ti-eye"></i> Ver</button>
                   <button class="btn-secundario" style="font-size:12px;padding:5px 12px;margin-left:6px"
                     onclick="renderVistaFormReceta('${r.ID_receta}');mostrarVista('form-receta')">
-                    <i class="ti ti-edit"></i> Editar</button>
+                    <i class="ti ti-edit"></i> Editar${esConsolidada ? '*' : ''}</button>
                 </td>
               </tr>`;
             }).join('')}
+            ${recetas.some(r => r.estado === 'consolidada') ? '<tr><td colspan="3" style="padding:8px 16px;font-size:11px;color:var(--txt3)">* Editar una receta consolidada la enviará a re-aprobación.</td></tr>' : ''}
           </tbody>
         </table>
       </div>`}
@@ -615,9 +628,9 @@ function verReceta(recetaId) {
       <div class="vista-acciones">
         <button class="btn-secundario"
           onclick="renderVistaFormReceta('${recetaId}');mostrarVista('form-receta')">
-          <i class="ti ti-edit"></i> Editar
+          <i class="ti ti-edit"></i> Editar${r.estado === 'consolidada' ? '*' : ''}
         </button>
-        ${r.estado === 'en_prueba' ? `
+        ${(r.estado === 'en_prueba') ? `
           <button class="btn-primario" onclick="enviarARevision('${recetaId}')">
             <i class="ti ti-send"></i> Enviar a revisión
           </button>` : ''}
@@ -1130,22 +1143,37 @@ function renderVistaAprobaciones() {
                 padding:2px 8px;border-radius:99px;font-size:11px">${areaInfo.nombre || r.área}</span>
               <strong style="margin-left:6px">${r.nombre}</strong>
               <div style="margin-left:auto;display:flex;gap:8px">
-                <button class="btn-peligro" style="font-size:12px;padding:5px 12px"
+                <button id="btn-devolver-${r.ID_receta}" class="btn-peligro" style="font-size:12px;padding:5px 12px"
                   onclick="rechazarReceta('${r.ID_receta}','${r._area}')">
                   <i class="ti ti-x"></i> Devolver
                 </button>
-                <button class="btn-primario" style="font-size:12px;padding:5px 12px"
+                <button id="btn-aprobar-${r.ID_receta}" class="btn-primario" style="font-size:12px;padding:5px 12px"
                   onclick="aprobarReceta('${r.ID_receta}','${r._area}')">
                   <i class="ti ti-check"></i> Aprobar
                 </button>
               </div>
             </div>
             <div class="card-body">
-              <div style="display:flex;gap:16px;font-size:13px;color:var(--txt2);margin-bottom:10px">
+              <div style="display:flex;gap:16px;font-size:13px;color:var(--txt2);margin-bottom:12px">
                 <span><strong>Rendimiento:</strong> ${r.porciones_base} unid.</span>
                 <span><strong>Ingredientes:</strong> ${ingredientes.length}</span>
                 <span><strong>Versión:</strong> ${r.versión||1}</span>
+                ${r.peso_harina_total_g ? `<span><strong>Harina base:</strong> ${r.peso_harina_total_g}g</span>` : ''}
               </div>
+              ${ingredientes.length ? `
+              <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px">
+                <thead><tr>
+                  <th style="text-align:left;padding:5px 8px;background:var(--bg);border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Ingrediente</th>
+                  <th style="text-align:right;padding:5px 8px;background:var(--bg);border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Gramos</th>
+                </tr></thead>
+                <tbody>
+                  ${ingredientes.map(ing => `
+                    <tr>
+                      <td style="padding:5px 8px;border-bottom:1px solid var(--border);color:var(--txt2)">${ing.nombre}</td>
+                      <td style="padding:5px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:600">${parseFloat(ing.gramos||0).toFixed(0)}g</td>
+                    </tr>`).join('')}
+                </tbody>
+              </table>` : ''}
               ${r.observaciones_procedimiento ?
                 `<p style="font-size:13px;color:var(--txt2);line-height:1.6">${r.observaciones_procedimiento}</p>` : ''}
               ${r['sistematización_notas'] ?
@@ -1158,21 +1186,35 @@ function renderVistaAprobaciones() {
 }
 
 async function aprobarReceta(recetaId, areaCodigo) {
-  const hoja = FEN.AREAS[areaCodigo]?.hoja_recetas;
-  await escribirEnSheet('aprobar_receta', { ID_receta: recetaId, hoja, aprobada_por: 'Admin' });
-  const r = App.recetas.find(x => x.ID_receta === recetaId);
-  if (r) r.estado = 'consolidada';
-  toast('Receta aprobada y enviada al maestro');
-  renderVistaAprobaciones();
+  const btn = document.getElementById('btn-aprobar-' + recetaId);
+  bloquearBtn(btn, 'Aprobando...');
+  try {
+    const hoja = FEN.AREAS[areaCodigo]?.hoja_recetas;
+    await escribirEnSheet('aprobar_receta', { ID_receta: recetaId, hoja, aprobada_por: 'Admin' });
+    const r = App.recetas.find(x => x.ID_receta === recetaId);
+    if (r) r.estado = 'consolidada';
+    toast('Receta aprobada y enviada al maestro');
+    setTimeout(() => renderVistaAprobaciones(), 1200);
+  } catch(e) {
+    desbloquearBtn(btn, '<i class="ti ti-check"></i> Aprobar', false);
+    toast('Error: ' + e.message, 'error');
+  }
 }
 
 async function rechazarReceta(recetaId, areaCodigo) {
-  const hoja = FEN.AREAS[areaCodigo]?.hoja_recetas;
-  await escribirEnSheet('cambiar_estado', { ID_receta: recetaId, hoja, estado: 'en_prueba' });
-  const r = App.recetas.find(x => x.ID_receta === recetaId);
-  if (r) r.estado = 'en_prueba';
-  toast('Receta devuelta a prueba');
-  renderVistaAprobaciones();
+  const btn = document.getElementById('btn-devolver-' + recetaId);
+  bloquearBtn(btn, 'Devolviendo...');
+  try {
+    const hoja = FEN.AREAS[areaCodigo]?.hoja_recetas;
+    await escribirEnSheet('cambiar_estado', { ID_receta: recetaId, hoja, estado: 'en_prueba' });
+    const r = App.recetas.find(x => x.ID_receta === recetaId);
+    if (r) r.estado = 'en_prueba';
+    toast('Receta devuelta a prueba');
+    setTimeout(() => renderVistaAprobaciones(), 1200);
+  } catch(e) {
+    desbloquearBtn(btn, '<i class="ti ti-x"></i> Devolver', false);
+    toast('Error: ' + e.message, 'error');
+  }
 }
 
 // ── ADMIN: MATERIAS PRIMAS ────────────────────────────────────
