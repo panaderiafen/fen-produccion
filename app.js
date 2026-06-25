@@ -175,16 +175,39 @@ async function cargarRecetas() {
 
 async function cargarPlanSemana() {
   if (!App.areaCodigo || !FEN.AREAS[App.areaCodigo].hoja_plan) return;
-  const hoja = FEN.AREAS[App.areaCodigo].hoja_plan;
-  const semana = obtenerSemanaActual();
-  const datos = await leerHoja(hoja);
-  const diasCols = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo'];
+  const semana  = obtenerSemanaActual();
+  const claveLS = \`fen_plan_\${App.areaCodigo}_\${semana}\`;
 
-  App.planSemana = {};
-  datos.filter(f => f.semana_ID === semana).forEach(fila => {
-    const rid = fila.ID_receta;
-    if (rid) App.planSemana[rid] = diasCols.map(d => parseInt(fila[d]) || 0);
-  });
+  // 1. Cargar localStorage primero (instantaneo, persiste entre sesiones)
+  try {
+    const local = localStorage.getItem(claveLS);
+    if (local) App.planSemana = JSON.parse(local);
+  } catch(e) {}
+
+  // 2. Leer desde Sheet (puede tardar o fallar)
+  try {
+    const hoja     = FEN.AREAS[App.areaCodigo].hoja_plan;
+    const datos    = await leerHoja(hoja);
+    const diasCols = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo'];
+    const planSheet = {};
+    datos.filter(f => f.semana_ID === semana).forEach(fila => {
+      const rid = fila.ID_receta;
+      if (rid) planSheet[rid] = diasCols.map(d => parseInt(fila[d]) || 0);
+    });
+    // Solo reemplazar si Sheet tiene datos reales
+    if (Object.keys(planSheet).length > 0) {
+      App.planSemana = planSheet;
+      localStorage.setItem(claveLS, JSON.stringify(planSheet));
+    }
+  } catch(e) {
+    console.warn('Plan desde Sheet no disponible, usando local:', e);
+  }
+}
+
+function guardarPlanLocal(plan) {
+  const semana  = obtenerSemanaActual();
+  const claveLS = \`fen_plan_\${App.areaCodigo}_\${semana}\`;
+  try { localStorage.setItem(claveLS, JSON.stringify(plan)); } catch(e) {}
 }
 
 // ── ALERTAS ───────────────────────────────────────────────────
@@ -434,7 +457,17 @@ async function guardarReceta(recetaId) {
     esEdicion:                   !!recetaId,
   };
 
-  await escribirEnSheet('guardar_receta', datos);
+  const btnGuardar = document.querySelector('#vista-form-receta .btn-primario');
+  bloquearBtn(btnGuardar, esEdicion ? 'Guardando cambios...' : 'Creando receta...');
+
+  try {
+    await escribirEnSheet('guardar_receta', datos);
+  } catch(e) {
+    console.warn('Error guardando en Sheet:', e);
+  }
+  desbloquearBtn(btnGuardar, esEdicion
+    ? '<i class="ti ti-device-floppy"></i> Guardar cambios'
+    : '<i class="ti ti-device-floppy"></i> Crear receta', true);
 
   if (recetaId) {
     const idx = App.recetas.findIndex(r => r.ID_receta === recetaId);
@@ -648,7 +681,7 @@ function renderVistaPlanificacion() {
           <thead>
             <tr>
               <th class="th-nombre">Producto</th>
-              ${dias.map((d,i) => `<th class="${i===diaIdx?'dia-hoy':''}">${d}</th>`).join('')}
+              ${dias.map((d,i) => `<th class="${i===diaIdx?'dia-hoy':''}" style="${i===diaIdx?'font-size:13px;font-weight:700;':''}">${i===diaIdx?'&#9655; '+d:d}</th>`).join('')}
               <th>Total</th>
             </tr>
           </thead>
@@ -685,6 +718,9 @@ function actualizarTotalFila(input) {
 }
 
 async function guardarPlanificacion() {
+  const btn = document.querySelector('#vista-planificacion .btn-primario');
+  bloquearBtn(btn, 'Guardando plan...');
+
   const inputs = document.querySelectorAll('#vista-planificacion input[data-receta]');
   const plan = {};
   inputs.forEach(el => {
@@ -694,16 +730,22 @@ async function guardarPlanificacion() {
     plan[rid][dia] = parseInt(el.value) || 0;
   });
 
-  // Actualizar estado local inmediatamente
+  // Guardar local inmediatamente (persiste aunque falle el Sheet)
   App.planSemana = plan;
+  guardarPlanLocal(plan);
 
-  await escribirEnSheet('guardar_planificacion', {
-    hoja:   FEN.AREAS[App.areaCodigo].hoja_plan,
-    semana: obtenerSemanaActual(),
-    plan
-  });
-
-  toast('Plan guardado');
+  try {
+    await escribirEnSheet('guardar_planificacion', {
+      hoja:   FEN.AREAS[App.areaCodigo].hoja_plan,
+      semana: obtenerSemanaActual(),
+      plan
+    });
+    desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan', true);
+    toast('Plan guardado correctamente');
+  } catch(e) {
+    desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan', false);
+    toast('Guardado local OK (Sheet no disponible)', 'error');
+  }
 }
 
 // ── RECETAS DEL DÍA ───────────────────────────────────────────
@@ -1087,6 +1129,33 @@ function mostrarLoading(msg = 'Cargando...') {
 function ocultarLoading() {
   const l = document.getElementById('loading-overlay');
   if (l) l.classList.add('hidden');
+}
+
+// ── BOTONES CON ESTADO ───────────────────────────────────────
+function bloquearBtn(btn, texto) {
+  if (!btn) return;
+  btn.disabled = true;
+  btn.dataset.originalHtml = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;border-top-color:#fff;margin-right:6px;display:inline-block;vertical-align:middle"></span>' + texto;
+  btn.style.opacity = '0.75';
+}
+
+function desbloquearBtn(btn, htmlOriginal, exito) {
+  if (!btn) return;
+  setTimeout(() => {
+    btn.disabled = false;
+    btn.style.opacity = '';
+    if (exito) {
+      btn.innerHTML = '<i class="ti ti-check"></i> Guardado';
+      btn.style.background = '#2E7D32';
+      setTimeout(() => {
+        btn.innerHTML = htmlOriginal || btn.dataset.originalHtml || 'Guardar';
+        btn.style.background = '';
+      }, 2200);
+    } else {
+      btn.innerHTML = htmlOriginal || btn.dataset.originalHtml || 'Guardar';
+    }
+  }, 400);
 }
 
 function toast(msg, tipo = '') {
