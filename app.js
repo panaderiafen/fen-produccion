@@ -510,6 +510,7 @@ function renumerarPasos() {
 // ── GUARDAR RECETA ────────────────────────────────────────────
 async function guardarReceta(recetaId) {
   const esEdicion = !!recetaId;
+  const nombre    = document.getElementById('f-nombre').value.trim();
   const porciones = document.getElementById('f-porciones').value;
   if (!nombre)   { toast('El nombre es requerido', 'error'); return; }
   if (!porciones){ toast('El rendimiento es requerido', 'error'); return; }
