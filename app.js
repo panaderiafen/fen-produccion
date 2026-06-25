@@ -1122,7 +1122,7 @@ function renderDia(diaIdx) {
       </div>`;
   }).join('');
 
-  contenedor.innerHTML = htmlElaboraciones + htmlRecetas.join('');
+  contenedor.innerHTML = htmlElaboraciones + htmlRecetas;
 
   // Restaurar estados guardados
   recetasHoy.forEach(({ receta: r }) => {
