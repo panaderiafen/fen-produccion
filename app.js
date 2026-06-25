@@ -666,6 +666,75 @@ function verReceta(recetaId) {
   mostrarVista('ver-receta');
 }
 
+// ── FUNCIONES RECETAS DEL DÍA ────────────────────────────────
+
+function claveEstadoDia(recetaId, diaIdx) {
+  const semana = obtenerSemanaActual();
+  return `fen_dia_${App.areaCodigo}_${semana}_${diaIdx}_${recetaId}`;
+}
+
+function obtenerEstadoTerminada(recetaId, diaIdx) {
+  try { return localStorage.getItem(claveEstadoDia(recetaId, diaIdx) + '_done') === '1'; } catch(e) { return false; }
+}
+
+function obtenerNotaDia(recetaId, diaIdx) {
+  try { return localStorage.getItem(claveEstadoDia(recetaId, diaIdx) + '_nota') || ''; } catch(e) { return ''; }
+}
+
+function marcarTerminada(recetaId, terminada) {
+  // Guardar estado
+  try { localStorage.setItem(claveEstadoDia(recetaId, App._diaActual || 0) + '_done', terminada ? '1' : '0'); } catch(e) {}
+
+  const card    = document.getElementById('card-' + recetaId);
+  const ingr    = document.getElementById('ingr-' + recetaId);
+  const nombre  = document.getElementById('nombre-' + recetaId);
+  const chev    = document.getElementById('chev-' + recetaId);
+
+  if (terminada) {
+    card.classList.add('rdc-terminada');
+    if (ingr)   { ingr.style.display = 'none'; }
+    if (chev)   { chev.className = 'ti ti-check rdc-chevron'; chev.style.color = '#2E7D32'; }
+    if (nombre) { nombre.style.textDecoration = 'line-through'; nombre.style.color = 'var(--txt3)'; }
+  } else {
+    card.classList.remove('rdc-terminada');
+    if (ingr)   { ingr.style.display = 'block'; }
+    if (chev)   { chev.className = 'ti ti-chevron-down rdc-chevron'; chev.style.color = ''; }
+    if (nombre) { nombre.style.textDecoration = ''; nombre.style.color = ''; }
+  }
+}
+
+function toggleIngredientes(recetaId) {
+  const check = document.getElementById('check-' + recetaId);
+  if (check?.checked) return; // Si está terminada no colapsar/expandir
+  const ingr = document.getElementById('ingr-' + recetaId);
+  const chev = document.getElementById('chev-' + recetaId);
+  if (!ingr) return;
+  const visible = ingr.style.display !== 'none';
+  ingr.style.display = visible ? 'none' : 'block';
+  if (chev) chev.style.transform = visible ? 'rotate(-90deg)' : '';
+}
+
+function toggleSeccion(id, btn) {
+  const el   = document.getElementById(id);
+  const icon = btn.querySelector('.rdc-toggle-icon');
+  if (!el) return;
+  const abierto = el.classList.contains('abierto');
+  el.classList.toggle('abierto', !abierto);
+  if (icon) icon.style.transform = abierto ? '' : 'rotate(90deg)';
+}
+
+let _notaTimer = {};
+function autoguardarNota(recetaId) {
+  clearTimeout(_notaTimer[recetaId]);
+  _notaTimer[recetaId] = setTimeout(() => {
+    const ta  = document.getElementById('textarea-notas-' + recetaId);
+    const dia = App._diaActual || 0;
+    if (ta) {
+      try { localStorage.setItem(claveEstadoDia(recetaId, dia) + '_nota', ta.value); } catch(e) {}
+    }
+  }, 800);
+}
+
 // ── PLANIFICACIÓN SEMANAL ─────────────────────────────────────
 function renderVistaPlanificacion() {
   const recetasConsolidadas = App.recetas.filter(r => r.estado === 'consolidada');
@@ -820,15 +889,15 @@ function renderVistaRecetasDelDia() {
     </div>
     <div id="contenedor-dia"></div>
   `;
+  App._diaActual = diaIdx;
   renderDia(diaIdx);
   mostrarVista('recetas-dia');
 }
 
 function cambiarDia(diaIdx, btn) {
-  // Actualizar botones activos
+  App._diaActual = parseInt(diaIdx);
   document.querySelectorAll('.dia-btn').forEach(b => b.classList.remove('dia-btn-activo'));
   btn.classList.add('dia-btn-activo');
-  // Actualizar label
   const diasNombres = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
   const label = document.getElementById('dia-activo-txt');
   if (label) label.textContent = diasNombres[diaIdx];
@@ -865,46 +934,98 @@ function renderDia(diaIdx) {
     try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
     const porciones = parseInt(r.porciones_base) || 1;
     const factor    = unidades / porciones;
+    const rid       = r.ID_receta;
+    const procedimiento = r.observaciones_procedimiento || '';
 
     return `
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-head">
-          <i class="ti ${App.area?.icon || 'ti-chef-hat'}"></i>
-          <strong>${r.nombre}</strong>
-          <span style="margin-left:auto;font-size:12px;font-weight:500;
-            background:var(--area-bg);color:var(--area-color);
-            padding:2px 10px;border-radius:99px">
-            ${unidades} unidad${unidades>1?'es':''}
-          </span>
+      <div class="receta-dia-card" id="card-${rid}">
+
+        <!-- CABECERA con checkbox terminada -->
+        <div class="rdc-header" onclick="toggleIngredientes('${rid}')">
+          <label class="rdc-check-wrap" onclick="event.stopPropagation()">
+            <input type="checkbox" class="rdc-check" id="check-${rid}"
+              onchange="marcarTerminada('${rid}', this.checked)">
+            <span class="rdc-check-box"></span>
+          </label>
+          <i class="ti ${App.area?.icon || 'ti-chef-hat'}" style="font-size:16px;color:var(--area-color)"></i>
+          <strong class="rdc-nombre" id="nombre-${rid}">${r.nombre}</strong>
+          <span class="rdc-badge">${unidades} unidad${unidades>1?'es':''}</span>
+          <i class="ti ti-chevron-down rdc-chevron" id="chev-${rid}"></i>
         </div>
-        <table class="tabla-vista">
-          <thead><tr>
-            <th style="text-align:left;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Ingrediente</th>
-            <th style="text-align:right;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Gramos (× ${unidades} unid.)</th>
-            ${esPan ? `<th style="text-align:right;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">% panadero</th>` : ''}
-          </tr></thead>
-          <tbody>
-            ${ingredientes.map(ing => {
-              const gr = (parseFloat(ing.gramos)||0) * factor;
-              return `<tr>
-                <td class="td-nombre">${ing.nombre}</td>
-                <td class="td-num" style="font-size:14px;font-weight:600">${gr.toFixed(0)}g</td>
-                ${esPan ? `<td class="td-pct">${((parseFloat(ing.pct)||0)*100).toFixed(1)}%</td>` : ''}
-              </tr>`;
-            }).join('')}
-            <tr style="background:var(--bg)">
-              <td style="padding:8px 16px;font-weight:600">Total masa</td>
-              <td class="td-num" style="padding:8px 16px;font-weight:600">
-                ${ingredientes.reduce((s,i)=>{
-                  return s + (parseFloat(i.gramos)||0)*factor;
-                }, 0).toFixed(0)}g
-              </td>
-              ${esPan ? '<td></td>' : ''}
-            </tr>
-          </tbody>
-        </table>
+
+        <!-- INGREDIENTES (visibles por defecto) -->
+        <div class="rdc-ingredientes" id="ingr-${rid}">
+          <table class="tabla-vista">
+            <thead><tr>
+              <th style="text-align:left;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Ingrediente</th>
+              <th style="text-align:right;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Gramos × ${unidades} unid.</th>
+              ${esPan ? `<th style="text-align:right;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">%</th>` : ''}
+            </tr></thead>
+            <tbody>
+              ${ingredientes.map(ing => {
+                const gr = (parseFloat(ing.gramos)||0) * factor;
+                return `<tr>
+                  <td class="td-nombre">${ing.nombre}</td>
+                  <td class="td-num" style="font-size:14px;font-weight:600">${gr.toFixed(0)}g</td>
+                  ${esPan ? `<td class="td-pct">${((parseFloat(ing.pct)||0)*100).toFixed(1)}%</td>` : ''}
+                </tr>`;
+              }).join('')}
+              <tr style="background:var(--bg)">
+                <td style="padding:8px 16px;font-weight:600">Total masa</td>
+                <td class="td-num" style="padding:8px 16px;font-weight:600">
+                  ${ingredientes.reduce((s,i) => s+(parseFloat(i.gramos)||0)*factor, 0).toFixed(0)}g
+                </td>
+                ${esPan ? '<td></td>' : ''}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- PROCEDIMIENTO desplegable (cerrado por defecto) -->
+        ${procedimiento ? `
+        <div class="rdc-seccion">
+          <button class="rdc-toggle" onclick="toggleSeccion('proc-${rid}', this)">
+            <i class="ti ti-list-numbers"></i> Procedimiento
+            <i class="ti ti-chevron-right rdc-toggle-icon"></i>
+          </button>
+          <div class="rdc-desplegable" id="proc-${rid}">
+            <p style="font-size:13px;color:var(--txt2);line-height:1.7;padding:14px 16px">${procedimiento}</p>
+          </div>
+        </div>` : ''}
+
+        <!-- NOTAS DEL DÍA -->
+        <div class="rdc-seccion">
+          <button class="rdc-toggle" onclick="toggleSeccion('notas-${rid}', this)">
+            <i class="ti ti-notes"></i> Notas de este día
+            <i class="ti ti-chevron-right rdc-toggle-icon"></i>
+          </button>
+          <div class="rdc-desplegable" id="notas-${rid}">
+            <div style="padding:12px 16px">
+              <textarea id="textarea-notas-${rid}"
+                placeholder="Anota aquí observaciones, anomalías o cambios realizados en esta elaboración..."
+                rows="3"
+                style="width:100%;border:1px solid var(--border);border-radius:var(--r-md);
+                  padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;
+                  background:var(--surface);color:var(--txt);line-height:1.6"
+                oninput="autoguardarNota('${rid}')">${obtenerNotaDia(rid, idx)}</textarea>
+              <p style="font-size:11px;color:var(--txt3);margin-top:6px">
+                <i class="ti ti-device-floppy"></i> Se guarda automáticamente
+              </p>
+            </div>
+          </div>
+        </div>
+
       </div>`;
   }).join('');
+
+  // Restaurar estados guardados
+  recetasHoy.forEach(({ receta: r }) => {
+    const terminada = obtenerEstadoTerminada(r.ID_receta, idx);
+    if (terminada) {
+      const check = document.getElementById('check-' + r.ID_receta);
+      if (check) { check.checked = true; marcarTerminada(r.ID_receta, true); }
+    }
+  });
 }
 
 // ── MAESTRO DE RECETAS ────────────────────────────────────────
