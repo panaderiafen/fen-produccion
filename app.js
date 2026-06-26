@@ -75,7 +75,7 @@ async function entrar(areaCodigo, rol) {
   renderSidebar();
   mostrarLoading('Cargando datos...');
   await cargarMP();
-  await cargarRecetas();
+  await cargarRecetas(true); // forzar recarga completa
   await cargarPlanSemana();
   ocultarLoading();
   verificarAlertas();
@@ -185,7 +185,7 @@ async function cargarMP() {
   App.materiasPrimas = await Cache.get('mp_maestro', () => leerHoja('MP_maestro'));
 }
 
-async function cargarRecetas() {
+async function cargarRecetas(forzar = false) {
   if (!App.areaCodigo) {
     const todas = [];
     for (const codigo of Object.keys(FEN.AREAS)) {
@@ -196,7 +196,22 @@ async function cargarRecetas() {
     App.recetas = todas;
   } else {
     const hoja = FEN.AREAS[App.areaCodigo].hoja_recetas;
-    App.recetas = await Cache.get(hoja, () => leerHoja(hoja));
+    const datos = await Cache.get(hoja, () => leerHoja(hoja));
+    if (forzar || App.recetas.length === 0) {
+      // Primera carga o recarga forzada — reemplazar todo
+      App.recetas = datos;
+    } else {
+      // Actualización — solo agregar filas nuevas, no sobreescribir las existentes
+      // para no perder estados locales actualizados
+      datos.forEach(recetaSheet => {
+        const idx = App.recetas.findIndex(r => r.ID_receta === recetaSheet.ID_receta);
+        if (idx === -1) {
+          // Receta nueva que no existía localmente
+          App.recetas.push(recetaSheet);
+        }
+        // Si ya existe, NO sobreescribir — el estado local es más reciente
+      });
+    }
   }
 }
 
@@ -583,7 +598,6 @@ async function guardarReceta(recetaId) {
       App.recetas.push(datos);
     }
 
-    Cache.invalidar(App.area.hoja_recetas);
     verificarAlertas();
     desbloquearBtn(btnGuardar, esEdicion
       ? '<i class="ti ti-device-floppy"></i> Guardar cambios'
@@ -613,9 +627,6 @@ async function enviarARevision(recetaId) {
   escribirEnSheet('cambiar_estado', {
     ID_receta: recetaId, estado: 'pendiente_aprobación', hoja: App.area.hoja_recetas
   }).catch(e => console.warn('Error actualizando Sheet:', e));
-
-  // Invalidar caché para que próxima sincronización traiga el estado correcto
-  Cache.invalidar(App.area.hoja_recetas);
 
   desbloquearBtn(btn, '<i class="ti ti-send"></i> Enviar a revisión', true);
   toast('Receta enviada a revisión');
