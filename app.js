@@ -1513,6 +1513,19 @@ function abrirFormNuevaMP() {
   solicitarNuevaMP();
 }
 
+async function toggleEstadoMP(mpId, estadoActual) {
+  const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
+  if (!mp) return;
+  const nuevoEstado = estadoActual === 'inactiva' ? 'activa' : 'inactiva';
+  const accion = nuevoEstado === 'inactiva' ? 'desactivar' : 'activar';
+  if (!confirm(`¿${accion.charAt(0).toUpperCase() + accion.slice(1)} "${mp.nombre}"?`)) return;
+  await escribirEnSheet('editar_mp', { ID_MP: mpId, estado: nuevoEstado });
+  mp.estado = nuevoEstado;
+  Cache.invalidar('mp_maestro');
+  toast(`MP ${accion === 'desactivar' ? 'desactivada' : 'activada'}`);
+  renderVistaMP();
+}
+
 // ── UTILIDADES ────────────────────────────────────────────────
 function generarId(areaCodigo) {
   const existing = App.recetas.filter(r => r.ID_receta?.startsWith(areaCodigo));
