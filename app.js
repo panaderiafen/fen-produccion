@@ -436,8 +436,15 @@ function agregarIngrediente(data = {}) {
   const esPan = App.areaCodigo === 'PAN';
   const tbody = document.getElementById('tbody-ingr');
   const tr = document.createElement('tr');
-  const mpActivas   = App.materiasPrimas.filter(m => m.estado === 'activa' && m.tipo !== 'sub_receta');
-  const subRecetas  = App.materiasPrimas.filter(m => m.estado === 'activa' && m.tipo === 'sub_receta');
+  const areaCode = App.areaCodigo || '';
+  const mpActivas  = App.materiasPrimas.filter(m =>
+    m.estado === 'activa' && m.tipo !== 'sub_receta' &&
+    (!m.areas_habilitadas || m.areas_habilitadas.split(',').map(a=>a.trim()).includes(areaCode))
+  );
+  const subRecetas = App.materiasPrimas.filter(m =>
+    m.estado === 'activa' && m.tipo === 'sub_receta' &&
+    (!m.areas_habilitadas || m.areas_habilitadas.split(',').map(a=>a.trim()).includes(areaCode))
+  );
 
   const optionsMP = mpActivas.map(m =>
     `<option value="${m.ID_MP}" data-costo="${m.costo_por_gramo || 0}"
@@ -460,7 +467,7 @@ function agregarIngrediente(data = {}) {
       <select onchange="calcularCostoFila(this)">
         <option value="">— Seleccionar —</option>
         ${options}
-        <option value="__nueva__">+ Solicitar nueva MP</option>
+        <option value="__nueva__">+ Solicitar / habilitar MP...</option>
       </select>
     </td>
     <td><input type="number" placeholder="0" value="${data.gramos ? parseFloat(data.gramos).toFixed(1) : ''}"
@@ -1488,13 +1495,62 @@ async function renderVistaMaestroAdmin() {
 }
 
 // ── MP: SOLICITAR Y EDITAR ────────────────────────────────────
-function solicitarNuevaMP() {
-  const nombre = prompt('Nombre de la nueva materia prima:');
-  if (!nombre) return;
+function solicitarNuevaMP(selectEl) {
+  // Mostrar modal de solicitud sin salir del formulario
+  const modal = document.getElementById('modal-solicitar-mp');
+  if (modal) {
+    modal.classList.remove('hidden');
+    document.getElementById('solicitar-mp-select-ref') && 
+      (document.getElementById('solicitar-mp-select-ref').value = selectEl ? selectEl.id || '' : '');
+    return;
+  }
+}
+
+function enviarSolicitudMP() {
+  const nombre     = document.getElementById('solicitar-mp-nombre').value.trim();
+  const esNueva    = document.getElementById('solicitar-mp-nueva').checked;
+  const tmpNombre  = document.getElementById('solicitar-mp-tmp').value.trim() || nombre;
+  const gramos     = document.getElementById('solicitar-mp-gramos').value;
+
+  if (!nombre) { toast('Escribe el nombre de la MP', 'error'); return; }
+
+  // Agregar ingrediente temporal al formulario
+  if (tmpNombre) {
+    const tbody = document.getElementById('tbody-ingr');
+    const tr = document.createElement('tr');
+    tr.style.background = '#FFF9C4';
+    tr.innerHTML = `
+      <td>
+        <select disabled style="color:var(--txt2)">
+          <option>⏳ ${tmpNombre} (pendiente habilitación)</option>
+        </select>
+      </td>
+      <td><input type="number" placeholder="0" value="${gramos || ''}" min="0" step="0.01" data-tmp="true"></td>
+      ${App.areaCodigo === 'PAN' ? '<td><input type="number" placeholder="0.00" readonly style="color:var(--txt3)"></td>' : ''}
+      <td><button class="btn-fila-del" onclick="this.closest('tr').remove()" aria-label="Eliminar"><i class="ti ti-x"></i></button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  // Enviar solicitud
   escribirEnSheet('solicitar_mp', {
-    nombre, solicitada_por: App.area?.nombre || 'Admin', fecha: new Date().toISOString()
+    nombre,
+    es_nueva: esNueva,
+    solicitada_por: App.area?.nombre || '',
+    area_codigo: App.areaCodigo || '',
+    fecha: new Date().toISOString()
   });
+
+  cerrarModalSolicitarMP();
   toast('Solicitud enviada a administración');
+}
+
+function cerrarModalSolicitarMP() {
+  const modal = document.getElementById('modal-solicitar-mp');
+  if (modal) modal.classList.add('hidden');
+  // Resetear select que activó el modal
+  const selects = document.querySelectorAll('#tbody-ingr select');
+  selects.forEach(s => { if (s.value === '__nueva__') s.value = ''; });
 }
 
 function editarMP(mpId) {
@@ -1516,6 +1572,26 @@ function editarMP(mpId) {
 
 function abrirFormNuevaMP() {
   solicitarNuevaMP();
+}
+
+function gestionarAreasMP(mpId) {
+  const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
+  if (!mp) return;
+  const areas = ['PAN','BOL','PAS','CAF'];
+  const actuales = (mp.areas_habilitadas || '').split(',').map(a => a.trim()).filter(Boolean);
+  const nuevas = [];
+  areas.forEach(a => {
+    if (confirm(`¿Habilitar ${mp.nombre} para ${FEN.AREAS[a]?.nombre || a}?
+(Actualmente: ${actuales.includes(a) ? '✓ Habilitada' : '✗ No habilitada'})`)) {
+      nuevas.push(a);
+    }
+  });
+  const val = nuevas.join(',');
+  escribirEnSheet('editar_mp', { ID_MP: mpId, areas_habilitadas: val });
+  mp.areas_habilitadas = val;
+  Cache.invalidar('mp_maestro');
+  toast('Áreas actualizadas');
+  renderVistaMP();
 }
 
 async function toggleEstadoMP(mpId, estadoActual) {
