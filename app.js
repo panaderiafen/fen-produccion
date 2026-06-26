@@ -4,6 +4,26 @@
 // ═══════════════════════════════════════════════
 
 // ── ESTADO GLOBAL ────────────────────────────────────────────
+// Estado local de recetas (sobrevive recargas)
+function getEstadoLocal(recetaId) {
+  try { return localStorage.getItem('fen_estado_' + recetaId) || null; } catch(e) { return null; }
+}
+function setEstadoLocal(recetaId, estado) {
+  try { localStorage.setItem('fen_estado_' + recetaId, estado); } catch(e) {}
+}
+function clearEstadoLocal(recetaId) {
+  try { localStorage.removeItem('fen_estado_' + recetaId); } catch(e) {}
+}
+
+// Aplicar estados locales sobre datos del Sheet
+function aplicarEstadosLocales(recetas) {
+  return recetas.map(r => {
+    const estadoLocal = getEstadoLocal(r.ID_receta);
+    if (estadoLocal) return { ...r, estado: estadoLocal };
+    return r;
+  });
+}
+
 const App = {
   rol: null,
   area: null,
@@ -197,21 +217,8 @@ async function cargarRecetas(forzar = false) {
   } else {
     const hoja = FEN.AREAS[App.areaCodigo].hoja_recetas;
     const datos = await Cache.get(hoja, () => leerHoja(hoja));
-    if (forzar || App.recetas.length === 0) {
-      // Primera carga o recarga forzada — reemplazar todo
-      App.recetas = datos;
-    } else {
-      // Actualización — solo agregar filas nuevas, no sobreescribir las existentes
-      // para no perder estados locales actualizados
-      datos.forEach(recetaSheet => {
-        const idx = App.recetas.findIndex(r => r.ID_receta === recetaSheet.ID_receta);
-        if (idx === -1) {
-          // Receta nueva que no existía localmente
-          App.recetas.push(recetaSheet);
-        }
-        // Si ya existe, NO sobreescribir — el estado local es más reciente
-      });
-    }
+    // Aplicar estados locales sobre los datos del Sheet
+    App.recetas = aplicarEstadosLocales(datos);
   }
 }
 
@@ -590,7 +597,9 @@ async function guardarReceta(recetaId) {
       throw new Error(resultado?.msg || 'Error desconocido');
     }
 
-    // Actualizar estado local solo si Sheet confirmó
+    // Guardar estado en localStorage
+    setEstadoLocal(datos.ID_receta, datos.estado);
+    // Actualizar estado local
     if (recetaId) {
       const idx = App.recetas.findIndex(r => r.ID_receta === recetaId);
       if (idx >= 0) App.recetas[idx] = { ...App.recetas[idx], ...datos };
@@ -618,7 +627,9 @@ async function enviarARevision(recetaId) {
   const btn = document.querySelector(`[onclick="enviarARevision('${recetaId}')"]`);
   bloquearBtn(btn, 'Enviando...');
 
-  // Actualizar estado local ANTES de enviar al Sheet
+  // Guardar estado en localStorage (persiste recargas)
+  setEstadoLocal(recetaId, 'pendiente_aprobación');
+  // Actualizar estado local en memoria
   const r = App.recetas.find(x => x.ID_receta === recetaId);
   if (r) r.estado = 'pendiente_aprobación';
   verificarAlertas();
@@ -1314,6 +1325,7 @@ async function aprobarReceta(recetaId, areaCodigo) {
   try {
     const hoja = FEN.AREAS[areaCodigo]?.hoja_recetas;
     await escribirEnSheet('aprobar_receta', { ID_receta: recetaId, hoja, aprobada_por: 'Admin' });
+    clearEstadoLocal(recetaId);
     const r = App.recetas.find(x => x.ID_receta === recetaId);
     if (r) r.estado = 'consolidada';
     toast('Receta aprobada y enviada al maestro');
