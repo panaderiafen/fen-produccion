@@ -8,7 +8,7 @@
 const CONFIG_SUBRECETAS_DEFAULT = {
   mm_blanca: {
     nombre: 'Masa madre blanca',
-    pie_pct: 20,      // % del total de MM
+    pie_pct: 20,
     harina_pct: 100,
     agua_pct: 90,
   },
@@ -23,6 +23,13 @@ const CONFIG_SUBRECETAS_DEFAULT = {
     harina_pct: 100,
     agua_pct: 100,
     levadura_pct: 0.36,
+  },
+  pie_mm: {
+    dias_elaboracion: [1, 4], // 0=Dom,1=Lun,2=Mar,3=Mié,4=Jue,5=Vie,6=Sáb
+    reserva_pct: 20,          // % adicional basado en período siguiente
+    mm_madura_pct: 20,        // % de MM madura anterior
+    harina_pct: 100,
+    agua_pct: 90,
   }
 };
 
@@ -66,8 +73,6 @@ function calcularElaboracionesDia(diaIdx) {
       .map(m => m.ID_MP)
   );
 
-  console.log('[fën] Sub recetas en MP_maestro:', [...idsSubRecetas]);
-  console.log('[fën] Total materias primas cargadas:', App.materiasPrimas.length);
   console.log('[fën] Recetas del día:', recetasDelDia.map(x => x.receta?.nombre));
 
   recetasDelDia.forEach(({ receta: r, unidades }) => {
@@ -110,11 +115,28 @@ function calcularElaboracionesDia(diaIdx) {
 // Dado el total de gramos de una sub receta, calcula sus componentes
 function calcularDesglose(subRecetaId, totalGramos) {
   const cfg = cargarConfigSubrecetas();
+  const nombreMP = (App.materiasPrimas.find(m => m.ID_MP === subRecetaId)?.nombre || '').toLowerCase();
 
-  // Buscar en recetas si existe como sub receta con sus propios ingredientes
-  const recetaSR = App.recetas.find(r => r.ID_receta === subRecetaId);
+  // 1. Buscar por config de % panadero (MM y Poolish tienen fórmula especial)
+  if (nombreMP.includes('masa madre') && nombreMP.includes('integral')) {
+    return desgloseMMPorcentaje(totalGramos, cfg.mm_integral);
+  }
+  if (nombreMP.includes('masa madre')) {
+    return desgloseMMPorcentaje(totalGramos, cfg.mm_blanca);
+  }
+  if (nombreMP.includes('poolish')) {
+    return desglosePoolish(totalGramos, cfg.poolish);
+  }
+
+  // 2. Buscar en recetas consolidadas con ese nombre
+  const nombreBuscado = App.materiasPrimas.find(m => m.ID_MP === subRecetaId)?.nombre || '';
+  const recetaSR = App.recetas.find(r =>
+    r.nombre === nombreBuscado ||
+    r.ID_receta === subRecetaId ||
+    (r.nombre || '').toLowerCase() === nombreBuscado.toLowerCase()
+  );
+
   if (recetaSR) {
-    // Tiene ingredientes propios → escalar
     let ingredientes = [];
     try { ingredientes = JSON.parse(recetaSR.ingredientes_JSON || '[]'); } catch(e) {}
     if (ingredientes.length > 0) {
@@ -128,21 +150,8 @@ function calcularDesglose(subRecetaId, totalGramos) {
     }
   }
 
-  // Buscar en config por nombre para aplicar fórmula % panadero
-  const nombre = (App.materiasPrimas.find(m => m.ID_MP === subRecetaId)?.nombre || '').toLowerCase();
-
-  if (nombre.includes('masa madre') && nombre.includes('integral')) {
-    return desgloseMMPorcentaje(totalGramos, cfg.mm_integral);
-  }
-  if (nombre.includes('masa madre')) {
-    return desgloseMMPorcentaje(totalGramos, cfg.mm_blanca);
-  }
-  if (nombre.includes('poolish')) {
-    return desglosePoolish(totalGramos, cfg.poolish);
-  }
-
-  // Genérico: mostrar solo el total
-  return [{ nombre: 'Total', gramos: totalGramos, esPie: false }];
+  // 3. Genérico: mostrar solo el total
+  return [{ nombre: nombreBuscado || 'Total', gramos: totalGramos, esPie: false }];
 }
 
 function desgloseMMPorcentaje(totalGramos, cfg) {
@@ -174,6 +183,187 @@ function desglosePoolish(totalGramos, cfg) {
     { nombre: 'Agua',           gramos: agua,     esPie: false },
     { nombre: 'Levadura seca',  gramos: levadura, esPie: false },
   ];
+}
+
+// ── CALCULAR PIE DE MASA MADRE ──────────────────────────────
+function calcularPieMM(diaIdxActual) {
+  const cfg = cargarConfigSubrecetas();
+  const pieCfg = cfg.pie_mm;
+  if (!pieCfg) return null;
+
+  // Convertir día JS (0=Dom) al índice plan (0=Lun)
+  const diasElaboracion = pieCfg.dias_elaboracion; // en índice plan (0=Lun)
+
+  // ¿Es hoy un día de elaboración del pie?
+  if (!diasElaboracion.includes(diaIdxActual)) return null;
+
+  // Determinar qué días cubre este pie
+  const diasSemana = [0,1,2,3,4,5,6];
+  const posActual = diasElaboracion.indexOf(diaIdxActual);
+  const siguienteElaboracion = diasElaboracion[(posActual + 1) % diasElaboracion.length];
+
+  // Días que cubre: desde mañana hasta el día anterior a la siguiente elaboración
+  const diasCubiertos = [];
+  let dia = (diaIdxActual + 1) % 7;
+  while (dia !== siguienteElaboracion) {
+    diasCubiertos.push(dia);
+    dia = (dia + 1) % 7;
+  }
+
+  // Días del período siguiente (para calcular reserva)
+  const diasSiguientePeriodo = [];
+  let diaSig = siguienteElaboracion;
+  const posNext = diasElaboracion.indexOf(siguienteElaboracion);
+  const despuesNext = diasElaboracion[(posNext + 1) % diasElaboracion.length];
+  diaSig = (siguienteElaboracion + 1) % 7;
+  while (diaSig !== despuesNext) {
+    diasSiguientePeriodo.push(diaSig);
+    diaSig = (diaSig + 1) % 7;
+  }
+
+  // Calcular MM necesaria por día (de todas las sub recetas MM)
+  const nombresDias = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  const idsMMBlanca = App.materiasPrimas
+    .filter(m => (m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR')) &&
+      m.nombre?.toLowerCase().includes('masa madre') &&
+      !m.nombre?.toLowerCase().includes('integral'))
+    .map(m => m.ID_MP);
+
+  const idsMMIntegral = App.materiasPrimas
+    .filter(m => (m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR')) &&
+      m.nombre?.toLowerCase().includes('masa madre') &&
+      m.nombre?.toLowerCase().includes('integral'))
+    .map(m => m.ID_MP);
+
+  function mmNecesariaDia(diaIdx, idsMMSet) {
+    let total = 0;
+    Object.entries(App.planSemana).forEach(([rid, cant]) => {
+      const unidades = cant[diaIdx] || 0;
+      if (!unidades) return;
+      const receta = App.recetas.find(r => r.ID_receta === rid);
+      if (!receta) return;
+      let ingredientes = [];
+      try { ingredientes = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
+      const porciones = parseInt(receta.porciones_base) || 1;
+      const factor = unidades / porciones;
+      ingredientes.forEach(ing => {
+        if (idsMMSet.includes(ing.id)) {
+          total += (parseFloat(ing.gramos) || 0) * factor;
+        }
+      });
+    });
+    return total;
+  }
+
+  // Calcular totales
+  const mmBlancaCubiertos = diasCubiertos.reduce((s, d) => s + mmNecesariaDia(d, idsMMBlanca), 0);
+  const mmBlancaSiguiente = diasSiguientePeriodo.reduce((s, d) => s + mmNecesariaDia(d, idsMMBlanca), 0);
+  const reservaBlanca = mmBlancaSiguiente * (pieCfg.reserva_pct / 100);
+  const pieBlancaTotal = mmBlancaCubiertos + reservaBlanca;
+
+  const mmIntegralCubiertos = diasCubiertos.reduce((s, d) => s + mmNecesariaDia(d, idsMMIntegral), 0);
+  const mmIntegralSiguiente = diasSiguientePeriodo.reduce((s, d) => s + mmNecesariaDia(d, idsMMIntegral), 0);
+  const reservaIntegral = mmIntegralSiguiente * (pieCfg.reserva_pct / 100);
+  const pieIntegralTotal = mmIntegralCubiertos + reservaIntegral;
+
+  if (pieBlancaTotal === 0 && pieIntegralTotal === 0) return null;
+
+  return {
+    diasCubiertos: diasCubiertos.map(d => nombresDias[d]),
+    diasSiguientePeriodo: diasSiguientePeriodo.map(d => nombresDias[d]),
+    blanca: {
+      total: pieBlancaTotal,
+      mmCubiertos: mmBlancaCubiertos,
+      reserva: reservaBlanca,
+      desglose: calcularDesglosePie(pieBlancaTotal, pieCfg)
+    },
+    integral: {
+      total: pieIntegralTotal,
+      mmCubiertos: mmIntegralCubiertos,
+      reserva: reservaIntegral,
+      desglose: calcularDesglosePie(pieIntegralTotal, pieCfg)
+    }
+  };
+}
+
+function calcularDesglosePie(totalPie, pieCfg) {
+  if (totalPie === 0) return [];
+  // El pie lleva: MM madura, harina y agua
+  // Total = MMmadura + harina + agua
+  // MMmadura = mm_madura_pct% de harina
+  // agua = agua_pct% de harina
+  // total = harina × (1 + mm_madura_pct/100 + agua_pct/100)
+  const factor = 1 + (pieCfg.mm_madura_pct / 100) + (pieCfg.agua_pct / 100);
+  const harina   = totalPie / factor;
+  const mmMadura = harina * (pieCfg.mm_madura_pct / 100);
+  const agua     = harina * (pieCfg.agua_pct / 100);
+  return [
+    { nombre: 'MM madura anterior', gramos: mmMadura, especial: true },
+    { nombre: 'Harina T000',        gramos: harina,   especial: false },
+    { nombre: 'Agua',               gramos: agua,     especial: false },
+  ];
+}
+
+function renderBloquepieMM(diaIdx) {
+  const datos = calcularPieMM(diaIdx);
+  if (!datos) return '';
+
+  const claveBlanca   = `fen_pie_blanca_${obtenerSemanaActual()}_${diaIdx}`;
+  const claveIntegral = `fen_pie_integral_${obtenerSemanaActual()}_${diaIdx}`;
+  const listoBlanca   = localStorage.getItem(claveBlanca) === '1';
+  const listoIntegral = localStorage.getItem(claveIntegral) === '1';
+
+  const renderSeccionPie = (tipo, datos, clave, listo) => {
+    if (datos.total === 0) return '';
+    return `
+      <div class="pie-mm-seccion ${listo ? 'pie-mm-lista' : ''}">
+        <div class="pie-mm-seccion-header">
+          <label class="rdc-check-wrap" onclick="event.stopPropagation()">
+            <input type="checkbox" ${listo ? 'checked' : ''}
+              onchange="marcarPieMM('${clave}', this.checked, '${tipo}')">
+            <span class="rdc-check-box"></span>
+          </label>
+          <span class="pie-mm-tipo">${tipo}</span>
+          <span class="pie-mm-total">${formatearGramos(datos.total, true)}</span>
+        </div>
+        <div class="pie-mm-desglose">
+          ${datos.desglose.map(comp => `
+            <div class="pie-mm-fila ${comp.especial ? 'pie-mm-madura' : ''}">
+              <span>${comp.nombre}</span>
+              <span class="pie-mm-val">${formatearGramos(comp.gramos, true)}</span>
+            </div>`).join('')}
+          <div class="pie-mm-fila pie-mm-subtotal">
+            <span>MM a cubrir (${datos.mmCubiertos > 0 ? formatearGramos(datos.mmCubiertos, true) : '0g'})</span>
+            <span class="pie-mm-val" style="color:var(--txt3);font-size:11px">+ Reserva ${formatearGramos(datos.reserva, true)}</span>
+          </div>
+        </div>
+      </div>`;
+  };
+
+  return `
+    <div class="pie-mm-bloque">
+      <div class="pie-mm-header">
+        <div class="pie-mm-icono">🌱</div>
+        <div class="pie-mm-titulo-wrap">
+          <div class="pie-mm-titulo">Pie de Masa Madre</div>
+          <div class="pie-mm-subtitulo">
+            Cubre: ${datos.diasCubiertos.join(' · ')}
+            &nbsp;|&nbsp; Reserva (${datos.diasSiguientePeriodo.join(' · ')}): ${Math.round(cargarConfigSubrecetas().pie_mm?.reserva_pct || 20)}%
+          </div>
+        </div>
+      </div>
+      ${renderSeccionPie('MM Blanca',   datos.blanca,   claveBlanca,   listoBlanca)}
+      ${renderSeccionPie('MM Integral', datos.integral, claveIntegral, listoIntegral)}
+    </div>
+  `;
+}
+
+function marcarPieMM(clave, listo, tipo) {
+  try { localStorage.setItem(clave, listo ? '1' : '0'); } catch(e) {}
+  const seccion = document.querySelector(`.pie-mm-seccion[data-clave="${clave}"]`);
+  // Re-render para actualizar visual
+  const diaSelect = document.getElementById('selector-dia');
+  if (diaSelect) renderDia(parseInt(diaSelect.value));
 }
 
 // ── RENDER BLOQUE ELABORACIONES PREVIAS ──────────────────────
@@ -254,22 +444,31 @@ function renderElaboracionesPrevias(diaIdx) {
   const insumosHtml = Object.entries(grupos).map(([cat, items]) => {
     const cfg = CATEGORIAS_INSUMOS[cat];
     const total = items.reduce((s, i) => s + i.gramos, 0);
+    const esHarina = cat === 'harina';
+    const sacosTotal = esHarina ? Math.ceil(total / 25000) : 0;
     return `
       <div class="insumo-grupo">
         <div class="insumo-grupo-header" style="color:${cfg.color}">
           <span>${cfg.label}</span>
-          <span>${formatearGramos(total)}</span>
+          <span>${formatearGramos(total)}${sacosTotal > 0 ? ' · ' + sacosTotal + ' saco' + (sacosTotal > 1 ? 's' : '') : ''}</span>
         </div>
-        ${items.map(i => `
+        ${items.map(i => {
+          const sacos = esHarina ? Math.ceil(i.gramos / 25000) : 0;
+          return `
           <div class="insumo-fila">
             <span>${i.nombre}</span>
-            <span class="insumo-val">${formatearGramos(i.gramos)}</span>
-          </div>`).join('')}
+            <span class="insumo-val">${formatearGramos(i.gramos, true)}${sacos > 0 ? ` <span style="font-size:10px;color:var(--txt3);margin-left:3px">(${sacos} saco${sacos > 1 ? 's' : ''})</span>` : ''}</span>
+          </div>`;
+        }).join('')}
       </div>`;
   }).join('');
 
+  const pieMM = (typeof renderBloquepieMM === 'function') ? renderBloquepieMM(diaIdx) : '';
+
   return `
     <div class="elaboraciones-wrap">
+
+      ${pieMM}
 
       ${subRecetas.length ? `
       <div class="elab-seccion">
@@ -381,7 +580,9 @@ function renderResumenSemanal() {
     Object.entries(otrosTotal).forEach(([cat, items]) => {
       html += `<div class="rsm-cat">${cat}</div>`;
       items.forEach(({ nombre, total }) => {
-        html += `<div class="rsm-item-simple"><span>${nombre}</span><span>${formatearGramos(total)}</span></div>`;
+        const esHarina = ['harina','masa madre','poolish'].some(k => nombre.toLowerCase().includes(k)) && cat === 'Harinas';
+        const sacos = esHarina ? Math.ceil(total/25000) : 0;
+        html += `<div class="rsm-item-simple"><span>${nombre}</span><span>${formatearGramos(total)}${sacos > 0 ? ' <span style="font-size:10px;color:var(--txt3)">('+sacos+' saco'+(sacos>1?'s':'')+')</span>' : ''}</span></div>`;
       });
     });
     html += '</div>';
@@ -454,6 +655,39 @@ function renderVistaConfigSubrecetas() {
       </div>
     </div>
 
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head" style="background:#F0F7EF;color:#2E4A1E">
+        <span style="font-size:18px;margin-right:6px">🌱</span> Pie de Masa Madre
+      </div>
+      <div class="form-grid">
+        <div class="campo full">
+          <label>Días de elaboración del pie</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px" id="cfg-pie-dias">
+            ${['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map((d,i) => `
+              <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:400;cursor:pointer">
+                <input type="checkbox" value="${i}" ${(cfg.pie_mm?.dias_elaboracion || [1,4]).includes(i) ? 'checked' : ''}>
+                ${d}
+              </label>`).join('')}
+          </div>
+        </div>
+        <div class="campo">
+          <label>% Reserva (basado en período siguiente)</label>
+          <input type="number" id="cfg-pie-reserva" value="${cfg.pie_mm?.reserva_pct || 20}"
+            min="0" max="50" step="1" placeholder="20">
+        </div>
+        <div class="campo">
+          <label>MM madura anterior (%)</label>
+          <input type="number" id="cfg-pie-madura" value="${cfg.pie_mm?.mm_madura_pct || 20}"
+            min="5" max="50" step="1" placeholder="20">
+        </div>
+        <div class="campo">
+          <label>Agua del pie (% sobre harina)</label>
+          <input type="number" id="cfg-pie-agua" value="${cfg.pie_mm?.agua_pct || 90}"
+            min="50" max="120" step="1" placeholder="90">
+        </div>
+      </div>
+    </div>
+
     <div class="form-acciones">
       <div></div>
       <div class="form-acciones-der">
@@ -488,6 +722,19 @@ function guardarConfigDesdeForm(btn) {
       levadura_pct: parseFloat(document.getElementById('cfg-poolish-lev').value) || 0.36,
     }
   };
+  // Leer días de elaboración del pie
+  const diasPie = [];
+  document.querySelectorAll('#cfg-pie-dias input[type="checkbox"]:checked').forEach(cb => {
+    diasPie.push(parseInt(cb.value));
+  });
+  cfg.pie_mm = {
+    dias_elaboracion: diasPie.length > 0 ? diasPie : [1, 4],
+    reserva_pct:   parseFloat(document.getElementById('cfg-pie-reserva').value) || 20,
+    mm_madura_pct: parseFloat(document.getElementById('cfg-pie-madura').value) || 20,
+    harina_pct:    100,
+    agua_pct:      parseFloat(document.getElementById('cfg-pie-agua').value) || 90,
+  };
+
   guardarConfigSubrecetas(cfg);
   desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar configuración', true);
   toast('Configuración guardada');
