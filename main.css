@@ -1077,3 +1077,98 @@ input, select, textarea { font-family: inherit; }
   .content { overflow-y: auto; }
   .vista { padding: 16px; }
 }
+
+/* ── BLOQUE PIE DE MASA MADRE ────────────────── */
+.pie-mm-bloque {
+  background: linear-gradient(135deg, #F0F7EF 0%, #E8F5E1 100%);
+  border: 2px solid #4CAF50;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 12px rgba(76,175,80,.15);
+}
+.pie-mm-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  background: rgba(255,255,255,.5);
+  border-bottom: 1px solid rgba(76,175,80,.3);
+}
+.pie-mm-icono {
+  font-size: 28px;
+  flex-shrink: 0;
+}
+.pie-mm-titulo {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1B5E20;
+  letter-spacing: -.3px;
+}
+.pie-mm-subtitulo {
+  font-size: 12px;
+  color: #388E3C;
+  margin-top: 2px;
+}
+.pie-mm-seccion {
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(76,175,80,.2);
+  transition: opacity .2s, background .2s;
+}
+.pie-mm-seccion:last-child { border-bottom: none; }
+.pie-mm-seccion.pie-mm-lista {
+  opacity: .55;
+  background: rgba(255,255,255,.4);
+}
+.pie-mm-seccion-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.pie-mm-tipo {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2E4A1E;
+  flex: 1;
+}
+.pie-mm-total {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: 'DM Mono', monospace;
+  color: #1B5E20;
+  background: rgba(76,175,80,.15);
+  padding: 4px 12px;
+  border-radius: 99px;
+}
+.pie-mm-desglose {
+  background: rgba(255,255,255,.6);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid rgba(76,175,80,.2);
+}
+.pie-mm-fila {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(76,175,80,.1);
+  color: #2E4A1E;
+}
+.pie-mm-fila:last-child { border-bottom: none; }
+.pie-mm-madura {
+  background: #FFF8E1;
+  color: #795548;
+  font-style: italic;
+}
+.pie-mm-val {
+  font-family: 'DM Mono', monospace;
+  font-weight: 600;
+  font-size: 14px;
+}
+.pie-mm-subtotal {
+  background: rgba(76,175,80,.08);
+  font-size: 11px;
+  color: #4CAF50;
+}
