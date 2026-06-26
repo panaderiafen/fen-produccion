@@ -17,6 +17,7 @@ const FEN = {
     borrador:             { label: 'Borrador',              color: '#9E9E9E', bg: '#F5F5F5' },
     en_prueba:            { label: 'En prueba',             color: '#F57C00', bg: '#FFF3E0' },
     pendiente_aprobacion: { label: 'Pendiente aprobación',  color: '#1565C0', bg: '#E3F2FD' },
+    'pendiente_aprobación': { label: 'Pendiente aprobación',  color: '#1565C0', bg: '#E3F2FD' },
     consolidada:          { label: 'Consolidada',           color: '#2E7D32', bg: '#E8F5E9' },
   },
 
