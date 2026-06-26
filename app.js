@@ -154,6 +154,8 @@ function actualizarNavActivo(vistaId) {
 
 // ── NAVEGACIÓN ────────────────────────────────────────────────
 function navegarA(vistaId) {
+  // Cancelar navegación automática pendiente
+  if (App._navTimer) { clearTimeout(App._navTimer); App._navTimer = null; }
   App.vistaActual = vistaId;
   actualizarNavActivo(vistaId);
   document.querySelectorAll('.vista').forEach(v => v.classList.remove('active'));
@@ -587,7 +589,7 @@ async function guardarReceta(recetaId) {
       ? '<i class="ti ti-device-floppy"></i> Guardar cambios'
       : '<i class="ti ti-device-floppy"></i> Crear receta', true);
     toast(recetaId ? 'Receta actualizada' : 'Receta creada');
-    setTimeout(() => navegarA('mis-recetas'), 1500);
+    App._navTimer = setTimeout(() => navegarA('mis-recetas'), 1500);
 
   } catch(e) {
     console.error('Error guardando receta:', e);
@@ -615,9 +617,9 @@ async function enviarARevision(recetaId) {
   // Invalidar caché para que próxima sincronización traiga el estado correcto
   Cache.invalidar(App.area.hoja_recetas);
 
+  desbloquearBtn(btn, '<i class="ti ti-send"></i> Enviar a revisión', true);
   toast('Receta enviada a revisión');
   setTimeout(() => {
-    // Renderizar mis-recetas con el estado local ya actualizado
     renderVistaMisRecetas();
     mostrarVista('mis-recetas');
     actualizarNavActivo('mis-recetas');
@@ -692,6 +694,8 @@ function renderVistaMisRecetas() {
 
 // ── VER RECETA ────────────────────────────────────────────────
 function verReceta(recetaId) {
+  // Cancelar navegación automática pendiente
+  if (App._navTimer) { clearTimeout(App._navTimer); App._navTimer = null; }
   const r = App.recetas.find(x => x.ID_receta === recetaId);
   if (!r) return;
   let ingredientes = [];
