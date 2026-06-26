@@ -1414,8 +1414,20 @@ function renderVistaMP() {
                 <span class="estado-badge" style="color:${est.c};background:${est.bg}">${est.l}</span>
               </td>
               <td style="text-align:right;padding:6px 12px">
-                <button class="btn-secundario" style="font-size:12px;padding:4px 10px"
-                  onclick="editarMP('${m.ID_MP}')"><i class="ti ti-edit"></i></button>
+                <div style="display:flex;gap:4px;justify-content:flex-end">
+                  <button class="btn-secundario" style="font-size:12px;padding:4px 10px"
+                    onclick="editarMP('${m.ID_MP}')" title="Editar precio">
+                    <i class="ti ti-edit"></i>
+                  </button>
+                  <button class="btn-secundario" style="font-size:12px;padding:4px 10px;color:${m.estado==='inactiva'?'#2E7D32':'#C62828'};border-color:${m.estado==='inactiva'?'#A5D6A7':'#FFCDD2'}"
+                    onclick="toggleEstadoMP('${m.ID_MP}','${m.estado}')" title="${m.estado==='inactiva'?'Activar':'Desactivar'}">
+                    <i class="ti ${m.estado==='inactiva'?'ti-eye':'ti-eye-off'}"></i>
+                  </button>
+                  <button class="btn-secundario" style="font-size:12px;padding:4px 10px"
+                    onclick="gestionarAreasMP('${m.ID_MP}')" title="Gestionar areas">
+                    <i class="ti ti-layout-grid"></i>
+                  </button>
+                </div>
               </td>
             </tr>`;
           }).join('')}
