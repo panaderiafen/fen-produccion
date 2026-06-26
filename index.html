@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
-  <link rel="stylesheet" href="main.css?v=1782490917">
+  <link rel="stylesheet" href="main.css?v=1782496734">
 </head>
 <body>
 
@@ -116,11 +116,48 @@
   <span>Cargando...</span>
 </div>
 
+<!-- Modal: Solicitar MP -->
+<div class="modal-fondo hidden" id="modal-solicitar-mp">
+  <div class="modal" style="max-width:440px;text-align:left">
+    <div class="modal-ico" style="background:#E3F2FD;color:#1565C0">
+      <i class="ti ti-list-plus"></i>
+    </div>
+    <h3 style="text-align:center">Solicitar materia prima</h3>
+    <p style="text-align:center;font-size:13px;color:var(--txt2);margin-bottom:20px">
+      Admin habilitará la MP para tu área. Puedes continuar con la receta mientras tanto.
+    </p>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Nombre de la MP <span class="req">*</span></label>
+        <input type="text" id="solicitar-mp-nombre" placeholder="Ej: Mantequilla de maní">
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Gramos por unidad (para agregar temporalmente)</label>
+        <input type="number" id="solicitar-mp-gramos" placeholder="0" min="0">
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Nombre temporal en receta</label>
+        <input type="text" id="solicitar-mp-tmp" placeholder="Como quieres que aparezca mientras tanto">
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="solicitar-mp-nueva">
+        Es una MP nueva (no existe en el catálogo)
+      </label>
+    </div>
+    <div class="modal-acciones" style="margin-top:20px">
+      <button class="btn-secundario" onclick="cerrarModalSolicitarMP()">Cancelar</button>
+      <button class="btn-primario" onclick="enviarSolicitudMP()">
+        <i class="ti ti-send"></i> Enviar solicitud
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="config.js?v=1782490917"></script>
-<script src="subrecetas.js?v=1782490917"></script>
-<script src="app.js?v=1782490917"></script>
+<script src="config.js?v=1782496734"></script>
+<script src="subrecetas.js?v=1782496734"></script>
+<script src="app.js?v=1782496734"></script>
 </body>
 </html>
