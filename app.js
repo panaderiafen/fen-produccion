@@ -72,7 +72,12 @@ function renderLoginCards() {
     <span class="lc-nombre">Administración</span>
     <span class="lc-desc">Aprobaciones · Costos · Materias primas</span>
   `;
-  admin.onclick = () => entrar(null, 'admin');
+  admin.onclick = () => {
+    const clave = prompt('Clave de administración:');
+    if (clave === null) return;
+    if (clave !== 'fen2026admin') { alert('Clave incorrecta'); return; }
+    entrar(null, 'admin');
+  };
   grid.appendChild(admin);
 }
 
