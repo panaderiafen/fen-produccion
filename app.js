@@ -19,7 +19,10 @@ function clearEstadoLocal(recetaId) {
 function aplicarEstadosLocales(recetas) {
   return recetas.map(r => {
     const estadoLocal = getEstadoLocal(r.ID_receta);
-    if (estadoLocal) return { ...r, estado: estadoLocal };
+    if (estadoLocal) {
+      console.log('[fën] Estado local aplicado:', r.ID_receta, r.estado, '->', estadoLocal);
+      return { ...r, estado: estadoLocal };
+    }
     return r;
   });
 }
@@ -629,9 +632,12 @@ async function enviarARevision(recetaId) {
 
   // Guardar estado en localStorage (persiste recargas)
   setEstadoLocal(recetaId, 'pendiente_aprobación');
+  console.log('[fën] Estado guardado en localStorage:', recetaId, 'pendiente_aprobación');
+  console.log('[fën] Verificacion localStorage:', getEstadoLocal(recetaId));
   // Actualizar estado local en memoria
   const r = App.recetas.find(x => x.ID_receta === recetaId);
   if (r) r.estado = 'pendiente_aprobación';
+  console.log('[fën] App.recetas estado:', r?.estado);
   verificarAlertas();
 
   // Enviar al Sheet en segundo plano
@@ -651,6 +657,7 @@ async function enviarARevision(recetaId) {
 
 // ── VISTA MIS RECETAS ─────────────────────────────────────────
 function renderVistaMisRecetas() {
+  console.log("[fën] renderVistaMisRecetas - estados:", App.recetas.map(r => r.ID_receta + ":" + r.estado).join(", "));
   const recetas = App.recetas;
   const vista = document.getElementById('vista-mis-recetas');
   const enPrueba = recetas.filter(r => r.estado === 'en_prueba');
