@@ -76,11 +76,17 @@ function calcularElaboracionesDia(diaIdx) {
   // Mapa de insumos directos: { nombre: totalGramos }
   const insumosMap = {};
 
-  // IDs de sub recetas (tipo = sub_receta en MP_maestro)
-  // También detectar por ID que empiece con SR
+  // IDs de sub recetas filtradas por área actual
+  const areaActual = App.areaCodigo || '';
   const idsSubRecetas = new Set(
     App.materiasPrimas
-      .filter(m => m.tipo === 'sub_receta' || (m.ID_MP && m.ID_MP.toString().startsWith('SR')))
+      .filter(m => {
+        const esSubReceta = m.tipo === 'sub_receta' || (m.ID_MP && m.ID_MP.toString().startsWith('SR'));
+        if (!esSubReceta) return false;
+        // Filtrar por área habilitada
+        if (!m.areas_habilitadas) return true;
+        return m.areas_habilitadas.split(',').map(a => a.trim()).includes(areaActual);
+      })
       .map(m => m.ID_MP)
   );
 
