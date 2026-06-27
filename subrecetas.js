@@ -25,11 +25,22 @@ const CONFIG_SUBRECETAS_DEFAULT = {
     levadura_pct: 0.36,
   },
   pie_mm: {
-    dias_elaboracion: [1, 4], // 0=Dom,1=Lun,2=Mar,3=Mié,4=Jue,5=Vie,6=Sáb
-    reserva_pct: 20,          // % adicional basado en período siguiente
-    mm_madura_pct: 20,        // % de MM madura anterior
+    dias_elaboracion: [1, 4],
+    reserva_pct: 20,
+    mm_madura_pct: 20,
     harina_pct: 100,
     agua_pct: 90,
+  },
+  bol: {
+    prefermento: {
+      dias_elaboracion: [1, 3, 5], // Lun, Mié, Vie por defecto
+      harina_pct: 100,
+      agua_pct: 100,
+      levadura_pct: 0.5,
+    },
+    capacidad_masas: 20,       // paños máximos en congelador
+    capacidad_productos: 200,  // unidades máximas en congelador
+    stock: {},                 // { recetaId: unidades } — se edita semanalmente
   }
 };
 
@@ -464,11 +475,13 @@ function renderElaboracionesPrevias(diaIdx) {
   }).join('');
 
   const pieMM = (typeof renderBloquepieMM === 'function') ? renderBloquepieMM(diaIdx) : '';
+  const empastes = (typeof renderEmpastesPrevistos === 'function') ? renderEmpastesPrevistos(diaIdx) : '';
 
   return `
     <div class="elaboraciones-wrap">
 
       ${pieMM}
+      ${empastes}
 
       ${subRecetas.length ? `
       <div class="elab-seccion">
@@ -688,6 +701,41 @@ function renderVistaConfigSubrecetas() {
       </div>
     </div>
 
+    ${App.areaCodigo === 'BOL' ? `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head" style="background:#F3E5F5;color:#4A148C">
+        <i class="ti ti-snowflake" style="color:#6A1B9A"></i> Bollería — Congelación y Prefermento
+      </div>
+      <div class="form-grid">
+        <div class="campo">
+          <label>Capacidad máxima masas (paños)</label>
+          <input type="number" id="cfg-bol-masas" value="${cfg.bol?.capacidad_masas || 20}" min="1" step="1">
+        </div>
+        <div class="campo">
+          <label>Capacidad máxima productos (unidades)</label>
+          <input type="number" id="cfg-bol-productos" value="${cfg.bol?.capacidad_productos || 200}" min="1" step="1">
+        </div>
+        <div class="campo full">
+          <label>Días de elaboración del prefermento</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px" id="cfg-bol-dias">
+            ${['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map((d,i) => `
+              <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:400;cursor:pointer">
+                <input type="checkbox" value="${i}" ${(cfg.bol?.prefermento?.dias_elaboracion || [1,3,5]).includes(i) ? 'checked' : ''}>
+                ${d}
+              </label>`).join('')}
+          </div>
+        </div>
+        <div class="campo">
+          <label>Agua prefermento (% sobre harina)</label>
+          <input type="number" id="cfg-bol-agua" value="${cfg.bol?.prefermento?.agua_pct || 100}" min="50" max="120" step="1">
+        </div>
+        <div class="campo">
+          <label>Levadura prefermento (%)</label>
+          <input type="number" id="cfg-bol-lev" value="${cfg.bol?.prefermento?.levadura_pct || 0.5}" min="0.1" max="2" step="0.01">
+        </div>
+      </div>
+    </div>` : ''}
+
     <div class="form-acciones">
       <div></div>
       <div class="form-acciones-der">
@@ -735,9 +783,193 @@ function guardarConfigDesdeForm(btn) {
     agua_pct:      parseFloat(document.getElementById('cfg-pie-agua').value) || 90,
   };
 
+  // BOL config
+  if (App.areaCodigo === 'BOL') {
+    const diasBOL = [];
+    document.querySelectorAll('#cfg-bol-dias input:checked').forEach(cb => diasBOL.push(parseInt(cb.value)));
+    if (!cfg.bol) cfg.bol = { stock: {} };
+    cfg.bol.capacidad_masas    = parseFloat(document.getElementById('cfg-bol-masas')?.value) || 20;
+    cfg.bol.capacidad_productos = parseFloat(document.getElementById('cfg-bol-productos')?.value) || 200;
+    cfg.bol.prefermento = {
+      dias_elaboracion: diasBOL.length > 0 ? diasBOL : [1,3,5],
+      harina_pct: 100,
+      agua_pct:   parseFloat(document.getElementById('cfg-bol-agua')?.value) || 100,
+      levadura_pct: parseFloat(document.getElementById('cfg-bol-lev')?.value) || 0.5,
+    };
+  }
+
   guardarConfigSubrecetas(cfg);
   desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar configuración', true);
   toast('Configuración guardada');
+}
+
+// ── BOLLERÍA: CÁLCULO DE PAÑOS ───────────────────────────────
+
+function calcularPañosBOL(diaIdx) {
+  const cfg = cargarConfigSubrecetas();
+  const stock = cfg.bol?.stock || {};
+  const capacidadMasas = cfg.bol?.capacidad_masas || 20;
+
+  // Identificar sub recetas de tipo "paño" (masa laminada)
+  const idsPaños = new Set(
+    App.materiasPrimas
+      .filter(m => (m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR')) &&
+        (m.nombre?.toLowerCase().includes('paño') ||
+         m.nombre?.toLowerCase().includes('masa') &&
+         !m.nombre?.toLowerCase().includes('masa madre')))
+      .map(m => m.ID_MP)
+  );
+
+  // Por cada receta del día, calcular paños necesarios
+  const recetasDelDia = Object.entries(App.planSemana)
+    .filter(([_, cant]) => (cant[diaIdx] || 0) > 0)
+    .map(([rid, cant]) => ({
+      receta: App.recetas.find(r => r.ID_receta === rid),
+      unidades: cant[diaIdx]
+    }))
+    .filter(x => x.receta);
+
+  const pañosMap = {}; // { pañoId: { nombre, totalPaños, productos[] } }
+
+  recetasDelDia.forEach(({ receta: r, unidades }) => {
+    let ingredientes = [];
+    try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+    const porciones = parseInt(r.porciones_base) || 1;
+
+    // Calcular unidades netas (descontando stock)
+    const stockDisponible = stock[r.ID_receta] || 0;
+    const unidadesNetas = Math.max(0, unidades - stockDisponible);
+    if (unidadesNetas === 0) return;
+
+    // Buscar paños en ingredientes
+    ingredientes.forEach(ing => {
+      if (idsPaños.has(ing.id)) {
+        const pañosPorReceta = (parseFloat(ing.gramos) || 1) / porciones;
+        const pañosNecesarios = Math.ceil(pañosPorReceta * unidadesNetas);
+        if (!pañosMap[ing.id]) {
+          pañosMap[ing.id] = {
+            id: ing.id,
+            nombre: ing.nombre,
+            totalPaños: 0,
+            productos: []
+          };
+        }
+        pañosMap[ing.id].totalPaños += pañosNecesarios;
+        pañosMap[ing.id].productos.push({
+          nombre: r.nombre,
+          unidadesMeta: unidades,
+          stockDisponible,
+          unidadesNetas,
+          pañosNecesarios
+        });
+      }
+    });
+  });
+
+  return { pañosMap, capacidadMasas };
+}
+
+function renderResumenStockBOL() {
+  if (App.areaCodigo !== 'BOL') return '';
+  const cfg = cargarConfigSubrecetas();
+  const stock = cfg.bol?.stock || {};
+  const capacidadMasas = cfg.bol?.capacidad_masas || 20;
+  const capacidadProductos = cfg.bol?.capacidad_productos || 200;
+
+  const recetasConsolidadas = App.recetas.filter(r => r.estado === 'consolidada');
+  if (!recetasConsolidadas.length) return '';
+
+  return `
+    <div class="stock-bol-wrap">
+      <div class="stock-bol-header">
+        <i class="ti ti-snowflake"></i>
+        Stock congelado actual
+        <button class="btn-agregar-fila" onclick="editarStockBOL()" style="margin-left:auto">
+          <i class="ti ti-edit"></i> Editar stock
+        </button>
+      </div>
+      <div class="stock-bol-grid">
+        ${recetasConsolidadas.map(r => {
+          const s = stock[r.ID_receta] || 0;
+          return `
+            <div class="stock-bol-item">
+              <span class="stock-bol-nombre">${r.nombre}</span>
+              <span class="stock-bol-val ${s > 0 ? 'stock-con' : 'stock-sin'}">${s} uds</span>
+            </div>`;
+        }).join('')}
+      </div>
+      <div class="stock-bol-capacidad">
+        <span><i class="ti ti-box"></i> Cap. masas: ${capacidadMasas} paños</span>
+        <span><i class="ti ti-freeze-row"></i> Cap. productos: ${capacidadProductos} uds</span>
+      </div>
+    </div>`;
+}
+
+function editarStockBOL() {
+  const cfg = cargarConfigSubrecetas();
+  const stock = cfg.bol?.stock || {};
+  const recetas = App.recetas.filter(r => r.estado === 'consolidada');
+
+  const modal = document.getElementById('modal-stock-bol');
+  if (!modal) return;
+
+  document.getElementById('stock-bol-body').innerHTML = recetas.map(r => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:13px">${r.nombre}</span>
+      <input type="number" min="0" value="${stock[r.ID_receta] || 0}"
+        data-receta="${r.ID_receta}"
+        style="width:80px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit;text-align:right">
+    </div>`).join('');
+
+  modal.classList.remove('hidden');
+}
+
+function guardarStockBOL() {
+  const cfg = cargarConfigSubrecetas();
+  if (!cfg.bol) cfg.bol = {};
+  cfg.bol.stock = {};
+
+  document.querySelectorAll('#stock-bol-body input[data-receta]').forEach(inp => {
+    const val = parseInt(inp.value) || 0;
+    if (val > 0) cfg.bol.stock[inp.dataset.receta] = val;
+  });
+
+  guardarConfigSubrecetas(cfg);
+  document.getElementById('modal-stock-bol').classList.add('hidden');
+  toast('Stock actualizado');
+}
+
+function renderEmpastesPrevistos(diaIdx) {
+  if (App.areaCodigo !== 'BOL') return '';
+  const { pañosMap } = calcularPañosBOL(diaIdx);
+  const totalPaños = Object.values(pañosMap).reduce((s, p) => s + p.totalPaños, 0);
+  if (totalPaños === 0) return '';
+
+  // Calcular mantequilla total (250g por paño base, proporcional)
+  const mantequillaTotalG = totalPaños * 250;
+
+  return `
+    <div class="empaste-bloque">
+      <div class="empaste-header">
+        <span class="empaste-icono">🧈</span>
+        <div>
+          <div class="empaste-titulo">Empastes a preparar</div>
+          <div class="empaste-subtitulo">Actividad previa — preparar hoy para mañana</div>
+        </div>
+        <span class="empaste-total">${totalPaños} bloque${totalPaños>1?'s':''}</span>
+      </div>
+      <div class="empaste-detalle">
+        ${Object.values(pañosMap).map(p => `
+          <div class="empaste-fila">
+            <span>${p.nombre}</span>
+            <span class="empaste-val">${p.totalPaños} paño${p.totalPaños>1?'s':''}</span>
+          </div>`).join('')}
+        <div class="empaste-fila empaste-total-fila">
+          <span>Mantequilla total</span>
+          <span class="empaste-val">${formatearGramos(mantequillaTotalG, true)}</span>
+        </div>
+      </div>
+    </div>`;
 }
 
 // ── UTILIDAD: formatear gramos ────────────────────────────────
