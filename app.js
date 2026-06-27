@@ -1079,6 +1079,103 @@ async function sincronizarPlan(btn) {
   toast('Plan sincronizado desde Sheet');
 }
 
+// ── MODIFICADORES DE RECETA POR DÍA ─────────────────────────
+function claveModificador(recetaId, diaIdx) {
+  return `fen_mod_${App.areaCodigo}_${recetaId}_${diaIdx}`;
+}
+
+function getModificador(recetaId, diaIdx) {
+  try {
+    const val = localStorage.getItem(claveModificador(recetaId, diaIdx));
+    return val ? JSON.parse(val) : null;
+  } catch(e) { return null; }
+}
+
+function setModificador(recetaId, diaIdx, mod) {
+  try {
+    if (mod) localStorage.setItem(claveModificador(recetaId, diaIdx), JSON.stringify(mod));
+    else localStorage.removeItem(claveModificador(recetaId, diaIdx));
+  } catch(e) {}
+}
+
+function abrirModalModificador(recetaId, diaIdx) {
+  const r = App.recetas.find(x => x.ID_receta === recetaId);
+  if (!r) return;
+
+  let ingredientes = [];
+  try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+
+  const mod = getModificador(recetaId, diaIdx) || {};
+  const pesoHarina = parseFloat(r.peso_harina_total_g) || 0;
+  const diasNombres = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+
+  // Solo mostrar ingredientes con % panadero (los relevantes para ajustar)
+  const ingsPct = ingredientes.filter(ing => parseFloat(ing.pct) > 0);
+
+  const modal = document.getElementById('modal-modificador');
+  document.getElementById('mod-titulo').textContent = `${r.nombre} — ${diasNombres[diaIdx]}`;
+  document.getElementById('mod-receta-id').value = recetaId;
+  document.getElementById('mod-dia-idx').value = diaIdx;
+
+  document.getElementById('mod-body').innerHTML = `
+    <p style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.5">
+      Ajusta los % para este día. La receta original no se modifica.
+      ${Object.keys(mod).length ? '<span style="color:#F57C00;font-weight:500">· Tiene ajustes activos</span>' : ''}
+    </p>
+    ${ingsPct.map(ing => {
+      const pctActual = (parseFloat(ing.pct) * 100).toFixed(2);
+      const pctMod = mod[ing.id]?.pct_nuevo !== undefined ? mod[ing.id].pct_nuevo : pctActual;
+      return `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+          <span style="flex:1;font-size:13px">${ing.nombre}</span>
+          <span style="font-size:11px;color:var(--txt3);min-width:50px">Original: ${pctActual}%</span>
+          <input type="number" step="0.01" min="0" max="200"
+            value="${pctMod}"
+            data-ingid="${ing.id}"
+            data-original="${pctActual}"
+            style="width:80px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace;text-align:right"
+            oninput="this.style.color=parseFloat(this.value)!==parseFloat(this.dataset.original)?'#F57C00':'var(--txt)'">
+          <span style="font-size:12px;color:var(--txt3)">%</span>
+        </div>`;
+    }).join('')}
+    ${ingsPct.length === 0 ? '<p style="font-size:13px;color:var(--txt3);text-align:center;padding:12px">Esta receta no tiene ingredientes con % panadero.</p>' : ''}
+  `;
+
+  modal.classList.remove('hidden');
+}
+
+function guardarModificador() {
+  const recetaId = document.getElementById('mod-receta-id').value;
+  const diaIdx   = parseInt(document.getElementById('mod-dia-idx').value);
+  const inputs   = document.querySelectorAll('#mod-body input[data-ingid]');
+
+  const mod = {};
+  let tieneModificaciones = false;
+
+  inputs.forEach(inp => {
+    const original = parseFloat(inp.dataset.original);
+    const nuevo    = parseFloat(inp.value);
+    if (Math.abs(nuevo - original) > 0.001) {
+      mod[inp.dataset.ingid] = { pct_nuevo: nuevo, pct_original: original };
+      tieneModificaciones = true;
+    }
+  });
+
+  setModificador(recetaId, diaIdx, tieneModificaciones ? mod : null);
+  document.getElementById('modal-modificador').classList.add('hidden');
+
+  // Re-renderizar recetas del día
+  renderDia(diaIdx);
+  toast(tieneModificaciones ? 'Ajustes guardados para este día' : 'Ajustes eliminados');
+}
+
+function limpiarModificador(recetaId, diaIdx) {
+  setModificador(recetaId, diaIdx, null);
+  document.getElementById('modal-modificador').classList.add('hidden');
+  renderDia(diaIdx);
+  toast('Ajustes eliminados — vuelve a % originales');
+}
+
 // ── RECETAS DEL DÍA ───────────────────────────────────────────
 function renderVistaRecetasDelDia() {
   const diasNombres = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
@@ -1160,6 +1257,20 @@ function renderDia(diaIdx) {
     const rid       = r.ID_receta;
     const procedimiento = r.observaciones_procedimiento || '';
 
+    // Aplicar modificadores si existen
+    const mod = getModificador(rid, idx);
+    const pesoHarinaBase = parseFloat(r.peso_harina_total_g) || 0;
+    if (mod && pesoHarinaBase > 0) {
+      ingredientes = ingredientes.map(ing => {
+        if (mod[ing.id]) {
+          const pctNuevo = mod[ing.id].pct_nuevo / 100;
+          const gramosNuevos = pesoHarinaBase * pctNuevo * factor;
+          return { ...ing, gramos: pesoHarinaBase * pctNuevo, _modificado: true, _gramosOriginales: ing.gramos };
+        }
+        return ing;
+      });
+    }
+
     return `
       <div class="receta-dia-card" id="card-${rid}">
 
@@ -1174,6 +1285,13 @@ function renderDia(diaIdx) {
           <strong class="rdc-nombre" id="nombre-${rid}">${r.nombre}</strong>
           <span class="rdc-badge">${unidades} unidad${unidades>1?'es':''}</span>
           <i class="ti ti-chevron-down rdc-chevron" id="chev-${rid}"></i>
+          ${esPan ? `
+          <button class="rdc-mod-btn ${mod ? 'rdc-mod-activo' : ''}"
+            onclick="event.stopPropagation();abrirModalModificador('${rid}',${idx})"
+            title="${mod ? 'Ajustes activos — click para editar' : 'Ajustar % para este día'}">
+            <i class="ti ti-adjustments-horizontal"></i>
+            ${mod ? '<span class="rdc-mod-dot"></span>' : ''}
+          </button>` : ''}
         </div>
 
         <!-- INGREDIENTES (visibles por defecto) -->
@@ -1187,10 +1305,16 @@ function renderDia(diaIdx) {
             <tbody>
               ${ingredientes.map(ing => {
                 const gr = (parseFloat(ing.gramos)||0) * factor;
-                return `<tr>
-                  <td class="td-nombre">${ing.nombre}</td>
-                  <td class="td-num" style="font-size:14px;font-weight:600">${gr.toFixed(0)}g</td>
-                  ${esPan ? `<td class="td-pct">${((parseFloat(ing.pct)||0)*100).toFixed(1)}%</td>` : ''}
+                const pctMostrar = ing._modificado
+                  ? (mod && mod[ing.id]?.pct_nuevo || 0).toFixed(2)
+                  : ((parseFloat(ing.pct)||0)*100).toFixed(1);
+                return `<tr ${ing._modificado ? 'style="background:#FFF3E0"' : ''}>
+                  <td class="td-nombre">
+                    ${ing.nombre}
+                    ${ing._modificado ? '<span style="font-size:10px;color:#F57C00;margin-left:4px">✦</span>' : ''}
+                  </td>
+                  <td class="td-num" style="font-size:14px;font-weight:600;${ing._modificado?'color:#F57C00':''}">${gr.toFixed(0)}g</td>
+                  ${esPan ? `<td class="td-pct" style="${ing._modificado?'color:#F57C00':''}">${pctMostrar}%</td>` : ''}
                 </tr>`;
               }).join('')}
               <tr style="background:var(--bg)">
