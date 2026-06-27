@@ -81,10 +81,11 @@ function renderLoginCards() {
   grid.appendChild(admin);
 }
 
-async function entrar(areaCodigo, rol) {
+async function entrar(areaCodigo, rol, desdeAdmin = false) {
   App.rol = rol;
   App.areaCodigo = areaCodigo;
   App.area = areaCodigo ? FEN.AREAS[areaCodigo] : null;
+  App._desdeAdmin = desdeAdmin;
 
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
@@ -109,6 +110,60 @@ async function entrar(areaCodigo, rol) {
 
   if (rol === 'admin') navegarA('aprobaciones');
   else navegarA('mis-recetas');
+}
+
+// ── VOLVER A ADMIN ───────────────────────────────────────────
+async function entrarComoAdmin(areaCodigo) {
+  // Admin entra a un área sin clave
+  await entrar(areaCodigo, 'jefa', true); // desdeAdmin = true
+  // Agregar botón volver en topbar
+  setTimeout(() => {
+    const syncBtn = document.getElementById('btn-sync-global');
+    if (syncBtn && !document.getElementById('btn-volver-admin')) {
+      const btnVolver = document.createElement('button');
+      btnVolver.id = 'btn-volver-admin';
+      btnVolver.className = 'btn-salir';
+      btnVolver.style.cssText = 'border-color:rgba(255,255,255,.4);color:#FFD54F';
+      btnVolver.innerHTML = '<i class="ti ti-shield-check"></i> Admin';
+      btnVolver.onclick = volverAAdmin;
+      syncBtn.parentNode.insertBefore(btnVolver, syncBtn);
+    }
+  }, 100);
+}
+
+function volverAAdmin() {
+  App.rol = 'admin';
+  App.areaCodigo = null;
+  App.area = null;
+  App._desdeAdmin = false;
+  document.documentElement.style.setProperty('--area-color', '#003a79');
+  document.documentElement.style.setProperty('--area-bg', '#e8eef5');
+  document.getElementById('topbar-nombre').textContent = 'Administración';
+  document.getElementById('topbar-icon').className = 'ti ti-shield-check';
+  document.getElementById('topbar-usuario-txt').textContent = 'Administrador';
+  document.getElementById('topbar-avatar-txt').textContent = 'AD';
+  Cache.invalidarTodo();
+  renderSidebar();
+  actualizarTopbarAdmin();
+  navegarA('aprobaciones');
+}
+
+function actualizarTopbarAdmin() {
+  // Rebuild topbar buttons dynamically
+  const topbarRight = document.querySelector('.topbar-right');
+  if (!topbarRight) return;
+  topbarRight.innerHTML = `
+    <div class="topbar-usuario">
+      <div class="topbar-avatar"><span id="topbar-avatar-txt">AD</span></div>
+      <span id="topbar-usuario-txt">Administrador</span>
+    </div>
+    <button class="btn-salir" onclick="sincronizarTodo(this)" id="btn-sync-global" title="Sincronizar datos">
+      <i class="ti ti-refresh"></i>
+    </button>
+    <button class="btn-salir" onclick="salir()">
+      <i class="ti ti-logout"></i> Salir
+    </button>
+  `;
 }
 
 // ── SINCRONIZAR TODO ──────────────────────────────────────────
@@ -162,6 +217,22 @@ function renderSidebar() {
       { id: 'maestro-admin',  icon: 'ti-book',          label: 'Maestro de recetas'  },
       { id: 'costos',         icon: 'ti-chart-bar',     label: 'Estructuras de costo'},
     ].forEach(item => nav.appendChild(crearNavItem(item)));
+
+    // Area shortcuts for admin
+    const divider = document.createElement('div');
+    divider.style.cssText = 'font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--txt3);padding:14px 12px 6px';
+    divider.textContent = 'Ir a área';
+    nav.appendChild(divider);
+
+    Object.entries(FEN.AREAS).forEach(([codigo, area]) => {
+      const btn = document.createElement('button');
+      btn.className = 'nav-item';
+      btn.style.setProperty('--area-color', area.color);
+      btn.style.setProperty('--area-bg', area.bg);
+      btn.innerHTML = `<i class="ti ${area.icon}" style="color:${area.color}"></i> ${area.nombre}`;
+      btn.onclick = () => entrarComoAdmin(codigo);
+      nav.appendChild(btn);
+    });
   }
 }
 
@@ -1283,6 +1354,12 @@ function renderDia(diaIdx) {
           </label>
           <i class="ti ${App.area?.icon || 'ti-chef-hat'}" style="font-size:16px;color:var(--area-color)"></i>
           <strong class="rdc-nombre" id="nombre-${rid}">${r.nombre}</strong>
+          ${(() => {
+            const totalIngr = ingredientes.reduce((s,i)=>s+(parseFloat(i.gramos)||0),0);
+            const porciones = parseInt(r.porciones_base)||1;
+            const pesoCrudo = (totalIngr/porciones).toFixed(0);
+            return pesoCrudo > 0 ? `<span style="font-size:11px;color:var(--txt3);font-weight:400">${pesoCrudo}g/ud</span>` : '';
+          })()}
           <span class="rdc-badge">${unidades} unidad${unidades>1?'es':''}</span>
           <i class="ti ti-chevron-down rdc-chevron" id="chev-${rid}"></i>
           ${esPan ? `
@@ -1548,6 +1625,33 @@ async function rechazarReceta(recetaId, areaCodigo) {
     desbloquearBtn(btn, '<i class="ti ti-x"></i> Devolver', false);
     toast('Error: ' + e.message, 'error');
   }
+}
+
+// ── ADMIN: ELIMINAR RECETA ───────────────────────────────────
+function confirmarEliminarReceta(recetaId, nombre, area) {
+  const modal = document.getElementById('modal-eliminar-receta');
+  document.getElementById('eliminar-receta-nombre').textContent = `"${nombre}"`;
+  document.getElementById('btn-confirmar-eliminar').onclick = () => eliminarReceta(recetaId, area);
+  modal.classList.remove('hidden');
+}
+
+async function eliminarReceta(recetaId, area) {
+  const btn = document.getElementById('btn-confirmar-eliminar');
+  bloquearBtn(btn, 'Eliminando...');
+
+  // Determinar hoja del área
+  const areaCodigo = Object.entries(FEN.AREAS).find(([_, a]) => a.nombre === area)?.[0];
+  const hoja = FEN.AREAS[areaCodigo]?.hoja_recetas;
+
+  await escribirEnSheet('eliminar_receta', { ID_receta: recetaId, hoja });
+
+  // Remover de App.recetas local
+  App.recetas = App.recetas.filter(r => r.ID_receta !== recetaId);
+  Cache.invalidarTodo();
+
+  document.getElementById('modal-eliminar-receta').classList.add('hidden');
+  toast('Receta eliminada');
+  renderVistaMaestroAdmin();
 }
 
 // ── ADMIN: MATERIAS PRIMAS ────────────────────────────────────
