@@ -360,6 +360,29 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
           <label>Área</label>
           <input type="text" readonly value="${FEN.AREAS[App.areaCodigo]?.nombre || ''}">
         </div>`}
+        <div class="campo">
+          <label>Peso por pieza cruda (g) <span style="color:var(--txt3);font-weight:400;font-size:10px">— calculado</span></label>
+          <input type="number" id="f-peso-crudo" placeholder="Auto" readonly
+            style="color:var(--txt3);background:var(--bg)"
+            value="${receta?.ingredientes_JSON ? (() => { try { const ings = JSON.parse(receta.ingredientes_JSON); const total = ings.reduce((s,i)=>s+(parseFloat(i.gramos)||0),0); return (total/(parseInt(receta.porciones_base)||1)).toFixed(1); } catch(e) { return ''; } })() : ''}">
+        </div>
+        ${App.areaCodigo === 'BOL' ? `
+        <div class="campo">
+          <label>% Merma laminado <span style="color:var(--txt3);font-weight:400;font-size:10px">— recortes de borde</span></label>
+          <input type="number" id="f-merma-laminado" placeholder="Ej: 8" min="0" max="30" step="0.1"
+            value="${receta?.merma_laminado_pct || (cargarConfigSubrecetas().bol?.merma_laminado_ref || 8)}">
+        </div>
+        <div class="campo">
+          <label>Peso pastón listo para cortar (g) <span style="color:var(--txt3);font-weight:400;font-size:10px">— calculado</span></label>
+          <input type="number" id="f-peso-paston" placeholder="Auto" readonly
+            style="color:#6A1B9A;background:var(--bg);font-weight:500"
+            value="${receta?.ingredientes_JSON ? (() => { try {
+              const ings = JSON.parse(receta.ingredientes_JSON);
+              const total = ings.reduce((s,i)=>s+(parseFloat(i.gramos)||0),0);
+              const merma = parseFloat(receta.merma_laminado_pct || 8) / 100;
+              return (total * (1 - merma)).toFixed(0);
+            } catch(e) { return ''; } })() : ''}">
+        </div>` : ''}
         <div class="campo full">
           <label>Descripción / observaciones del proceso</label>
           <textarea id="f-desc" rows="2" placeholder="Describe el proceso, notas importantes...">${receta?.observaciones_procedimiento || ''}</textarea>
@@ -596,6 +619,7 @@ async function guardarReceta(recetaId) {
     ingredientes_JSON:           JSON.stringify(ingredientes),
     observaciones_procedimiento: document.getElementById('f-desc').value.trim(),
     'sistematización_notas':     document.getElementById('f-notas').value.trim(),
+    merma_laminado_pct:          document.getElementById('f-merma-laminado')?.value || '',
     tipo_receta:                 tipoReceta,
     versión:                     recetaId ? ((App.recetas.find(r=>r.ID_receta===recetaId)?.versión || 1) + 1) : 1,
     hoja:                        App.area.hoja_recetas,
@@ -771,25 +795,44 @@ function verReceta(recetaId) {
       <div style="background:var(--bg);border-radius:var(--r-md);padding:12px 16px;margin-bottom:16px;
         font-size:13px;color:var(--txt2);line-height:1.65">${r.observaciones_procedimiento}</div>` : ''}
 
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-val azul">${r.porciones_base}</div>
-        <div class="stat-lbl">Unidades / rendimiento</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-val">${ingredientes.length}</div>
-        <div class="stat-lbl">Ingredientes</div>
-      </div>
-      ${esPan && r.peso_harina_total_g ? `
-      <div class="stat-card">
-        <div class="stat-val">${parseFloat(r.peso_harina_total_g).toFixed(0)}g</div>
-        <div class="stat-lbl">Harina base</div>
-      </div>` : '<div class="stat-card"><div class="stat-val">—</div><div class="stat-lbl">—</div></div>'}
-      <div class="stat-card">
-        <div class="stat-val">${r.versión || 1}</div>
-        <div class="stat-lbl">Versión</div>
-      </div>
-    </div>
+    ${(() => {
+      const totalIngr = ingredientes.reduce((s,i)=>s+(parseFloat(i.gramos)||0),0);
+      const porciones = parseInt(r.porciones_base)||1;
+      const pesoCrudoTotal = totalIngr;
+      const pesoCrudoPieza = (totalIngr/porciones).toFixed(1);
+      const esBOL = App.areaCodigo === 'BOL';
+      const mermaLaminado = esBOL ? parseFloat(r.merma_laminado_pct||8) : 0;
+      const pesoPaston = esBOL ? (totalIngr * (1 - mermaLaminado/100)).toFixed(0) : null;
+      const pesoPastonPieza = esBOL ? (pesoPaston / porciones).toFixed(1) : null;
+      return `
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-val azul">${r.porciones_base}</div>
+          <div class="stat-lbl">Rendimiento (unidades)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val">${pesoCrudoPieza}g</div>
+          <div class="stat-lbl">Peso crudo por pieza</div>
+        </div>
+        ${esBOL ? `
+        <div class="stat-card">
+          <div class="stat-val" style="color:#6A1B9A">${pesoPastonPieza}g</div>
+          <div class="stat-lbl">Peso pastón listo/pieza</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" style="color:#C62828">${mermaLaminado}%</div>
+          <div class="stat-lbl">Merma laminado</div>
+        </div>` : `
+        <div class="stat-card">
+          <div class="stat-val">${ingredientes.length}</div>
+          <div class="stat-lbl">Ingredientes</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val">${r.versión||1}</div>
+          <div class="stat-lbl">Versión</div>
+        </div>`}
+      </div>`;
+    })()}
 
     <div class="card" style="margin-bottom:16px">
       <div class="card-head"><i class="ti ti-basket"></i> Ingredientes</div>
