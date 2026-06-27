@@ -1172,3 +1172,81 @@ input, select, textarea { font-family: inherit; }
   font-size: 11px;
   color: #4CAF50;
 }
+
+/* ── BOLLERÍA: EMPASTES ──────────────────────── */
+.empaste-bloque {
+  background: linear-gradient(135deg, #FFF8E1 0%, #FFF3CD 100%);
+  border: 2px solid #FFC107;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 10px rgba(255,193,7,.15);
+}
+.empaste-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: rgba(255,255,255,.5);
+  border-bottom: 1px solid rgba(255,193,7,.3);
+}
+.empaste-icono { font-size: 24px; flex-shrink: 0; }
+.empaste-titulo { font-size: 15px; font-weight: 700; color: #5D4037; }
+.empaste-subtitulo { font-size: 11px; color: #795548; margin-top: 2px; }
+.empaste-total {
+  margin-left: auto;
+  font-size: 16px; font-weight: 700;
+  font-family: 'DM Mono', monospace;
+  color: #E65100;
+  background: rgba(255,193,7,.2);
+  padding: 4px 12px; border-radius: 99px;
+}
+.empaste-detalle { padding: 4px 0; }
+.empaste-fila {
+  display: flex; justify-content: space-between;
+  padding: 8px 18px; font-size: 13px;
+  border-bottom: 1px solid rgba(255,193,7,.15);
+  color: #5D4037;
+}
+.empaste-fila:last-child { border-bottom: none; }
+.empaste-val { font-family: 'DM Mono', monospace; font-weight: 600; }
+.empaste-total-fila { background: rgba(255,193,7,.1); font-weight: 600; }
+
+/* ── BOLLERÍA: STOCK CONGELADO ───────────────── */
+.stock-bol-wrap {
+  background: #E3F2FD;
+  border: 1px solid #90CAF9;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.stock-bol-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px;
+  font-size: 13px; font-weight: 600; color: #0D47A1;
+  border-bottom: 1px solid #90CAF9;
+  background: rgba(255,255,255,.4);
+}
+.stock-bol-header i { color: #1565C0; font-size: 16px; }
+.stock-bol-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0;
+  padding: 8px 12px;
+}
+.stock-bol-item {
+  display: flex; justify-content: space-between;
+  align-items: center; padding: 6px 4px;
+  font-size: 12px; border-bottom: 1px solid rgba(144,202,249,.3);
+}
+.stock-bol-nombre { color: #1565C0; }
+.stock-bol-val { font-family: 'DM Mono', monospace; font-weight: 600; }
+.stock-con { color: #2E7D32; }
+.stock-sin { color: var(--txt3); }
+.stock-bol-capacidad {
+  display: flex; gap: 16px; flex-wrap: wrap;
+  padding: 8px 16px;
+  font-size: 11px; color: #1565C0;
+  border-top: 1px solid #90CAF9;
+  background: rgba(255,255,255,.3);
+}
