@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
-  <link rel="stylesheet" href="main.css?v=1782586431">
+  <link rel="stylesheet" href="main.css?v=1782588594">
 </head>
 <body>
 
@@ -198,11 +198,33 @@
   </div>
 </div>
 
+<!-- Modal: Eliminar receta -->
+<div class="modal-fondo hidden" id="modal-eliminar-receta">
+  <div class="modal">
+    <div class="modal-ico" style="background:#FFEBEE;color:#C62828">
+      <i class="ti ti-trash"></i>
+    </div>
+    <h3>Eliminar receta</h3>
+    <p>¿Estás seguro que quieres eliminar <strong id="eliminar-receta-nombre"></strong>?
+    Esta acción eliminará la receta del área y del maestro. No se puede deshacer.</p>
+    <div class="modal-acciones">
+      <button class="btn-secundario"
+        onclick="document.getElementById('modal-eliminar-receta').classList.add('hidden')">
+        Cancelar
+      </button>
+      <button class="btn-primario" id="btn-confirmar-eliminar"
+        style="background:#C62828">
+        <i class="ti ti-trash"></i> Eliminar
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="config.js?v=1782586431"></script>
-<script src="subrecetas.js?v=1782586431"></script>
-<script src="app.js?v=1782586431"></script>
+<script src="config.js?v=1782588594"></script>
+<script src="subrecetas.js?v=1782588594"></script>
+<script src="app.js?v=1782588594"></script>
 </body>
 </html>
