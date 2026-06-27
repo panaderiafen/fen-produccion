@@ -38,7 +38,7 @@ const CONFIG_SUBRECETAS_DEFAULT = {
       agua_pct: 100,
       levadura_pct: 0.5,
     },
-    capacidad_masas: 20,       // paños máximos en congelador
+    capacidad_masas: 20,       // pastóns máximos en congelador
     capacidad_productos: 200,  // unidades máximas en congelador
     stock: {},                 // { recetaId: unidades } — se edita semanalmente
   }
@@ -608,18 +608,19 @@ function renderResumenSemanal() {
 function renderVistaConfigSubrecetas() {
   const cfg = cargarConfigSubrecetas();
   const vista = document.getElementById('vista-config-subrecetas');
+  const areaLabel = App.area?.nombre || 'Área';
   vista.innerHTML = `
     <div class="vista-header">
       <div>
-        <div class="vista-eyebrow">Panadería</div>
-        <h1 class="vista-titulo">Configuración de sub recetas</h1>
+        <div class="vista-eyebrow">${areaLabel}</div>
+        <h1 class="vista-titulo">Configuración</h1>
       </div>
     </div>
     <p style="font-size:13px;color:var(--txt2);margin-bottom:20px;line-height:1.6">
-      Ajusta los porcentajes según la temporada, temperatura y condiciones del día.
-      Los cambios se aplican inmediatamente al cálculo de elaboraciones.
+      Ajusta los parámetros de producción para ${areaLabel}.
     </p>
 
+    ${App.areaCodigo === 'PAN' ? `
     <div class="card" style="margin-bottom:16px">
       <div class="card-head"><i class="ti ti-plant-2"></i> Masa madre blanca</div>
       <div class="form-grid">
@@ -701,6 +702,8 @@ function renderVistaConfigSubrecetas() {
       </div>
     </div>
 
+    ` : ''}
+
     ${App.areaCodigo === 'BOL' ? `
     <div class="card" style="margin-bottom:16px">
       <div class="card-head" style="background:#F3E5F5;color:#4A148C">
@@ -708,7 +711,7 @@ function renderVistaConfigSubrecetas() {
       </div>
       <div class="form-grid">
         <div class="campo">
-          <label>Capacidad máxima masas (paños)</label>
+          <label>Capacidad máxima masas (pastóns)</label>
           <input type="number" id="cfg-bol-masas" value="${cfg.bol?.capacidad_masas || 20}" min="1" step="1">
         </div>
         <div class="campo">
@@ -732,6 +735,10 @@ function renderVistaConfigSubrecetas() {
         <div class="campo">
           <label>Levadura prefermento (%)</label>
           <input type="number" id="cfg-bol-lev" value="${cfg.bol?.prefermento?.levadura_pct || 0.5}" min="0.1" max="2" step="0.01">
+        </div>
+        <div class="campo">
+          <label>% Merma laminado referencia</label>
+          <input type="number" id="cfg-bol-merma" value="${cfg.bol?.merma_laminado_ref || 8}" min="0" max="30" step="0.1" placeholder="8">
         </div>
       </div>
     </div>` : ''}
@@ -788,8 +795,9 @@ function guardarConfigDesdeForm(btn) {
     const diasBOL = [];
     document.querySelectorAll('#cfg-bol-dias input:checked').forEach(cb => diasBOL.push(parseInt(cb.value)));
     if (!cfg.bol) cfg.bol = { stock: {} };
-    cfg.bol.capacidad_masas    = parseFloat(document.getElementById('cfg-bol-masas')?.value) || 20;
+    cfg.bol.capacidad_masas     = parseFloat(document.getElementById('cfg-bol-masas')?.value) || 20;
     cfg.bol.capacidad_productos = parseFloat(document.getElementById('cfg-bol-productos')?.value) || 200;
+    cfg.bol.merma_laminado_ref  = parseFloat(document.getElementById('cfg-bol-merma')?.value) || 8;
     cfg.bol.prefermento = {
       dias_elaboracion: diasBOL.length > 0 ? diasBOL : [1,3,5],
       harina_pct: 100,
@@ -805,22 +813,22 @@ function guardarConfigDesdeForm(btn) {
 
 // ── BOLLERÍA: CÁLCULO DE PAÑOS ───────────────────────────────
 
-function calcularPañosBOL(diaIdx) {
+function calcularPastónsBOL(diaIdx) {
   const cfg = cargarConfigSubrecetas();
   const stock = cfg.bol?.stock || {};
   const capacidadMasas = cfg.bol?.capacidad_masas || 20;
 
-  // Identificar sub recetas de tipo "paño" (masa laminada)
-  const idsPaños = new Set(
+  // Identificar sub recetas de tipo "pastón" (masa laminada)
+  const idsPastóns = new Set(
     App.materiasPrimas
       .filter(m => (m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR')) &&
-        (m.nombre?.toLowerCase().includes('paño') ||
+        (m.nombre?.toLowerCase().includes('pastón') ||
          m.nombre?.toLowerCase().includes('masa') &&
          !m.nombre?.toLowerCase().includes('masa madre')))
       .map(m => m.ID_MP)
   );
 
-  // Por cada receta del día, calcular paños necesarios
+  // Por cada receta del día, calcular pastóns necesarios
   const recetasDelDia = Object.entries(App.planSemana)
     .filter(([_, cant]) => (cant[diaIdx] || 0) > 0)
     .map(([rid, cant]) => ({
@@ -829,7 +837,7 @@ function calcularPañosBOL(diaIdx) {
     }))
     .filter(x => x.receta);
 
-  const pañosMap = {}; // { pañoId: { nombre, totalPaños, productos[] } }
+  const pastónsMap = {}; // { pastónId: { nombre, totalPastóns, productos[] } }
 
   recetasDelDia.forEach(({ receta: r, unidades }) => {
     let ingredientes = [];
@@ -841,32 +849,32 @@ function calcularPañosBOL(diaIdx) {
     const unidadesNetas = Math.max(0, unidades - stockDisponible);
     if (unidadesNetas === 0) return;
 
-    // Buscar paños en ingredientes
+    // Buscar pastóns en ingredientes
     ingredientes.forEach(ing => {
-      if (idsPaños.has(ing.id)) {
-        const pañosPorReceta = (parseFloat(ing.gramos) || 1) / porciones;
-        const pañosNecesarios = Math.ceil(pañosPorReceta * unidadesNetas);
-        if (!pañosMap[ing.id]) {
-          pañosMap[ing.id] = {
+      if (idsPastóns.has(ing.id)) {
+        const pastónsPorReceta = (parseFloat(ing.gramos) || 1) / porciones;
+        const pastónsNecesarios = Math.ceil(pastónsPorReceta * unidadesNetas);
+        if (!pastónsMap[ing.id]) {
+          pastónsMap[ing.id] = {
             id: ing.id,
             nombre: ing.nombre,
-            totalPaños: 0,
+            totalPastóns: 0,
             productos: []
           };
         }
-        pañosMap[ing.id].totalPaños += pañosNecesarios;
-        pañosMap[ing.id].productos.push({
+        pastónsMap[ing.id].totalPastóns += pastónsNecesarios;
+        pastónsMap[ing.id].productos.push({
           nombre: r.nombre,
           unidadesMeta: unidades,
           stockDisponible,
           unidadesNetas,
-          pañosNecesarios
+          pastónsNecesarios
         });
       }
     });
   });
 
-  return { pañosMap, capacidadMasas };
+  return { pastónsMap, capacidadMasas };
 }
 
 function renderResumenStockBOL() {
@@ -899,7 +907,7 @@ function renderResumenStockBOL() {
         }).join('')}
       </div>
       <div class="stock-bol-capacidad">
-        <span><i class="ti ti-box"></i> Cap. masas: ${capacidadMasas} paños</span>
+        <span><i class="ti ti-box"></i> Cap. masas: ${capacidadMasas} pastóns</span>
         <span><i class="ti ti-freeze-row"></i> Cap. productos: ${capacidadProductos} uds</span>
       </div>
     </div>`;
@@ -941,12 +949,12 @@ function guardarStockBOL() {
 
 function renderEmpastesPrevistos(diaIdx) {
   if (App.areaCodigo !== 'BOL') return '';
-  const { pañosMap } = calcularPañosBOL(diaIdx);
-  const totalPaños = Object.values(pañosMap).reduce((s, p) => s + p.totalPaños, 0);
-  if (totalPaños === 0) return '';
+  const { pastónsMap } = calcularPastónsBOL(diaIdx);
+  const totalPastóns = Object.values(pastónsMap).reduce((s, p) => s + p.totalPastóns, 0);
+  if (totalPastóns === 0) return '';
 
-  // Calcular mantequilla total (250g por paño base, proporcional)
-  const mantequillaTotalG = totalPaños * 250;
+  // Calcular mantequilla total (250g por pastón base, proporcional)
+  const mantequillaTotalG = totalPastóns * 250;
 
   return `
     <div class="empaste-bloque">
@@ -956,13 +964,13 @@ function renderEmpastesPrevistos(diaIdx) {
           <div class="empaste-titulo">Empastes a preparar</div>
           <div class="empaste-subtitulo">Actividad previa — preparar hoy para mañana</div>
         </div>
-        <span class="empaste-total">${totalPaños} bloque${totalPaños>1?'s':''}</span>
+        <span class="empaste-total">${totalPastóns} bloque${totalPastóns>1?'s':''}</span>
       </div>
       <div class="empaste-detalle">
-        ${Object.values(pañosMap).map(p => `
+        ${Object.values(pastónsMap).map(p => `
           <div class="empaste-fila">
             <span>${p.nombre}</span>
-            <span class="empaste-val">${p.totalPaños} paño${p.totalPaños>1?'s':''}</span>
+            <span class="empaste-val">${p.totalPastóns} pastón${p.totalPastóns>1?'s':''}</span>
           </div>`).join('')}
         <div class="empaste-fila empaste-total-fila">
           <span>Mantequilla total</span>
