@@ -1784,6 +1784,12 @@ async function renderVistaMaestroAdmin() {
             <td style="font-size:13px;color:var(--txt2)">${r.área}</td>
             <td class="td-num">${r.porciones_base} unid.</td>
             <td class="td-num">v${r.versión_actual||1}</td>
+            <td style="text-align:right;padding:6px 16px">
+              <button class="btn-peligro" style="font-size:12px;padding:4px 10px"
+                onclick="confirmarEliminarReceta('${r.ID_receta}','${r.nombre}','${r.área}')">
+                <i class="ti ti-trash"></i>
+              </button>
+            </td>
           </tr>`).join('')}
         </tbody>
       </table>
