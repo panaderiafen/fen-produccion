@@ -1664,10 +1664,22 @@ async function eliminarReceta(recetaId, area) {
 
   console.log('[fën] Eliminando receta:', recetaId, 'hoja:', hoja);
 
+  // Eliminar usa GET directo (payload pequeño, necesita respuesta confirmada)
   try {
-    await escribirEnSheet('eliminar_receta', { ID_receta: recetaId, hoja });
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'eliminar_receta', ID_receta: recetaId, hoja }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
+    const data = await res.json();
+    console.log('[fën] Respuesta eliminar:', data);
+    if (!data.ok) {
+      toast('Error al eliminar en Sheet: ' + data.msg, 'error');
+      desbloquearBtn(btn, '<i class="ti ti-trash"></i> Eliminar', false);
+      return;
+    }
   } catch(e) {
-    console.warn('Error al escribir en Sheet:', e);
+    console.error('[fën] Error eliminando:', e);
+    toast('Error de conexión al eliminar', 'error');
+    desbloquearBtn(btn, '<i class="ti ti-trash"></i> Eliminar', false);
+    return;
   }
 
   // Remover local inmediatamente
