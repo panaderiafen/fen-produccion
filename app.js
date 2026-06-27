@@ -1481,11 +1481,20 @@ async function renderVistaMaestro() {
             <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Versión</th>
           </tr></thead>
           <tbody>
-            ${mios.map(r => `<tr>
-              <td class="td-nombre">${r.nombre}</td>
+            ${mios.map(r => {
+              const esSubReceta = r.tipo_receta === 'sub_receta';
+              return `<tr>
+              <td class="td-nombre">
+                ${r.nombre}
+                <span style="font-size:10px;padding:1px 6px;border-radius:99px;margin-left:6px;font-weight:600;
+                  background:${esSubReceta?'#EDE9FE':'#E8F5E9'};
+                  color:${esSubReceta?'#5B21B6':'#166534'}">
+                  ${esSubReceta?'⟳ Sub receta':'Receta'}
+                </span>
+              </td>
               <td class="td-num">${r.porciones_base} unid.</td>
               <td class="td-num">v${r.versión_actual||1}</td>
-            </tr>`).join('')}
+            </tr>`;}).join('')}
           </tbody>
         </table>
       </div>`}
@@ -1639,19 +1648,41 @@ async function eliminarReceta(recetaId, area) {
   const btn = document.getElementById('btn-confirmar-eliminar');
   bloquearBtn(btn, 'Eliminando...');
 
-  // Determinar hoja del área
-  const areaCodigo = Object.entries(FEN.AREAS).find(([_, a]) => a.nombre === area)?.[0];
-  const hoja = FEN.AREAS[areaCodigo]?.hoja_recetas;
+  // Determinar hoja buscando en todas las areas
+  let hoja = null;
+  for (const [codigo, areaObj] of Object.entries(FEN.AREAS)) {
+    if (areaObj.nombre === area || areaObj.nombre.normalize('NFD').replace(/[̀-ͯ]/g,'') === area.normalize('NFD').replace(/[̀-ͯ]/g,'')) {
+      hoja = areaObj.hoja_recetas;
+      break;
+    }
+  }
+  // Fallback: buscar en App.recetas
+  if (!hoja) {
+    const receta = App.recetas.find(r => r.ID_receta === recetaId);
+    if (receta?._area) hoja = FEN.AREAS[receta._area]?.hoja_recetas;
+  }
 
-  await escribirEnSheet('eliminar_receta', { ID_receta: recetaId, hoja });
+  console.log('[fën] Eliminando receta:', recetaId, 'hoja:', hoja);
 
-  // Remover de App.recetas local
+  try {
+    await escribirEnSheet('eliminar_receta', { ID_receta: recetaId, hoja });
+  } catch(e) {
+    console.warn('Error al escribir en Sheet:', e);
+  }
+
+  // Remover local inmediatamente
   App.recetas = App.recetas.filter(r => r.ID_receta !== recetaId);
-  Cache.invalidarTodo();
+
+  // Invalidar caché del maestro para que recargue
+  Cache.invalidar('Maestro_recetas');
+  if (hoja) Cache.invalidar(hoja);
 
   document.getElementById('modal-eliminar-receta').classList.add('hidden');
+  desbloquearBtn(btn, '<i class="ti ti-trash"></i> Eliminar', true);
   toast('Receta eliminada');
-  renderVistaMaestroAdmin();
+
+  // Recargar maestro desde Sheet
+  await renderVistaMaestroAdmin();
 }
 
 // ── ADMIN: MATERIAS PRIMAS ────────────────────────────────────
@@ -1775,13 +1806,24 @@ async function renderVistaMaestroAdmin() {
         <thead><tr>
           <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Receta</th>
           <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Área</th>
+          <th style="text-align:center;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Tipo</th>
           <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Rendimiento</th>
           <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Versión</th>
+          <th style="padding:9px 16px;background:var(--bg);border-bottom:1px solid var(--border)"></th>
         </tr></thead>
         <tbody>
-          ${maestro.map(r => `<tr>
+          ${maestro.map(r => {
+            const esSubReceta = r.tipo_receta === 'sub_receta';
+            return `<tr>
             <td class="td-nombre">${r.nombre}</td>
             <td style="font-size:13px;color:var(--txt2)">${r.área}</td>
+            <td style="text-align:center">
+              <span style="font-size:10px;padding:2px 8px;border-radius:99px;font-weight:600;
+                background:${esSubReceta?'#EDE9FE':'#E8F5E9'};
+                color:${esSubReceta?'#5B21B6':'#166534'}">
+                ${esSubReceta?'⟳ Sub receta':'Receta'}
+              </span>
+            </td>
             <td class="td-num">${r.porciones_base} unid.</td>
             <td class="td-num">v${r.versión_actual||1}</td>
             <td style="text-align:right;padding:6px 16px">
@@ -1790,7 +1832,7 @@ async function renderVistaMaestroAdmin() {
                 <i class="ti ti-trash"></i>
               </button>
             </td>
-          </tr>`).join('')}
+          </tr>`;}).join('')}
         </tbody>
       </table>
     </div>
