@@ -1250,3 +1250,33 @@ input, select, textarea { font-family: inherit; }
   border-top: 1px solid #90CAF9;
   background: rgba(255,255,255,.3);
 }
+
+/* ── BOTÓN MODIFICADOR EN RECETA DEL DÍA ──────── */
+.rdc-mod-btn {
+  background: none;
+  border: 1.5px solid var(--border2);
+  border-radius: var(--r-sm);
+  padding: 4px 8px;
+  font-size: 14px;
+  color: var(--txt3);
+  cursor: pointer;
+  position: relative;
+  transition: all var(--transition);
+  display: flex; align-items: center; gap: 3px;
+  flex-shrink: 0;
+}
+.rdc-mod-btn:hover {
+  border-color: var(--area-color);
+  color: var(--area-color);
+}
+.rdc-mod-activo {
+  border-color: #F57C00;
+  color: #F57C00;
+  background: #FFF3E0;
+}
+.rdc-mod-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #F57C00;
+  display: inline-block;
+}
