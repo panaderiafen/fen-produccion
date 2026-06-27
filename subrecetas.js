@@ -132,21 +132,11 @@ function calcularElaboracionesDia(diaIdx) {
 // Dado el total de gramos de una sub receta, calcula sus componentes
 function calcularDesglose(subRecetaId, totalGramos) {
   const cfg = cargarConfigSubrecetas();
-  const nombreMP = (App.materiasPrimas.find(m => m.ID_MP === subRecetaId)?.nombre || '').toLowerCase();
+  const mpItem = App.materiasPrimas.find(m => m.ID_MP === subRecetaId);
+  const nombreMP = (mpItem?.nombre || '').toLowerCase();
+  const nombreBuscado = mpItem?.nombre || '';
 
-  // 1. Buscar por config de % panadero (MM y Poolish tienen fórmula especial)
-  if (nombreMP.includes('masa madre') && nombreMP.includes('integral')) {
-    return desgloseMMPorcentaje(totalGramos, cfg.mm_integral);
-  }
-  if (nombreMP.includes('masa madre')) {
-    return desgloseMMPorcentaje(totalGramos, cfg.mm_blanca);
-  }
-  if (nombreMP.includes('poolish')) {
-    return desglosePoolish(totalGramos, cfg.poolish);
-  }
-
-  // 2. Buscar en recetas consolidadas con ese nombre
-  const nombreBuscado = App.materiasPrimas.find(m => m.ID_MP === subRecetaId)?.nombre || '';
+  // 1. SIEMPRE buscar primero en recetas consolidadas con ingredientes reales
   const recetaSR = App.recetas.find(r =>
     r.nombre === nombreBuscado ||
     r.ID_receta === subRecetaId ||
@@ -164,6 +154,20 @@ function calcularDesglose(subRecetaId, totalGramos) {
         gramos: (parseFloat(ing.gramos) || 0) * factor,
         esPie:  false
       }));
+    }
+  }
+
+  // 2. Fallback: fórmulas de config % panadero (solo si no hay receta con ingredientes)
+  // Solo aplica para área PAN y sub recetas sin ingredientes definidos
+  if (App.areaCodigo === 'PAN') {
+    if (nombreMP.includes('masa madre') && nombreMP.includes('integral')) {
+      return desgloseMMPorcentaje(totalGramos, cfg.mm_integral);
+    }
+    if (nombreMP.includes('masa madre')) {
+      return desgloseMMPorcentaje(totalGramos, cfg.mm_blanca);
+    }
+    if (nombreMP.includes('poolish')) {
+      return desglosePoolish(totalGramos, cfg.poolish);
     }
   }
 
@@ -480,13 +484,24 @@ function renderElaboracionesPrevias(diaIdx) {
       </div>`;
   }).join('');
 
-  const pieMM = (typeof renderBloquepieMM === 'function') ? renderBloquepieMM(diaIdx) : '';
-  const empastes = (typeof renderEmpastesPrevistos === 'function') ? renderEmpastesPrevistos(diaIdx) : '';
+  // Para BOL: mostrar elaboraciones del día SIGUIENTE (lo que hay que preparar hoy para mañana)
+  // Para PAN: pie de MM para días futuros
+  const pieMM    = (typeof renderBloquepieMM === 'function') ? renderBloquepieMM(diaIdx) : '';
+
+  // Empastes y prefermento BOL: mostrar lo necesario para el DÍA SIGUIENTE
+  const diaIdxSiguiente = (diaIdx + 1) % 7;
+  const empastes = (typeof renderEmpastesPrevistos === 'function')
+    ? renderEmpastesPrevistos(diaIdxSiguiente, diaIdx)
+    : '';
+  const prefermentoBOL = (App.areaCodigo === 'BOL')
+    ? renderPrefermentoBOL(diaIdxSiguiente)
+    : '';
 
   return `
     <div class="elaboraciones-wrap">
 
       ${pieMM}
+      ${prefermentoBOL}
       ${empastes}
 
       ${subRecetas.length ? `
@@ -953,37 +968,132 @@ function guardarStockBOL() {
   toast('Stock actualizado');
 }
 
-function renderEmpastesPrevistos(diaIdx) {
+function renderEmpastesPrevistos(diaIdxTarget, diaIdxActual) {
   if (App.areaCodigo !== 'BOL') return '';
-  const { pastónsMap } = calcularPastónsBOL(diaIdx);
-  const totalPastóns = Object.values(pastónsMap).reduce((s, p) => s + p.totalPastóns, 0);
-  if (totalPastóns === 0) return '';
+  const idx = diaIdxTarget !== undefined ? diaIdxTarget : (diaIdxActual || 0);
+  const { pastonesMap } = calcularPastonesBOL(idx);
+  const totalPastones = Object.values(pastonesMap).reduce((s, p) => s + p.totalPastones, 0);
+  if (totalPastones === 0) return '';
 
-  // Calcular mantequilla total (250g por pastón base, proporcional)
-  const mantequillaTotalG = totalPastóns * 250;
+  const diasNombres = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+  const labelDia = diaIdxTarget !== undefined
+    ? `para producción del ${diasNombres[diaIdxTarget]}`
+    : 'para mañana';
+  const mantequillaTotalG = totalPastones * 250;
+  const claveCheck = `fen_empaste_BOL_${obtenerSemanaActual()}_${idx}`;
+  const listo = localStorage.getItem(claveCheck) === '1';
 
   return `
-    <div class="empaste-bloque">
+    <div class="empaste-bloque ${listo?'':''}">
       <div class="empaste-header">
         <span class="empaste-icono">🧈</span>
         <div>
           <div class="empaste-titulo">Empastes a preparar</div>
-          <div class="empaste-subtitulo">Actividad previa — preparar hoy para mañana</div>
+          <div class="empaste-subtitulo">Preparar hoy ${labelDia}</div>
         </div>
-        <span class="empaste-total">${totalPastóns} bloque${totalPastóns>1?'s':''}</span>
+        <div style="display:flex;align-items:center;gap:10px;margin-left:auto">
+          <label class="rdc-check-wrap" onclick="event.stopPropagation()">
+            <input type="checkbox" ${listo?'checked':''}
+              onchange="localStorage.setItem('${claveCheck}',this.checked?'1':'0');this.closest('.empaste-bloque').style.opacity=this.checked?'.5':'1'">
+            <span class="rdc-check-box"></span>
+          </label>
+          <span class="empaste-total">${totalPastones} bloque${totalPastones>1?'s':''}</span>
+        </div>
       </div>
       <div class="empaste-detalle">
-        ${Object.values(pastónsMap).map(p => `
+        ${Object.values(pastonesMap).map(p => `
           <div class="empaste-fila">
             <span>${p.nombre}</span>
-            <span class="empaste-val">${p.totalPastóns} pastón${p.totalPastóns>1?'s':''}</span>
+            <span class="empaste-val">${p.totalPastones} pastón${p.totalPastones>1?'es':''}</span>
           </div>`).join('')}
         <div class="empaste-fila empaste-total-fila">
-          <span>Mantequilla total</span>
+          <span>Mantequilla total (250g c/u)</span>
           <span class="empaste-val">${formatearGramos(mantequillaTotalG, true)}</span>
         </div>
       </div>
     </div>`;
+}
+
+function renderPrefermentoBOL(diaIdxTarget) {
+  if (App.areaCodigo !== 'BOL') return '';
+  const diasNombres = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+
+  // Detectar sub recetas de tipo prefermento (poolish) de BOL usadas el día target
+  const idsPrefermentos = new Set(
+    App.materiasPrimas
+      .filter(m => {
+        const esSubReceta = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
+        const esDeBOL = !m.areas_habilitadas || m.areas_habilitadas.includes('BOL');
+        const esPrefermento = (m.nombre || '').toLowerCase().includes('poolish');
+        return esSubReceta && esDeBOL && esPrefermento;
+      })
+      .map(m => m.ID_MP)
+  );
+  if (idsPrefermentos.size === 0) return '';
+
+  const subRecetasMap = {};
+  Object.entries(App.planSemana)
+    .filter(([_, cant]) => (cant[diaIdxTarget] || 0) > 0)
+    .forEach(([rid, cant]) => {
+      const receta = App.recetas.find(r => r.ID_receta === rid);
+      if (!receta) return;
+      let ingredientes = [];
+      try { ingredientes = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
+      const porciones = parseInt(receta.porciones_base) || 1;
+      const factor = cant[diaIdxTarget] / porciones;
+      ingredientes.forEach(ing => {
+        if (idsPrefermentos.has(ing.id)) {
+          if (!subRecetasMap[ing.id]) {
+            subRecetasMap[ing.id] = { id: ing.id, nombre: ing.nombre, totalGramos: 0 };
+          }
+          subRecetasMap[ing.id].totalGramos += (parseFloat(ing.gramos) || 0) * factor;
+        }
+      });
+    });
+
+  const srs = Object.values(subRecetasMap);
+  if (!srs.length) return '';
+
+  return srs.map(sr => {
+    const desglose = calcularDesglose(sr.id, sr.totalGramos);
+    const total = desglose.reduce((s, c) => s + c.gramos, 0);
+    const claveCheck = `fen_pref_BOL_${obtenerSemanaActual()}_${diaIdxTarget}_${sr.id}`;
+    const listo = localStorage.getItem(claveCheck) === '1';
+
+    return `
+      <div class="empaste-bloque" style="border-color:#9C27B0;background:linear-gradient(135deg,#F3E5F5,#EDE7F6);${listo?'opacity:.5':''}">
+        <div class="empaste-header" style="border-color:rgba(156,39,176,.3)">
+          <span class="empaste-icono">🌱</span>
+          <div>
+            <div class="empaste-titulo" style="color:#4A148C">${sr.nombre}</div>
+            <div class="empaste-subtitulo" style="color:#7B1FA2">
+              Preparar hoy para producción del ${diasNombres[diaIdxTarget]}
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-left:auto">
+            <label class="rdc-check-wrap" onclick="event.stopPropagation()">
+              <input type="checkbox" ${listo?'checked':''}
+                onchange="localStorage.setItem('${claveCheck}',this.checked?'1':'0');this.closest('.empaste-bloque').style.opacity=this.checked?'.5':'1'">
+              <span class="rdc-check-box"></span>
+            </label>
+            <span class="empaste-total" style="background:rgba(156,39,176,.15);color:#6A1B9A">
+              ${formatearGramos(total, true)}
+            </span>
+          </div>
+        </div>
+        <div class="empaste-detalle">
+          ${desglose.map(comp => `
+            <div class="empaste-fila">
+              <span>${comp.nombre}</span>
+              <span class="empaste-val">${formatearGramos(comp.gramos, true)}</span>
+            </div>`).join('')}
+          <div class="empaste-fila empaste-total-fila">
+            <span>Total</span>
+            <span class="empaste-val">${formatearGramos(total, true)}</span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
 }
 
 // ── UTILIDAD: formatear gramos ────────────────────────────────
