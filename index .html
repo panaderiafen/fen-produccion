@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>fën — Sistema de producción</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="main.css?v=1782585424">
+</head>
+<body>
+
+<!-- ── LOGIN ───────────────────────────────────── -->
+<div id="login-screen">
+  <div class="login-marca">
+    <div class="login-logo">
+      <img src="logosecundario.jpg" alt="fën" style="width:72px;height:72px;object-fit:contain;border-radius:18px" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <i class="ti ti-seed" style="display:none"></i>
+    </div>
+    <p>Sistema de producción · Recetas y costos</p>
+  </div>
+  <div class="login-grid" id="login-grid"></div>
+</div>
+
+<!-- ── APP ─────────────────────────────────────── -->
+<div id="app" class="hidden">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar-marca">
+      <img src="logoprincipal.jpg" alt="fën" style="width:28px;height:28px;object-fit:contain;border-radius:6px" onerror="this.style.display='none'">
+    </div>
+    <div class="topbar-area">
+      <i id="topbar-icon" class="ti ti-bread"></i>
+      <span id="topbar-nombre">Área</span>
+    </div>
+    <div id="topbar-alerta" class="topbar-alerta hidden">
+      <i class="ti ti-alert-circle"></i>
+      <span>0 pendientes</span>
+    </div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-usuario">
+      <div class="topbar-avatar"><span id="topbar-avatar-txt">—</span></div>
+      <span id="topbar-usuario-txt"></span>
+    </div>
+    <button class="btn-salir" onclick="sincronizarTodo(this)" id="btn-sync-global" title="Sincronizar datos">
+      <i class="ti ti-refresh"></i>
+    </button>
+    <button class="btn-salir" onclick="salir()">
+      <i class="ti ti-logout"></i> Salir
+    </button>
+  </header>
+
+  <div class="layout">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-nav" id="sidebar-nav"></div>
+    </aside>
+
+    <!-- Contenido -->
+    <main class="content">
+
+      <!-- Vista: vacía -->
+      <div class="vista active" id="vista-empty">
+        <div class="empty-state">
+          <i class="ti ti-seed"></i>
+                <p>Selecciona una sección para comenzar</p>
+        </div>
+      </div>
+
+      <!-- Vista: formulario receta -->
+      <div class="vista" id="vista-form-receta"></div>
+
+      <!-- Vista: mis recetas -->
+      <div class="vista" id="vista-mis-recetas"></div>
+
+      <!-- Vista: ver receta -->
+      <div class="vista" id="vista-ver-receta"></div>
+
+      <!-- Vista: planificación -->
+      <div class="vista" id="vista-planificacion"></div>
+
+      <!-- Vista: recetas del día -->
+      <div class="vista" id="vista-recetas-dia"></div>
+
+      <!-- Vista: maestro jefa -->
+      <div class="vista" id="vista-maestro"></div>
+
+      <!-- Vista: aprobaciones admin -->
+      <div class="vista" id="vista-aprobaciones"></div>
+
+      <!-- Vista: materias primas admin -->
+      <div class="vista" id="vista-mp"></div>
+
+      <!-- Vista: costos admin -->
+      <div class="vista" id="vista-costos"></div>
+
+      <!-- Vista: maestro admin -->
+      <div class="vista" id="vista-maestro-admin"></div>
+
+      <!-- Vista: config sub recetas -->
+      <div class="vista" id="vista-config-subrecetas"></div>
+
+      <!-- Vista: resumen semanal -->
+      <div class="vista" id="vista-resumen-semanal"></div>
+
+    </main>
+  </div>
+</div>
+
+<!-- Loading overlay -->
+<div id="loading-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(255,243,233,.85);display:flex;align-items:center;justify-content:center;z-index:500;gap:12px;font-size:14px;color:#003a79">
+  <div class="spinner" style="border-top-color:#003a79"></div>
+  <span>Cargando...</span>
+</div>
+
+<!-- Modal: Solicitar MP -->
+<div class="modal-fondo hidden" id="modal-solicitar-mp">
+  <div class="modal" style="max-width:440px;text-align:left">
+    <div class="modal-ico" style="background:#E3F2FD;color:#1565C0">
+      <i class="ti ti-list-plus"></i>
+    </div>
+    <h3 style="text-align:center">Solicitar materia prima</h3>
+    <p style="text-align:center;font-size:13px;color:var(--txt2);margin-bottom:20px">
+      Admin habilitará la MP para tu área. Puedes continuar con la receta mientras tanto.
+    </p>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Nombre de la MP <span class="req">*</span></label>
+        <input type="text" id="solicitar-mp-nombre" placeholder="Ej: Mantequilla de maní">
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Gramos por unidad (para agregar temporalmente)</label>
+        <input type="number" id="solicitar-mp-gramos" placeholder="0" min="0">
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Nombre temporal en receta</label>
+        <input type="text" id="solicitar-mp-tmp" placeholder="Como quieres que aparezca mientras tanto">
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="solicitar-mp-nueva">
+        Es una MP nueva (no existe en el catálogo)
+      </label>
+    </div>
+    <div class="modal-acciones" style="margin-top:20px">
+      <button class="btn-secundario" onclick="cerrarModalSolicitarMP()">Cancelar</button>
+      <button class="btn-primario" onclick="enviarSolicitudMP()">
+        <i class="ti ti-send"></i> Enviar solicitud
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Stock BOL -->
+<div class="modal-fondo hidden" id="modal-stock-bol">
+  <div class="modal" style="max-width:460px;text-align:left">
+    <div class="modal-ico" style="background:#E3F2FD;color:#1565C0">
+      <i class="ti ti-snowflake"></i>
+    </div>
+    <h3 style="text-align:center">Stock congelado actual</h3>
+    <p style="font-size:13px;color:var(--txt2);text-align:center;margin-bottom:16px">
+      Ingresa las unidades disponibles en congelador. El sistema descontará este stock del plan.
+    </p>
+    <div id="stock-bol-body"></div>
+    <div class="modal-acciones">
+      <button class="btn-secundario" onclick="document.getElementById('modal-stock-bol').classList.add('hidden')">Cancelar</button>
+      <button class="btn-primario" onclick="guardarStockBOL()">
+        <i class="ti ti-device-floppy"></i> Guardar stock
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="config.js?v=1782585424"></script>
+<script src="subrecetas.js?v=1782585424"></script>
+<script src="app.js?v=1782585424"></script>
+</body>
+</html>
