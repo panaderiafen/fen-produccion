@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
-  <link rel="stylesheet" href="main.css?v=1782498544">
+  <link rel="stylesheet" href="main.css?v=1782516927">
 </head>
 <body>
 
@@ -153,11 +153,31 @@
   </div>
 </div>
 
+<!-- Modal: Stock BOL -->
+<div class="modal-fondo hidden" id="modal-stock-bol">
+  <div class="modal" style="max-width:460px;text-align:left">
+    <div class="modal-ico" style="background:#E3F2FD;color:#1565C0">
+      <i class="ti ti-snowflake"></i>
+    </div>
+    <h3 style="text-align:center">Stock congelado actual</h3>
+    <p style="font-size:13px;color:var(--txt2);text-align:center;margin-bottom:16px">
+      Ingresa las unidades disponibles en congelador. El sistema descontará este stock del plan.
+    </p>
+    <div id="stock-bol-body"></div>
+    <div class="modal-acciones">
+      <button class="btn-secundario" onclick="document.getElementById('modal-stock-bol').classList.add('hidden')">Cancelar</button>
+      <button class="btn-primario" onclick="guardarStockBOL()">
+        <i class="ti ti-device-floppy"></i> Guardar stock
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="config.js?v=1782498544"></script>
-<script src="subrecetas.js?v=1782498544"></script>
-<script src="app.js?v=1782498544"></script>
+<script src="config.js?v=1782516927"></script>
+<script src="subrecetas.js?v=1782516927"></script>
+<script src="app.js?v=1782516927"></script>
 </body>
 </html>
