@@ -911,6 +911,10 @@ function renderVistaPlanificacion() {
         <h1 class="vista-titulo">Plan semanal</h1>
       </div>
       <div style="display:flex;gap:8px">
+        ${App.areaCodigo === 'BOL' ? `
+        <button class="btn-secundario" onclick="editarStockBOL()" style="border-color:#90CAF9;color:#1565C0">
+          <i class="ti ti-snowflake"></i> Stock congelado
+        </button>` : ''}
         <button class="btn-secundario" onclick="sincronizarPlan(this)" id="btn-sync-plan">
           <i class="ti ti-refresh"></i> Sincronizar
         </button>
@@ -939,22 +943,33 @@ function renderVistaPlanificacion() {
             </tr>
           </thead>
           <tbody>
-            ${recetasConsolidadas.map(r => {
-              const cantidades = App.planSemana[r.ID_receta] || Array(7).fill(0);
-              return `<tr>
-                <td class="td-nombre">${r.nombre}</td>
-                ${dias.map((_,i) => `
-                  <td class="${i===diaIdx?'dia-hoy':''}">
-                    <input type="number" min="0" placeholder="0"
-                      data-receta="${r.ID_receta}" data-dia="${i}"
-                      oninput="actualizarTotalFila(this)"
-                      value="${cantidades[i] || ''}">
-                  </td>`).join('')}
-                <td class="td-total" id="total-${r.ID_receta}">
-                  ${cantidades.reduce((s,c)=>s+c,0)}
-                </td>
-              </tr>`;
-            }).join('')}
+            ${(() => {
+              const cfg = (typeof cargarConfigSubrecetas === 'function') ? cargarConfigSubrecetas() : {};
+              const stock = (App.areaCodigo === 'BOL' && cfg.bol?.stock) ? cfg.bol.stock : {};
+              const esBOL = App.areaCodigo === 'BOL';
+              return recetasConsolidadas.map(r => {
+                const cantidades = App.planSemana[r.ID_receta] || Array(7).fill(0);
+                const stockUnits = stock[r.ID_receta] || 0;
+                const total = cantidades.reduce((s,c)=>s+c,0);
+                const neto = Math.max(0, total - stockUnits);
+                return `<tr>
+                  <td class="td-nombre">
+                    ${r.nombre}
+                    ${esBOL && stockUnits > 0 ? `<br><span style="font-size:10px;color:#1565C0;font-weight:500">❄ Stock: ${stockUnits} uds · Neto: ${neto}</span>` : ''}
+                  </td>
+                  ${dias.map((_,i) => `
+                    <td class="${i===diaIdx?'dia-hoy':''}">
+                      <input type="number" min="0" placeholder="0"
+                        data-receta="${r.ID_receta}" data-dia="${i}"
+                        oninput="actualizarTotalFila(this)"
+                        value="${cantidades[i] || ''}">
+                    </td>`).join('')}
+                  <td class="td-total" id="total-${r.ID_receta}">
+                    ${total}${esBOL && stockUnits > 0 ? `<br><span style="font-size:10px;color:#1565C0">${neto} neto</span>` : ''}
+                  </td>
+                </tr>`;
+              }).join('');
+            })()}
           </tbody>
         </table>
       </div>`}
