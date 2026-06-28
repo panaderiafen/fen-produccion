@@ -1011,7 +1011,7 @@ function autoguardarNota(recetaId) {
 
 // ── PLANIFICACIÓN SEMANAL ─────────────────────────────────────
 function renderVistaPlanificacion() {
-  const recetasConsolidadas = App.recetas.filter(r => r.estado === 'consolidada');
+  const recetasConsolidadas = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta');
   const dias = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
   const hoy  = new Date().getDay();
   const diaIdx = hoy === 0 ? 6 : hoy - 1;
