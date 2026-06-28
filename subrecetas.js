@@ -428,6 +428,7 @@ function renderElaboracionesPrevias(diaIdx) {
             <strong class="elab-nombre">${sr.nombre}</strong>
             <div class="elab-usado-wrap">${usadaEn}</div>
           </div>
+          ${App.areaCodigo === 'BOL' ? `<span style="font-size:11px;color:var(--txt3);margin-right:4px">${sr.recetasQueUsan.reduce((s,r)=>s+Math.ceil(r.gramos/164.3),0)} empastes</span>` : ''}
           <span class="elab-total-badge">${totalStr}</span>
         </div>
         <div class="elab-desglose" id="desglose-${sr.id}">
@@ -842,10 +843,16 @@ function calcularPastonesBOL(diaIdx) {
   // Identificar sub recetas de tipo "pastón" (masa laminada)
   const idsPastones = new Set(
     App.materiasPrimas
-      .filter(m => (m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR')) &&
-        (m.nombre?.toLowerCase().includes('pastón') ||
-         m.nombre?.toLowerCase().includes('masa') &&
-         !m.nombre?.toLowerCase().includes('masa madre')))
+      .filter(m => {
+        if (!(m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR'))) return false;
+        const nombre = (m.nombre || '').toLowerCase();
+        // Incluir solo sub recetas que son masas laminadas/pastones
+        // Excluir prefermentos (poolish, prefermento, levain)
+        const esPrefermento = nombre.includes('poolish') || nombre.includes('prefermento') || nombre.includes('levain');
+        const esPaston = nombre.includes('pastón') || nombre.includes('paston') ||
+          (nombre.includes('masa') && !nombre.includes('masa madre') && !esPrefermento);
+        return esPaston && !esPrefermento;
+      })
       .map(m => m.ID_MP)
   );
 
@@ -1001,13 +1008,16 @@ function renderEmpastesPrevistos(diaIdxTarget, diaIdxActual) {
         </div>
       </div>
       <div class="empaste-detalle">
-        ${Object.values(pastonesMap).map(p => `
+        ${Object.values(pastonesMap).map(p => {
+          const mantqP = p.totalPastones * 250;
+          return `
           <div class="empaste-fila">
             <span>${p.nombre}</span>
-            <span class="empaste-val">${p.totalPastones} pastón${p.totalPastones>1?'es':''}</span>
-          </div>`).join('')}
+            <span class="empaste-val">${p.totalPastones} empaste${p.totalPastones>1?'s':''} · ${formatearGramos(mantqP, true)}</span>
+          </div>`;
+        }).join('')}
         <div class="empaste-fila empaste-total-fila">
-          <span>Mantequilla total (250g c/u)</span>
+          <span>Mantequilla total empastes (${totalPastones} × 250g)</span>
           <span class="empaste-val">${formatearGramos(mantequillaTotalG, true)}</span>
         </div>
       </div>
