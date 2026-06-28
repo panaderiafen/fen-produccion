@@ -834,13 +834,13 @@ function guardarConfigDesdeForm(btn) {
 
 // ── BOLLERÍA: CÁLCULO DE PAÑOS ───────────────────────────────
 
-function calcularPastónsBOL(diaIdx) {
+function calcularPastonesBOL(diaIdx) {
   const cfg = cargarConfigSubrecetas();
   const stock = cfg.bol?.stock || {};
   const capacidadMasas = cfg.bol?.capacidad_masas || 20;
 
   // Identificar sub recetas de tipo "pastón" (masa laminada)
-  const idsPastóns = new Set(
+  const idsPastones = new Set(
     App.materiasPrimas
       .filter(m => (m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR')) &&
         (m.nombre?.toLowerCase().includes('pastón') ||
@@ -858,7 +858,7 @@ function calcularPastónsBOL(diaIdx) {
     }))
     .filter(x => x.receta);
 
-  const pastónsMap = {}; // { pastónId: { nombre, totalPastóns, productos[] } }
+  const pastonesMap = {}; // { pastónId: { nombre, totalPastones, productos[] } }
 
   recetasDelDia.forEach(({ receta: r, unidades }) => {
     let ingredientes = [];
@@ -872,30 +872,30 @@ function calcularPastónsBOL(diaIdx) {
 
     // Buscar pastóns en ingredientes
     ingredientes.forEach(ing => {
-      if (idsPastóns.has(ing.id)) {
-        const pastónsPorReceta = (parseFloat(ing.gramos) || 1) / porciones;
-        const pastónsNecesarios = Math.ceil(pastónsPorReceta * unidadesNetas);
-        if (!pastónsMap[ing.id]) {
-          pastónsMap[ing.id] = {
+      if (idsPastones.has(ing.id)) {
+        const pastonesPorReceta = (parseFloat(ing.gramos) || 1) / porciones;
+        const pastonesNecesarios = Math.ceil(pastonesPorReceta * unidadesNetas);
+        if (!pastonesMap[ing.id]) {
+          pastonesMap[ing.id] = {
             id: ing.id,
             nombre: ing.nombre,
-            totalPastóns: 0,
+            totalPastones: 0,
             productos: []
           };
         }
-        pastónsMap[ing.id].totalPastóns += pastónsNecesarios;
-        pastónsMap[ing.id].productos.push({
+        pastonesMap[ing.id].totalPastones += pastonesNecesarios;
+        pastonesMap[ing.id].productos.push({
           nombre: r.nombre,
           unidadesMeta: unidades,
           stockDisponible,
           unidadesNetas,
-          pastónsNecesarios
+          pastonesNecesarios
         });
       }
     });
   });
 
-  return { pastónsMap, capacidadMasas };
+  return { pastonesMap, capacidadMasas };
 }
 
 function renderResumenStockBOL() {
