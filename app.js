@@ -556,16 +556,33 @@ function agregarIngrediente(data = {}) {
 
   const options = optionsMP + optionsSR;
 
+  const esBOL = App.areaCodigo === 'BOL';
+  // Para BOL, detectar si el ingrediente es sub receta (puede ser en unidades)
+  const esSubRecetaIngr = data.id && (subRecetas.some(sr => sr.ID_MP === data.id));
+  const usaUnidades = esBOL && esSubRecetaIngr && (data.unidades !== undefined ? data.unidades : true);
+
   tr.innerHTML = `
     <td>
-      <select onchange="calcularCostoFila(this)">
+      <select onchange="onChangeIngredienteSelect(this)">
         <option value="">— Seleccionar —</option>
         ${options}
         <option value="__nueva__">+ Solicitar / habilitar MP...</option>
       </select>
     </td>
-    <td><input type="number" placeholder="0" value="${data.gramos ? parseFloat(data.gramos).toFixed(1) : ''}"
-      min="0" step="0.01" oninput="desdeGramos(this)" style="max-width:90px"></td>
+    ${esBOL ? `
+    <td>
+      <select class="sel-unidad-tipo" onchange="toggleUnidadTipo(this)" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit">
+        <option value="gramos" ${!usaUnidades?'selected':''}>Gramos</option>
+        <option value="unidades" ${usaUnidades?'selected':''}>Unidades</option>
+      </select>
+    </td>` : ''}
+    <td><input type="number" placeholder="${usaUnidades?'1':'0'}"
+      value="${usaUnidades ? (data.unidades||'') : (data.gramos ? parseFloat(data.gramos).toFixed(1) : '')}"
+      min="0" step="${usaUnidades?'1':'0.01'}"
+      oninput="${esPan ? 'desdeGramos(this)' : ''}"
+      style="max-width:90px"
+      data-modo="${usaUnidades ? 'unidades' : 'gramos'}">
+    </td>
     ${esPan ? `<td><input type="number" placeholder="0.00"
       value="${data.pct ? (data.pct*100).toFixed(2) : ''}"
       step="0.01" style="max-width:70px;color:var(--area-color);font-weight:500"
@@ -580,6 +597,31 @@ function calcularCostoFila(el) {
   const tr = el.closest('tr');
   const select = tr.querySelector('select');
   if (select.value === '__nueva__') { solicitarNuevaMP(); select.value = ''; return; }
+}
+
+function onChangeIngredienteSelect(sel) {
+  if (sel.value === '__nueva__') { solicitarNuevaMP(); sel.value = ''; return; }
+  // Auto-switch to unidades if sub receta in BOL
+  if (App.areaCodigo === 'BOL') {
+    const esSR = App.materiasPrimas.find(m => m.ID_MP === sel.value && (m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR')));
+    const tipoSel = sel.closest('tr').querySelector('.sel-unidad-tipo');
+    if (tipoSel && esSR) tipoSel.value = 'unidades';
+    else if (tipoSel) tipoSel.value = 'gramos';
+    toggleUnidadTipo(tipoSel);
+  }
+  if (App.areaCodigo === 'PAN') desdeGramos(sel.closest('tr').querySelector('input[type="number"]'));
+}
+
+function toggleUnidadTipo(sel) {
+  if (!sel) return;
+  const tr = sel.closest('tr');
+  const input = tr.querySelector('input[data-modo]');
+  if (!input) return;
+  const modo = sel.value;
+  input.dataset.modo = modo;
+  input.placeholder = modo === 'unidades' ? '1' : '0';
+  input.step = modo === 'unidades' ? '1' : '0.01';
+  input.value = '';
 }
 
 // Ingresa gramos → calcula %
@@ -656,12 +698,28 @@ async function guardarReceta(recetaId) {
       const opcion = select.options[select.selectedIndex];
       const costoPorGramo = parseFloat(opcion.dataset.costo) || 0;
       const gramos = parseFloat(inputs[0]?.value) || 0;
+      const modoInput = inputs[0]?.dataset?.modo || 'gramos';
+      const valorInput = parseFloat(inputs[0]?.value) || 0;
+      const unidades = modoInput === 'unidades' ? valorInput : null;
+      // Si es unidades, calcular gramos desde la sub receta
+      let gramosCalc = gramos;
+      if (modoInput === 'unidades' && valorInput > 0) {
+        const srReceta = App.recetas.find(r => r.nombre === opcion.text.replace('⟳ ',''));
+        if (srReceta) {
+          let ingsR = [];
+          try { ingsR = JSON.parse(srReceta.ingredientes_JSON || '[]'); } catch(e) {}
+          gramosCalc = ingsR.reduce((s,i) => s+(parseFloat(i.gramos)||0), 0) * valorInput;
+        } else {
+          gramosCalc = valorInput; // fallback
+        }
+      }
       ingredientes.push({
-        id:     select.value,
-        nombre: opcion.text,
-        gramos,
-        pct:    App.areaCodigo === 'PAN' ? ((parseFloat(inputs[1]?.value) || 0) / 100) : 0,
-        costo:  costoPorGramo * gramos,
+        id:       select.value,
+        nombre:   opcion.text.replace('⟳ ',''),
+        gramos:   gramosCalc,
+        unidades: unidades,
+        pct:      App.areaCodigo === 'PAN' ? ((parseFloat(inputs[1]?.value) || 0) / 100) : 0,
+        costo:    costoPorGramo * gramosCalc,
       });
     }
   });
