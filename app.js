@@ -207,6 +207,7 @@ function renderSidebar() {
     // Panadería tiene secciones extra
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL') {
       items.push({ id: 'resumen-semanal',     icon: 'ti-chart-grid-dots', label: 'Resumen semanal' });
+      items.push({ id: 'consolidado-mensual', icon: 'ti-calendar-stats',  label: 'Consolidado mensual' });
       items.push({ id: 'config-subrecetas',   icon: 'ti-adjustments',     label: 'Config sub recetas' });
     }
     items.forEach(item => nav.appendChild(crearNavItem(item)));
@@ -269,6 +270,7 @@ function navegarA(vistaId) {
     case 'costos':              renderVistaCostos(); break;
     case 'config-subrecetas':   renderVistaConfigSubrecetas(); break;
     case 'resumen-semanal':     renderVistaResumenSemanal(); break;
+    case 'consolidado-mensual': renderVistaConsolidado();    break;
     default: mostrarVista('empty');
   }
 }
@@ -1759,6 +1761,135 @@ function renderVistaResumenSemanal() {
     <div class="rsm-wrap">${html}</div>
   `;
   mostrarVista('resumen-semanal');
+}
+
+// ── CONSOLIDADO MENSUAL ──────────────────────────────────────
+async function renderVistaConsolidado() {
+  const vista = document.getElementById('vista-consolidado-mensual');
+  if (!vista) return;
+  mostrarVista('consolidado-mensual');
+
+  const ahora  = new Date();
+  const mesAct = ahora.getMonth() + 1;
+  const añoAct = ahora.getFullYear();
+
+  vista.innerHTML = `
+    <div class="vista-header">
+      <div>
+        <div class="vista-eyebrow">${App.area?.nombre || 'Consolidado'}</div>
+        <h1 class="vista-titulo">Consolidado mensual</h1>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+      <select id="sel-consolidado-mes" style="padding:6px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px"
+        onchange="cargarConsolidado()">
+        ${Array.from({length:12},(_,i)=>{
+          const m=i+1;
+          const label=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][i];
+          return `<option value="${m}" ${m===mesAct?'selected':''}>${label}</option>`;
+        }).join('')}
+      </select>
+      <select id="sel-consolidado-año" style="padding:6px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px"
+        onchange="cargarConsolidado()">
+        ${[añoAct-1, añoAct, añoAct+1].map(a=>`<option value="${a}" ${a===añoAct?'selected':''}>${a}</option>`).join('')}
+      </select>
+      <button class="btn-secundario" onclick="guardarConsolidadoAhora(this)" style="font-size:12px">
+        <i class="ti ti-device-floppy"></i> Guardar semana actual
+      </button>
+    </div>
+    <div id="consolidado-body">
+      <div style="padding:20px;text-align:center;color:var(--txt3)">
+        <div class="spinner"></div> Cargando...
+      </div>
+    </div>
+  `;
+
+  await cargarConsolidado();
+}
+
+async function cargarConsolidado() {
+  const mes  = document.getElementById('sel-consolidado-mes')?.value;
+  const año  = document.getElementById('sel-consolidado-año')?.value;
+  const body = document.getElementById('consolidado-body');
+  if (!body || !mes || !año) return;
+
+  body.innerHTML = '<div style="padding:20px;text-align:center;color:var(--txt3)"><div class="spinner"></div> Cargando...</div>';
+
+  try {
+    const payload = encodeURIComponent(JSON.stringify({
+      accion: 'leer_consolidado',
+      mes, año,
+      area: App.areaCodigo
+    }));
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
+    const data = await res.json();
+
+    if (!data.ok || !data.filas?.length) {
+      body.innerHTML = '<p style="padding:20px;color:var(--txt3);font-size:13px">Sin datos para este período. Usa "Guardar semana actual" o espera al trigger del sábado.</p>';
+      return;
+    }
+
+    // Agrupar por semana
+    const porSemana = {};
+    data.filas.forEach(f => {
+      if (!porSemana[f.semana_ID]) porSemana[f.semana_ID] = [];
+      porSemana[f.semana_ID].push(f);
+    });
+
+    const diasLabel = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+
+    body.innerHTML = Object.entries(porSemana)
+      .sort(([a],[b]) => a.localeCompare(b))
+      .map(([semana, filas]) => {
+        const produccion = filas.filter(f => f.tipo === 'produccion');
+        return `
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-head" style="background:var(--area-bg);color:var(--area-color)">
+              <i class="ti ti-calendar-week"></i>
+              ${semana}
+            </div>
+            <div style="overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse;font-size:12px">
+                <thead>
+                  <tr style="background:var(--bg)">
+                    <th style="text-align:left;padding:7px 12px;border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;font-size:10px;text-transform:uppercase">Producto/Insumo</th>
+                    ${diasLabel.map(d=>`<th style="text-align:right;padding:7px 8px;border-bottom:1px solid var(--border);color:var(--txt3);font-size:10px">${d}</th>`).join('')}
+                    <th style="text-align:right;padding:7px 12px;border-bottom:1px solid var(--border);color:var(--txt3);font-size:10px;font-weight:700">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${produccion.map(f => `
+                    <tr>
+                      <td style="padding:6px 12px;border-bottom:1px solid var(--border);font-weight:500">${f.nombre}</td>
+                      ${f.dias.map(v=>`<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace">${v>0?v:''}</td>`).join('')}
+                      <td style="padding:6px 12px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:700;color:var(--area-color)">${f.total}</td>
+                    </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>`;
+      }).join('');
+  } catch(e) {
+    body.innerHTML = `<p style="padding:20px;color:#C62828;font-size:13px">Error al cargar: ${e.message}</p>`;
+  }
+}
+
+async function guardarConsolidadoAhora(btn) {
+  bloquearBtn(btn, 'Guardando...');
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'guardar_consolidado' }));
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
+    const data = await res.json();
+    if (data.ok) {
+      toast('Consolidado guardado');
+      await cargarConsolidado();
+    } else {
+      toast('Error: ' + data.msg);
+    }
+  } catch(e) {
+    toast('Error de conexión');
+  }
+  desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar semana actual', true);
 }
 
 // ── ADMIN: APROBACIONES ───────────────────────────────────────
