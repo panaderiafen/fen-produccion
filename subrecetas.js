@@ -395,8 +395,19 @@ function renderElaboracionesPrevias(diaIdx) {
   console.log('[fën] Insumos detectados:', Object.keys(insumosMap));
   if (!subRecetas.length && !Object.keys(insumosMap).length) return '';
 
+  // Para BOL: filtrar masas base y empastes de elaboraciones previas
+  // (tienen sus propias secciones dedicadas)
+  const subRecetasFiltradas = App.areaCodigo === 'BOL'
+    ? subRecetas.filter(sr => {
+        const nombre = (sr.nombre || '').toLowerCase();
+        const esMasa = nombre.includes('masa') && !nombre.includes('madre') && !nombre.includes('poolish');
+        const esEmpaste = nombre.includes('empaste');
+        return !esMasa && !esEmpaste;
+      })
+    : subRecetas;
+
   // ── Sub recetas (elaboraciones previas)
-  const subRecetasHtml = subRecetas.map(sr => {
+  const subRecetasHtml = subRecetasFiltradas.map(sr => {
     const desglose  = calcularDesglose(sr.id, sr.totalGramos);
     const claveCheck = `fen_elab_${App.areaCodigo}_${obtenerSemanaActual()}_${diaIdx}_${sr.id}`;
     const listo = localStorage.getItem(claveCheck) === '1';
@@ -499,20 +510,30 @@ function renderElaboracionesPrevias(diaIdx) {
     ? renderTareasDescongelarBOL(diaIdx)
     : '';
 
+  const masasElaborar = (App.areaCodigo === 'BOL') ? renderMasasElaborarBOL(diaIdx) : '';
+
   return `
     <div class="elaboraciones-wrap">
 
       ${pieMM}
       ${prefermentoBOL}
-      ${empastes}
       ${tareasDescongelar}
+      ${empastes}
+      ${masasElaborar ? `
+      <div class="elab-seccion">
+        <div class="elab-seccion-titulo">
+          <i class="ti ti-stack-2" style="color:#6A1B9A"></i>
+          Elaboración y congelación de masas
+        </div>
+        ${masasElaborar}
+      </div>` : ''}
 
-      ${subRecetas.length ? `
+      ${subRecetasFiltradas.length ? `
       <div class="elab-seccion">
         <div class="elab-seccion-titulo">
           <i class="ti ti-clock-play"></i>
           Elaboraciones previas
-          <span class="elab-count">${subRecetas.length}</span>
+          <span class="elab-count">${subRecetasFiltradas.length}</span>
         </div>
         <div class="elab-lista-cards">${subRecetasHtml}</div>
       </div>` : ''}
@@ -1105,95 +1126,178 @@ function renderPrefermentoBOL(diaIdxTarget) {
 }
 
 // ── BOL: TAREAS PREVIAS DESCONGELAR ─────────────────────────
-function renderTareasDescongelarBOL(diaIdxTarget) {
-  if (App.areaCodigo !== 'BOL') return '';
-  const diasNombres = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
-  const cfg = cargarConfigSubrecetas();
-  const stockMasas = cfg.bol?.stock_masas || {};
-
-  // Masas a descongelar = demanda del día target
-  const masasBase = App.materiasPrimas.filter(m => {
+function getMasasBase() {
+  return App.materiasPrimas.filter(m => {
     const esSubReceta = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
     const nombre = (m.nombre || '').toLowerCase();
     return esSubReceta && nombre.includes('masa') && !nombre.includes('madre') && !nombre.includes('poolish') &&
       (!m.areas_habilitadas || m.areas_habilitadas.includes('BOL'));
   });
+}
 
-  // Calcular masas necesarias el día target desde plan
-  const planMasas = cfg.bol?.plan_masas || {};
-  const masasNecesarias = masasBase.map(m => ({
-    id: m.ID_MP,
-    nombre: m.nombre,
-    cantidad: (planMasas[m.ID_MP] || [])[diaIdxTarget] || 0
-  })).filter(m => m.cantidad > 0);
+function getMasasDescongelarSugeridas(diaIdx) {
+  // Calcular masas necesarias desde plan de producción
+  const masasBase = getMasasBase();
+  const resultado = {};
+  masasBase.forEach(m => {
+    let totalMasas = 0;
+    Object.entries(App.planSemana).forEach(([rid, cant]) => {
+      const unidades = cant[diaIdx] || 0;
+      if (!unidades) return;
+      const receta = App.recetas.find(r => r.ID_receta === rid);
+      if (!receta) return;
+      let ingredientes = [];
+      try { ingredientes = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
+      const porciones = parseInt(receta.porciones_base) || 1;
+      ingredientes.forEach(ing => {
+        if (ing.id === m.ID_MP) {
+          // Si es en unidades, contar directamente
+          if (ing.unidades) {
+            totalMasas += Math.ceil((ing.unidades / porciones) * unidades);
+          } else {
+            // En gramos: 1 masa = gramos de la sub receta
+            const srReceta = App.recetas.find(r => r.nombre === m.nombre);
+            if (srReceta) {
+              let ingsR = [];
+              try { ingsR = JSON.parse(srReceta.ingredientes_JSON || '[]'); } catch(e) {}
+              const pesoTotal = ingsR.reduce((s,i) => s+(parseFloat(i.gramos)||0), 0);
+              if (pesoTotal > 0) totalMasas += Math.ceil((parseFloat(ing.gramos)||0) / pesoTotal * unidades / porciones);
+            }
+          }
+        }
+      });
+    });
+    resultado[m.ID_MP] = totalMasas;
+  });
+  return resultado;
+}
 
-  // Productos a descongelar (productos terminados del stock)
-  const stockProductos = cfg.bol?.stock_productos || {};
-  const recetasBOL = App.recetas.filter(r =>
-    r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta'
-  );
+function renderTareasDescongelarBOL(diaIdx) {
+  if (App.areaCodigo !== 'BOL') return '';
+  const cfg = cargarConfigSubrecetas();
+  const mantPorEmpaste = cfg.bol?.mantequilla_por_empaste || 250;
+  const masasBase = getMasasBase();
+  const sugeridas = getMasasDescongelarSugeridas(diaIdx);
+  const recetasBOL = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta');
+  const semana = obtenerSemanaActual();
 
-  const claveDescongelar = `fen_descong_BOL_${obtenerSemanaActual()}_${diaIdxTarget}`;
-  const descongData = (() => {
-    try { return JSON.parse(localStorage.getItem(claveDescongelar) || '{}'); } catch(e) { return {}; }
-  })();
+  // Calcular empastes = suma de masas confirmadas a descongelar
+  let totalEmpastes = 0;
+  masasBase.forEach(m => {
+    const claveD = `fen_desc_masa_BOL_${semana}_${diaIdx}_${m.ID_MP}`;
+    try {
+      const d = JSON.parse(localStorage.getItem(claveD) || '{}');
+      totalEmpastes += parseInt(d.cantidad) || sugeridas[m.ID_MP] || 0;
+    } catch(e) { totalEmpastes += sugeridas[m.ID_MP] || 0; }
+  });
 
-  const claveMasasCheck = `fen_masas_desc_BOL_${obtenerSemanaActual()}_${diaIdxTarget}`;
-  const masasDescData = (() => {
-    try { return JSON.parse(localStorage.getItem(claveMasasCheck) || '{}'); } catch(e) { return {}; }
-  })();
+  const claveDescProd = `fen_descong_prod_BOL_${semana}_${diaIdx}`;
+  const descProdData = (() => { try { return JSON.parse(localStorage.getItem(claveDescProd)||'{}'); } catch(e) { return {}; } })();
 
   return `
     <div class="tarea-previa-bloque">
       <div class="tarea-previa-titulo">
-        <i class="ti ti-snowflake" style="color:#1565C0"></i>
-        Preparación previa para este día
+        <i class="ti ti-clock" style="color:#1565C0"></i>
+        Tareas previas — preparar el día anterior
       </div>
 
+      <!-- MASAS A DESCONGELAR -->
       <div class="tarea-seccion">
         <div class="tarea-seccion-label">🧊 Masas base a descongelar</div>
         ${masasBase.map(m => {
-          const claveMasaD = `fen_desc_masa_BOL_${obtenerSemanaActual()}_${diaIdxTarget}_${m.ID_MP}`;
-          const dataM = (() => { try { return JSON.parse(localStorage.getItem(claveMasaD)||'{}'); } catch(e) { return {}; } })();
-          const checked = dataM.done === '1';
-          const cant = dataM.cantidad !== undefined ? dataM.cantidad : 0;
+          const claveD = `fen_desc_masa_BOL_${semana}_${diaIdx}_${m.ID_MP}`;
+          const dataD = (() => { try { return JSON.parse(localStorage.getItem(claveD)||'{}'); } catch(e) { return {}; } })();
+          const checked = dataD.done === '1';
+          const sugerido = sugeridas[m.ID_MP] || 0;
+          const cant = dataD.cantidad !== undefined ? dataD.cantidad : sugerido;
           return `
           <div class="tarea-fila">
-            <label class="rdc-check-wrap" onclick="event.stopPropagation()">
+            <label class="rdc-check-wrap">
               <input type="checkbox" ${checked?'checked':''}
-                onchange="(function(el){try{const d=JSON.parse(localStorage.getItem('${claveMasaD}')||'{}');d.done=el.checked?'1':'0';localStorage.setItem('${claveMasaD}',JSON.stringify(d));}catch(e){};})(this)">
+                onchange="actualizarDescMasa('${claveD}',null,this.checked)">
               <span class="rdc-check-box"></span>
             </label>
             <span class="tarea-nombre">${m.nombre}</span>
-            <input type="number" min="0" value="${cant}" placeholder="0"
+            <span style="font-size:11px;color:var(--txt3);margin-right:4px">Sugerido: ${sugerido}</span>
+            <input type="number" min="0" value="${cant}" placeholder="${sugerido}"
+              id="inp-desc-masa-${m.ID_MP}-${diaIdx}"
               style="width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
-              oninput="(function(v){try{const d=JSON.parse(localStorage.getItem('${claveMasaD}')||'{}');d.cantidad=parseInt(v)||0;localStorage.setItem('${claveMasaD}',JSON.stringify(d));}catch(e){};})(this.value)">
+              oninput="actualizarDescMasa('${claveD}',this.value,null);actualizarEmpastesDisplay(${diaIdx})">
             <span style="font-size:12px;color:var(--txt3)">masas</span>
           </div>`;
         }).join('')}
       </div>
 
+      <!-- EMPASTES A ESTIRAR -->
       <div class="tarea-seccion">
-        <div class="tarea-seccion-label">❄️ Productos a descongelar</div>
+        <div class="tarea-seccion-label">🧈 Empastes a estirar</div>
+        <div class="tarea-fila" style="background:rgba(255,193,7,.08);border-radius:var(--r-sm);padding:10px 12px">
+          <span class="tarea-nombre" style="font-weight:600">Mantequilla extra seca</span>
+          <span id="empastes-display-${diaIdx}" style="font-family:'DM Mono',monospace;font-weight:700;color:#E65100;font-size:15px">
+            ${totalEmpastes} empastes · ${formatearGramos(totalEmpastes * mantPorEmpaste, true)}
+          </span>
+        </div>
+        <p style="font-size:11px;color:var(--txt3);padding:6px 12px">
+          Se actualiza automáticamente según las masas confirmadas a descongelar.
+        </p>
+      </div>
+
+      <!-- PRODUCTOS A DESCONGELAR -->
+      ${recetasBOL.length ? `
+      <div class="tarea-seccion">
+        <div class="tarea-seccion-label">❄️ Productos terminados a descongelar</div>
         ${recetasBOL.map(r => {
-          const checked = descongData[r.ID_receta]?.done === '1';
-          const cant = descongData[r.ID_receta]?.cantidad || 0;
+          const checked = descProdData[r.ID_receta]?.done === '1';
+          const cant = descProdData[r.ID_receta]?.cantidad || 0;
           return `
           <div class="tarea-fila">
-            <label class="rdc-check-wrap" onclick="event.stopPropagation()">
+            <label class="rdc-check-wrap">
               <input type="checkbox" ${checked?'checked':''}
-                onchange="guardarDescongData('${claveDescongelar}','${r.ID_receta}',this.checked,this.closest('.tarea-fila').querySelector('input[type=number]').value)">
+                onchange="actualizarDescProd('${claveDescProd}','${r.ID_receta}',this.checked,null)">
               <span class="rdc-check-box"></span>
             </label>
             <span class="tarea-nombre">${r.nombre}</span>
             <input type="number" min="0" value="${cant}" placeholder="0"
               style="width:70px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
-              oninput="guardarDescongData('${claveDescongelar}','${r.ID_receta}',false,this.value)">
+              oninput="actualizarDescProd('${claveDescProd}','${r.ID_receta}',null,this.value)">
             <span style="font-size:12px;color:var(--txt3)">uni</span>
           </div>`;
         }).join('')}
-      </div>
+      </div>` : ''}
     </div>`;
+}
+
+function actualizarDescMasa(clave, cantidad, done) {
+  try {
+    const d = JSON.parse(localStorage.getItem(clave) || '{}');
+    if (cantidad !== null) d.cantidad = parseInt(cantidad) || 0;
+    if (done !== null) d.done = done ? '1' : '0';
+    localStorage.setItem(clave, JSON.stringify(d));
+  } catch(e) {}
+}
+
+function actualizarDescProd(clave, id, done, cantidad) {
+  try {
+    const d = JSON.parse(localStorage.getItem(clave) || '{}');
+    if (!d[id]) d[id] = {};
+    if (done !== null) d[id].done = done ? '1' : '0';
+    if (cantidad !== null) d[id].cantidad = parseInt(cantidad) || 0;
+    localStorage.setItem(clave, JSON.stringify(d));
+  } catch(e) {}
+}
+
+function actualizarEmpastesDisplay(diaIdx) {
+  const cfg = cargarConfigSubrecetas();
+  const mantPorEmpaste = cfg.bol?.mantequilla_por_empaste || 250;
+  const masasBase = getMasasBase();
+  const semana = obtenerSemanaActual();
+  let total = 0;
+  masasBase.forEach(m => {
+    const inp = document.getElementById(`inp-desc-masa-${m.ID_MP}-${diaIdx}`);
+    total += parseInt(inp?.value) || 0;
+  });
+  const display = document.getElementById(`empastes-display-${diaIdx}`);
+  if (display) display.textContent = `${total} empastes · ${formatearGramos(total * mantPorEmpaste, true)}`;
 }
 
 function guardarTareaDescongelarMasa(clave, id, checked, cantidad) {
@@ -1210,6 +1314,92 @@ function guardarDescongData(clave, id, checked, cantidad) {
     data[id] = { done: checked ? '1' : '0', cantidad: parseInt(cantidad) || 0 };
     localStorage.setItem(clave, JSON.stringify(data));
   } catch(e) {}
+}
+
+// ── BOL: MASAS A ELABORAR Y CONGELAR ─────────────────────────
+function renderMasasElaborarBOL(diaIdx) {
+  if (App.areaCodigo !== 'BOL') return '';
+  const cfg = cargarConfigSubrecetas();
+  const planMasas = cfg.bol?.plan_masas || {};
+  const maxPorTanda = cfg.bol?.amasadora_max_por_tanda || 16;
+  const masasBase = getMasasBase();
+  const semana = obtenerSemanaActual();
+
+  const masasConPlan = masasBase.map(m => ({
+    mp: m,
+    cantidad: (planMasas[m.ID_MP] || [])[diaIdx] || 0,
+    receta: App.recetas.find(r => r.nombre === m.nombre && r.estado === 'consolidada')
+  })).filter(x => x.cantidad > 0);
+
+  if (!masasConPlan.length) return '';
+
+  return masasConPlan.map(({ mp, cantidad, receta }) => {
+    let ingredientes = [];
+    if (receta) {
+      try { ingredientes = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
+    }
+
+    // Calcular tandas
+    const tandas = [];
+    let restante = cantidad;
+    while (restante > 0) {
+      const esta = Math.min(restante, maxPorTanda);
+      tandas.push(esta);
+      restante -= esta;
+    }
+
+    const claveTandas = `fen_tandas_BOL_${semana}_${diaIdx}_${mp.ID_MP}`;
+    const tandasData = (() => { try { return JSON.parse(localStorage.getItem(claveTandas)||'[]'); } catch(e) { return []; } })();
+
+    return `
+      <div class="elab-card" style="border-color:#9C27B0;margin-bottom:12px">
+        <div class="elab-header" style="background:linear-gradient(135deg,#F3E5F5,#EDE7F6)">
+          <div class="elab-info">
+            <strong class="elab-nombre" style="color:#4A148C">🧊➕ ${mp.nombre}</strong>
+            <div style="font-size:11px;color:#7B1FA2;margin-top:2px">
+              ${cantidad} masas · ${tandas.length} tanda${tandas.length>1?'s':''} · Va directo al congelador
+            </div>
+          </div>
+          <span class="elab-total-badge" style="background:rgba(156,39,176,.15);color:#6A1B9A">
+            ${cantidad} masas
+          </span>
+        </div>
+        ${tandas.map((n, i) => {
+          const factor = n;
+          const done = tandasData[i] === '1';
+          const claveT = `${claveTandas}_t${i}`;
+          return `
+          <div style="border-top:1px solid rgba(156,39,176,.2);padding:10px 16px;${done?'opacity:.5;background:#F3E5F5':''}">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+              <label class="rdc-check-wrap">
+                <input type="checkbox" ${done?'checked':''}
+                  onchange="(function(el){try{const d=JSON.parse(localStorage.getItem('${claveTandas}')||'[]');d[${i}]=el.checked?'1':'0';localStorage.setItem('${claveTandas}',JSON.stringify(d));el.closest('[style]').style.opacity=el.checked?'.5':'1';}catch(e){};})(this)">
+                <span class="rdc-check-box"></span>
+              </label>
+              <span style="font-size:13px;font-weight:600;color:#4A148C">
+                Tanda ${i+1} — ${n} masa${n>1?'s':''}
+              </span>
+            </div>
+            ${ingredientes.length ? `
+            <div class="elab-desglose" style="display:block">
+              ${ingredientes.map(ing => {
+                const gr = (parseFloat(ing.gramos)||0) * factor;
+                return `<div class="elab-fila">
+                  <span class="elab-comp-nombre">${ing.nombre}</span>
+                  <span class="elab-comp-val">${formatearGramos(gr, true)}</span>
+                </div>`;
+              }).join('')}
+              <div class="elab-fila elab-total-fila">
+                <span class="elab-comp-nombre">Total tanda</span>
+                <span class="elab-comp-val elab-total-val">
+                  ${formatearGramos(ingredientes.reduce((s,i)=>s+(parseFloat(i.gramos)||0)*factor,0), true)}
+                </span>
+              </div>
+            </div>` : '<p style="font-size:12px;color:var(--txt3);padding:0 0 4px">Sin ingredientes — edita la sub receta para agregar.</p>'}
+          </div>`;
+        }).join('')}
+      </div>`;
+  }).join('');
 }
 
 // ── UTILIDAD: formatear gramos ────────────────────────────────
