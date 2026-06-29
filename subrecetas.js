@@ -1345,21 +1345,26 @@ function renderTareasDescongelarBOL(diaIdx) {
         ${masasBase.map(m => {
           const claveD = `fen_desc_masa_BOL_${semana}_${diaIdx}_${m.ID_MP}`;
           const tDesc = getTareaBOL(diaIdx, `masas_desc_${m.ID_MP}`);
-          const checked = tDesc.estado === '1';
           const sugerido = sugeridas[m.ID_MP] || 0;
           const cant = tDesc.cantidad || sugerido;
+          const checked = tDesc.estado === '1' || (cant >= sugerido && sugerido > 0);
+          const esParc = !checked && cant > 0 && cant < sugerido;
           return `
-          <div class="tarea-fila">
+          <div class="tarea-fila" style="${checked?'opacity:.6':''}">
             <label class="rdc-check-wrap">
               <input type="checkbox" ${checked?'checked':''}
-                onchange="actualizarDescMasa('${claveD}',null,this.checked)">
+                onchange="guardarDescMasaBOL(${diaIdx},'${m.ID_MP}',null,this.checked)">
               <span class="rdc-check-box"></span>
             </label>
-            <span class="tarea-nombre">${m.nombre}</span>
-            <span style="font-size:11px;color:var(--txt3);margin-right:4px">Sugerido: ${sugerido}</span>
+            <div style="flex:1">
+              <span class="tarea-nombre">${m.nombre}</span>
+              ${esParc ? `<span style="font-size:10px;color:#F57C00;font-weight:600;margin-left:6px">◑ Parcial: ${cant} de ${sugerido}</span>` : ''}
+              ${checked ? `<span style="font-size:10px;color:#2E7D32;font-weight:600;margin-left:6px">✓ Completo</span>` : ''}
+            </div>
+            <span style="font-size:11px;color:var(--txt3);margin-right:4px">Planif.: ${sugerido}</span>
             <input type="number" min="0" value="${cant}" placeholder="${sugerido}"
               id="inp-desc-masa-${m.ID_MP}-${diaIdx}"
-              style="width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
+              style="width:55px;padding:4px 8px;border:1px solid ${esParc?'#F57C00':checked?'#4CAF50':'var(--border)'};border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
               oninput="guardarDescMasaBOL(${diaIdx},'${m.ID_MP}',this.value);actualizarEmpastesDisplay(${diaIdx})">
             <span style="font-size:12px;color:var(--txt3)">masas</span>
           </div>`;
@@ -1421,18 +1426,24 @@ function renderTareasDescongelarBOL(diaIdx) {
         <div class="tarea-seccion-label">❄️ Productos terminados a descongelar</div>
         ${recetasBOL.map(r => {
           const tProd = getTareaBOL(diaIdx, `prod_desc_${r.ID_receta}`);
-          const checked = tProd.estado === '1';
-          const cant = tProd.cantidad || 0;
+          const cantProd = tProd.cantidad || 0;
+          const checkedProd = tProd.estado === '1';
+          const checked = checkedProd;
+          const cant = cantProd;
           return `
-          <div class="tarea-fila">
+          <div class="tarea-fila" style="${checked?'opacity:.6':''}">
             <label class="rdc-check-wrap">
               <input type="checkbox" ${checked?'checked':''}
                 onchange="guardarTareaBOL(${diaIdx},'prod_desc_${r.ID_receta}',this.checked,parseInt(this.closest('.tarea-fila').querySelector('input[type=number]').value)||0)">
               <span class="rdc-check-box"></span>
             </label>
-            <span class="tarea-nombre">${r.nombre}</span>
+            <div style="flex:1">
+              <span class="tarea-nombre">${r.nombre}</span>
+              ${cant > 0 && !checked ? `<span style="font-size:10px;color:#F57C00;font-weight:600;margin-left:6px">◑ ${cant} uni</span>` : ''}
+              ${checked ? `<span style="font-size:10px;color:#2E7D32;font-weight:600;margin-left:6px">✓ ${cant} uni</span>` : ''}
+            </div>
             <input type="number" min="0" value="${cant}" placeholder="0"
-              style="width:70px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
+              style="width:65px;padding:4px 8px;border:1px solid ${cant>0&&!checked?'#F57C00':checked?'#4CAF50':'var(--border)'};border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
               oninput="guardarTareaBOL(${diaIdx},'prod_desc_${r.ID_receta}',false,parseInt(this.value)||0)">
             <span style="font-size:12px;color:var(--txt3)">uni</span>
           </div>`;
