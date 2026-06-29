@@ -1269,7 +1269,7 @@ function renderTareasDescongelarBOL(diaIdx) {
       <input type="number" min="0" value="${cant}" placeholder="${sugerido}"
         id="inp-desc-masa-${m.ID_MP}-${diaIdx}"
         style="width:55px;padding:4px 8px;border:1px solid ${bdColor};border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
-        oninput="guardarDescMasaBOL(${diaIdx},'${m.ID_MP}',this.value);actualizarEmpastesDisplay(${diaIdx})">
+        oninput="guardarDescMasaBOL(${diaIdx},'${m.ID_MP}',this.value)">
       <span style="font-size:12px;color:var(--txt3)">masas</span>
     </div>`;
   }).join('');
