@@ -1313,17 +1313,60 @@ function renderTareasDescongelarBOL(diaIdx) {
         }).join('')}
       </div>
 
-      <!-- EMPASTES A ESTIRAR -->
+      <!-- EMPASTES A PREPARAR: 2 pasos -->
       <div class="tarea-seccion">
-        <div class="tarea-seccion-label">🧈 Empastes a estirar</div>
-        <div class="tarea-fila" style="background:rgba(255,193,7,.08);border-radius:var(--r-sm);padding:10px 12px">
-          <span class="tarea-nombre" style="font-weight:600">Mantequilla extra seca</span>
-          <span id="empastes-display-${diaIdx}" style="font-family:'DM Mono',monospace;font-weight:700;color:#E65100;font-size:15px">
+        <div class="tarea-seccion-label" style="display:flex;align-items:center;justify-content:space-between">
+          <span>🧈 Empastes a preparar</span>
+          <span id="empastes-display-${diaIdx}" style="font-family:'DM Mono',monospace;font-weight:700;color:#E65100;font-size:13px">
             ${totalEmpastes} empastes · ${formatearGramos(totalEmpastes * mantPorEmpaste, true)}
           </span>
         </div>
-        <p style="font-size:11px;color:var(--txt3);padding:6px 12px">
-          Se actualiza automáticamente según las masas confirmadas a descongelar.
+
+        ${['porcionado','estirado'].map((paso, pi) => {
+          const clavePaso = `fen_empaste_${paso}_BOL_${obtenerSemanaActual()}_${diaIdx}`;
+          const dataPaso = (() => { try { return JSON.parse(localStorage.getItem(clavePaso)||'{}'); } catch(e) { return {}; } })();
+          const checked = dataPaso.done === '1';
+          const cant = dataPaso.cantidad !== undefined ? dataPaso.cantidad : totalEmpastes;
+          const label = pi === 0
+            ? `Porcionado de mantequilla (${totalEmpastes} × ${mantPorEmpaste}g)`
+            : `Estirado de mantequilla`;
+          const detalle = pi === 0
+            ? `${formatearGramos(totalEmpastes * mantPorEmpaste, true)} total`
+            : `${totalEmpastes} empastes listos para usar`;
+
+          return `
+          <div class="tarea-fila ${checked?'':''}">
+            <label class="rdc-check-wrap">
+              <input type="checkbox" ${checked?'checked':''}
+                onchange="(function(el){
+                  try{
+                    const d=JSON.parse(localStorage.getItem('${clavePaso}')||'{}');
+                    d.done=el.checked?'1':'0';
+                    localStorage.setItem('${clavePaso}',JSON.stringify(d));
+                    el.closest('.tarea-fila').style.opacity=el.checked?'.5':'1';
+                  }catch(e){}
+                })(this)">
+              <span class="rdc-check-box"></span>
+            </label>
+            <div style="flex:1">
+              <div class="tarea-nombre" style="font-weight:500">${label}</div>
+              <div style="font-size:11px;color:var(--txt3)">${detalle}</div>
+            </div>
+            <input type="number" min="0" value="${cant}" placeholder="${totalEmpastes}"
+              style="width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
+              oninput="(function(v){
+                try{
+                  const d=JSON.parse(localStorage.getItem('${clavePaso}')||'{}');
+                  d.cantidad=parseInt(v)||0;
+                  localStorage.setItem('${clavePaso}',JSON.stringify(d));
+                }catch(e){}
+              })(this.value)">
+            <span style="font-size:12px;color:var(--txt3)">emp.</span>
+          </div>`;
+        }).join('')}
+
+        <p style="font-size:11px;color:var(--txt3);padding:4px 12px 8px">
+          Se actualiza según masas confirmadas a descongelar.
         </p>
       </div>
 
