@@ -639,7 +639,229 @@ function calcularResumenSemanal() {
   return { resumen, diasNombres };
 }
 
+function renderResumenSemanalBOL() {
+  const cfg = cargarConfigSubrecetas();
+  const planMasas = cfg.bol?.plan_masas || {};
+  const mantPorEmpaste = cfg.bol?.mantequilla_por_empaste || 250;
+  const diasNombres = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+
+  const masasBase = App.materiasPrimas.filter(m => {
+    const esSubReceta = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
+    const nombre = (m.nombre || '').toLowerCase();
+    return esSubReceta && nombre.includes('masa') && !nombre.includes('madre') && !nombre.includes('poolish') &&
+      (!m.areas_habilitadas || m.areas_habilitadas.includes('BOL'));
+  });
+
+  const poolishMPs = App.materiasPrimas.filter(m => {
+    const esSubReceta = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
+    return esSubReceta && (m.nombre||'').toLowerCase().includes('poolish') &&
+      (!m.areas_habilitadas || m.areas_habilitadas.includes('BOL'));
+  });
+
+  // ── Plan de masas por día ──────────────────────────────────
+  const planMasasPorDia = Array(7).fill(0);
+  masasBase.forEach(m => {
+    const plan = planMasas[m.ID_MP] || Array(7).fill(0);
+    plan.forEach((v, i) => { planMasasPorDia[i] += v || 0; });
+  });
+  const totalMasasSemana = planMasasPorDia.reduce((s,v)=>s+v,0);
+
+  // ── Empastes por día (igual al plan de producción) ────────
+  const sugeridas = {};
+  masasBase.forEach(m => {
+    const res = getMasasDescongelarSugeridas ? null : null; // ya existe la función
+  });
+  // Calcular empastes desde plan de productos por día
+  const empastesPorDia = Array(7).fill(0);
+  for (let d = 0; d < 7; d++) {
+    let totalMasas = 0;
+    masasBase.forEach(masa => {
+      Object.entries(App.planSemana).forEach(([rid, cant]) => {
+        const unidades = cant[d] || 0;
+        if (!unidades) return;
+        const receta = App.recetas.find(r => r.ID_receta === rid);
+        if (!receta) return;
+        let ings = [];
+        try { ings = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
+        const porciones = parseInt(receta.porciones_base) || 1;
+        ings.forEach(ing => {
+          if (ing.id === masa.ID_MP) {
+            totalMasas += ing.unidades
+              ? Math.ceil((parseFloat(ing.unidades)||0) / porciones * unidades)
+              : 1;
+          }
+        });
+      });
+    });
+    empastesPorDia[d] = totalMasas;
+  }
+  const totalEmpastesSemana = empastesPorDia.reduce((s,v)=>s+v,0);
+
+  // ── Insumos acumulados ────────────────────────────────────
+  const insumosMap = {}; // { nombre: { masa: total, poolish: total } }
+
+  // Desde masa base
+  masasBase.forEach(masa => {
+    const recetaMasa = App.recetas.find(r => r.nombre === masa.nombre);
+    if (!recetaMasa) return;
+    let ings = [];
+    try { ings = JSON.parse(recetaMasa.ingredientes_JSON || '[]'); } catch(e) {}
+    ings.forEach(ing => {
+      const nombre = ing.nombre;
+      if (!insumosMap[nombre]) insumosMap[nombre] = { masa: 0, poolish: 0 };
+      // Suma por todos los días del plan de masas
+      masasBase.forEach(m => {
+        (planMasas[m.ID_MP] || []).forEach(cantDia => {
+          insumosMap[nombre].masa += (parseFloat(ing.gramos)||0) * (cantDia||0);
+        });
+      });
+    });
+  });
+  // Evitar duplicados — resetear y recalcular correctamente
+  const insumosCorrectos = {};
+  masasBase.forEach(masa => {
+    const recetaMasa = App.recetas.find(r => r.nombre === masa.nombre);
+    if (!recetaMasa) return;
+    let ings = [];
+    try { ings = JSON.parse(recetaMasa.ingredientes_JSON || '[]'); } catch(e) {}
+    const planDias = planMasas[masa.ID_MP] || Array(7).fill(0);
+    const totalMasasEsta = planDias.reduce((s,v)=>s+(v||0),0);
+    ings.forEach(ing => {
+      if (!insumosCorrectos[ing.nombre]) insumosCorrectos[ing.nombre] = { masa: 0, poolish: 0 };
+      insumosCorrectos[ing.nombre].masa += (parseFloat(ing.gramos)||0) * totalMasasEsta;
+    });
+  });
+
+  // Desde poolish
+  poolishMPs.forEach(pool => {
+    const recetaPool = App.recetas.find(r => r.nombre === pool.nombre);
+    if (!recetaPool) return;
+    let ings = [];
+    try { ings = JSON.parse(recetaPool.ingredientes_JSON || '[]'); } catch(e) {}
+    ings.forEach(ing => {
+      if (!insumosCorrectos[ing.nombre]) insumosCorrectos[ing.nombre] = { masa: 0, poolish: 0 };
+      insumosCorrectos[ing.nombre].poolish += (parseFloat(ing.gramos)||0) * totalMasasSemana;
+    });
+  });
+
+  // Mantequilla empastes
+  const mantTotalEmpastes = totalEmpastesSemana * mantPorEmpaste;
+  const mantTotalMasa = insumosCorrectos['Mantequilla extra seca']?.masa || 0;
+
+  // ── Productos del plan semanal ────────────────────────────
+  const recetasBOL = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta');
+  const productosPlan = recetasBOL.map(r => {
+    const porDia = diasNombres.map((_, i) => App.planSemana[r.ID_receta]?.[i] || 0);
+    const total = porDia.reduce((s,v)=>s+v,0);
+    return { nombre: r.nombre, porDia, total };
+  }).filter(p => p.total > 0);
+
+  // ── Render ────────────────────────────────────────────────
+  let html = '';
+
+  // ELABORACIÓN
+  html += `<div class="rsm-seccion"><div class="rsm-titulo">Elaboración semanal</div>`;
+
+  // Masa base pastón
+  if (totalMasasSemana > 0) {
+    html += `
+      <div class="rsm-item">
+        <div class="rsm-item-nombre" style="color:#6A1B9A;font-weight:600">🧊➕ Masa Base Pastón</div>
+        <div class="rsm-item-total" style="color:#6A1B9A">${totalMasasSemana} masas</div>
+        <div class="rsm-dias">
+          ${planMasasPorDia.map((v, i) => v > 0
+            ? `<span class="rsm-dia-pill rsm-dia-con" style="border-color:#CE93D8">${diasNombres[i]}<br><strong>${v}</strong></span>`
+            : `<span class="rsm-dia-pill rsm-dia-sin">${diasNombres[i]}</span>`
+          ).join('')}
+        </div>
+      </div>`;
+  }
+
+  // Empastes
+  if (totalEmpastesSemana > 0) {
+    html += `
+      <div class="rsm-item">
+        <div class="rsm-item-nombre" style="color:#E65100;font-weight:600">🧈 Empastes</div>
+        <div class="rsm-item-total" style="color:#E65100">${totalEmpastesSemana} emp · ${formatearGramos(mantTotalEmpastes, true)}</div>
+        <div class="rsm-dias">
+          ${empastesPorDia.map((v, i) => v > 0
+            ? `<span class="rsm-dia-pill rsm-dia-con" style="border-color:#FFCC80">${diasNombres[i]}<br><strong>${v}</strong></span>`
+            : `<span class="rsm-dia-pill rsm-dia-sin">${diasNombres[i]}</span>`
+          ).join('')}
+        </div>
+      </div>`;
+  }
+  html += '</div>';
+
+  // INSUMOS
+  html += `<div class="rsm-seccion"><div class="rsm-titulo">Insumos semana</div>`;
+
+  // Mantequilla especial
+  html += `<div class="rsm-cat">Mantequilla extra seca</div>`;
+  html += `<div class="rsm-item-simple"><span>Empastes</span><span style="color:#E65100;font-weight:600">${formatearGramos(mantTotalEmpastes,true)}</span></div>`;
+  html += `<div class="rsm-item-simple"><span>Masa base</span><span>${formatearGramos(mantTotalMasa,true)}</span></div>`;
+  html += `<div class="rsm-item-simple" style="font-weight:600;border-top:1px solid var(--border);margin-top:4px;padding-top:4px"><span>Total mantequilla</span><span style="color:#C62828">${formatearGramos(mantTotalEmpastes+mantTotalMasa,true)}</span></div>`;
+
+  // Resto de insumos
+  const categorias = {
+    'Harinas': [],
+    'Levadura': [],
+    'Sal': [],
+    'Lácteos': [],
+    'Otros': [],
+  };
+
+  Object.entries(insumosCorrectos).forEach(([nombre, vals]) => {
+    if (nombre.toLowerCase().includes('mantequilla')) return; // ya mostrada
+    const total = vals.masa + vals.poolish;
+    if (total === 0) return;
+    const detalle = vals.poolish > 0
+      ? `${formatearGramos(total,true)} <span style="font-size:10px;color:var(--txt3)">(masa ${formatearGramos(vals.masa,true)} + poolish ${formatearGramos(vals.poolish,true)})</span>`
+      : formatearGramos(total,true);
+    const n = nombre.toLowerCase();
+    const cat = n.includes('harina') ? 'Harinas'
+      : n.includes('levadura') ? 'Levadura'
+      : n.includes('sal') ? 'Sal'
+      : (n.includes('leche') || n.includes('lácteo')) ? 'Lácteos'
+      : 'Otros';
+    categorias[cat].push({ nombre, detalle, total });
+  });
+
+  Object.entries(categorias).forEach(([cat, items]) => {
+    if (!items.length) return;
+    const esHarina = cat === 'Harinas';
+    html += `<div class="rsm-cat">${cat}</div>`;
+    items.forEach(({ nombre, detalle, total }) => {
+      const sacos = esHarina ? Math.ceil(total/25000) : 0;
+      html += `<div class="rsm-item-simple"><span>${nombre}</span><span>${detalle}${sacos>0?` <span style="font-size:10px;color:var(--txt3)">(${sacos} saco${sacos>1?'s':''})</span>`:''}</span></div>`;
+    });
+  });
+  html += '</div>';
+
+  // PRODUCTOS
+  if (productosPlan.length) {
+    html += `<div class="rsm-seccion"><div class="rsm-titulo">Producción semanal</div>`;
+    productosPlan.forEach(p => {
+      html += `
+        <div class="rsm-item">
+          <div class="rsm-item-nombre">${p.nombre}</div>
+          <div class="rsm-item-total">${p.total} uni</div>
+          <div class="rsm-dias">
+            ${p.porDia.map((v, i) => v > 0
+              ? `<span class="rsm-dia-pill rsm-dia-con">${diasNombres[i]}<br><strong>${v}</strong></span>`
+              : `<span class="rsm-dia-pill rsm-dia-sin">${diasNombres[i]}</span>`
+            ).join('')}
+          </div>
+        </div>`;
+    });
+    html += '</div>';
+  }
+
+  return html;
+}
+
 function renderResumenSemanal() {
+  if (App.areaCodigo === 'BOL') return renderResumenSemanalBOL();
   const { resumen, diasNombres } = calcularResumenSemanal();
   const tieneSubRecetas = Object.keys(resumen.subRecetas).length > 0;
   const tieneInsumos    = Object.keys(resumen.insumos).length > 0;
