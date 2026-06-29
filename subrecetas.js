@@ -1198,6 +1198,67 @@ function renderTareasDescongelarBOL(diaIdx) {
         Tareas previas — preparar el día anterior
       </div>
 
+      <!-- POOLISH desde plan de masas -->
+      ${(() => {
+        const planMasas = cfg.bol?.plan_masas || {};
+        const poolishItems = App.materiasPrimas.filter(m => {
+          const esSubReceta = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
+          const nombre = (m.nombre || '').toLowerCase();
+          return esSubReceta && nombre.includes('poolish') &&
+            (!m.areas_habilitadas || m.areas_habilitadas.includes('BOL'));
+        });
+
+        if (!poolishItems.length) return '';
+
+        return poolishItems.map(pool => {
+          // Buscar receta de poolish para obtener ingredientes
+          const poolReceta = App.recetas.find(r =>
+            r.nombre === pool.nombre && r.estado === 'consolidada'
+          );
+          let ingsPool = [];
+          if (poolReceta) {
+            try { ingsPool = JSON.parse(poolReceta.ingredientes_JSON || '[]'); } catch(e) {}
+          }
+          const pesoUnitario = ingsPool.reduce((s,i) => s+(parseFloat(i.gramos)||0), 0);
+
+          // Calcular total desde plan de masas
+          // Cada masa base usa 1 poolish unitario
+          let totalMasasPlan = 0;
+          masasBase.forEach(m => {
+            totalMasasPlan += (planMasas[m.ID_MP] || [])[diaIdx] || 0;
+          });
+
+          if (totalMasasPlan === 0 || pesoUnitario === 0) return '';
+
+          const totalGrPool = pesoUnitario * totalMasasPlan;
+          const clavePool = `fen_poolish_BOL_${obtenerSemanaActual()}_${diaIdx}`;
+          const listoPool = localStorage.getItem(clavePool) === '1';
+
+          return `
+          <div class="tarea-seccion">
+            <div class="tarea-seccion-label">🌱 ${pool.nombre}</div>
+            <div style="padding:4px 0">
+              ${ingsPool.map(ing => {
+                const gr = (parseFloat(ing.gramos)||0) * totalMasasPlan;
+                return `<div class="tarea-fila" style="border-bottom:1px solid rgba(156,39,176,.1)">
+                  <span class="tarea-nombre" style="color:#4A148C">${ing.nombre}</span>
+                  <span style="font-family:'DM Mono',monospace;font-weight:600;color:#6A1B9A">${formatearGramos(gr, true)}</span>
+                </div>`;
+              }).join('')}
+              <div class="tarea-fila" style="background:rgba(156,39,176,.06);font-weight:600">
+                <span class="tarea-nombre" style="color:#4A148C">Total (${totalMasasPlan} masas)</span>
+                <span style="font-family:'DM Mono',monospace;font-weight:700;color:#6A1B9A;font-size:15px">${formatearGramos(totalGrPool, true)}</span>
+                <label class="rdc-check-wrap" style="margin-left:10px">
+                  <input type="checkbox" ${listoPool?'checked':''}
+                    onchange="localStorage.setItem('${clavePool}',this.checked?'1':'0');this.closest('.tarea-fila').style.opacity=this.checked?'.5':'1'">
+                  <span class="rdc-check-box"></span>
+                </label>
+              </div>
+            </div>
+          </div>`;
+        }).join('');
+      })()}
+
       <!-- MASAS A DESCONGELAR -->
       <div class="tarea-seccion">
         <div class="tarea-seccion-label">🧊 Masas base a descongelar</div>
