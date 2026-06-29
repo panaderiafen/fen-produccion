@@ -537,11 +537,12 @@ function renderElaboracionesPrevias(diaIdx) {
 
       ${Object.keys(insumosMap).length ? `
       <div class="elab-seccion">
-        <div class="elab-seccion-titulo">
+        <div class="elab-seccion-titulo" style="cursor:pointer" onclick="toggleInsumos(this)">
           <i class="ti ti-basket"></i>
           Insumos del día
+          <i class="ti ti-chevron-down" style="margin-left:auto;font-size:14px;color:var(--txt3);transition:transform .2s"></i>
         </div>
-        <div class="insumos-grid">${insumosHtml}</div>
+        <div class="insumos-grid" id="insumos-grid-dia" style="display:none">${insumosHtml}</div>
       </div>` : ''}
 
     </div>
@@ -1247,6 +1248,7 @@ function renderTareasDescongelarBOL(diaIdx) {
           const claveTandasPool = `fen_poolish_tandas_BOL_${obtenerSemanaActual()}_${diaIdx}`;
           const tandasPoolData = (() => { try { return JSON.parse(localStorage.getItem(claveTandasPool)||'[]'); } catch(e) { return []; } })();
 
+          const poolUid = `pool_${pool.ID_MP}_${diaIdx}`;
           return `
           <div class="tarea-seccion">
             <div class="tarea-seccion-label" style="display:flex;align-items:center;justify-content:space-between">
@@ -1255,11 +1257,12 @@ function renderTareasDescongelarBOL(diaIdx) {
             </div>
             ${tandasPool.map((n, i) => {
               const done = tandasPoolData[i] === '1';
-              const claveT = `${claveTandasPool}_${i}`;
+              const tandaId = `tanda_pool_${poolUid}_${i}`;
               return `
               <div style="margin-bottom:6px;border:1px solid rgba(156,39,176,.2);border-radius:var(--r-md);overflow:hidden;${done?'opacity:.5':''}">
-                <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:rgba(156,39,176,.06)">
-                  <label class="rdc-check-wrap">
+                <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:rgba(156,39,176,.06);cursor:pointer"
+                  onclick="toggleTanda('${tandaId}')">
+                  <label class="rdc-check-wrap" onclick="event.stopPropagation()">
                     <input type="checkbox" ${done?'checked':''}
                       onchange="(function(el){try{const d=JSON.parse(localStorage.getItem('${claveTandasPool}')||'[]');d[${i}]=el.checked?'1':'0';localStorage.setItem('${claveTandasPool}',JSON.stringify(d));el.closest('[style*=margin-bottom]').style.opacity=el.checked?'.5':'1';}catch(e){};})(this)">
                     <span class="rdc-check-box"></span>
@@ -1270,8 +1273,9 @@ function renderTareasDescongelarBOL(diaIdx) {
                   <span style="margin-left:auto;font-family:'DM Mono',monospace;font-weight:700;color:#6A1B9A;font-size:13px">
                     ${formatearGramos(pesoUnitario * n, true)}
                   </span>
+                  <i class="ti ti-chevron-down" id="chev_${tandaId}" style="color:#7B1FA2;font-size:14px;transition:transform .2s"></i>
                 </div>
-                <div style="padding:4px 0">
+                <div id="${tandaId}" style="display:none;padding:4px 0">
                   ${ingsPool.map(ing => {
                     const gr = (parseFloat(ing.gramos)||0) * n;
                     return `<div class="tarea-fila" style="border-bottom:1px solid rgba(156,39,176,.08)">
@@ -1426,6 +1430,24 @@ function actualizarEmpastesDisplay(diaIdx) {
   });
   const display = document.getElementById(`empastes-display-${diaIdx}`);
   if (display) display.textContent = `${total} empastes · ${formatearGramos(total * mantPorEmpaste, true)}`;
+}
+
+function toggleInsumos(header) {
+  const grid = document.getElementById('insumos-grid-dia');
+  const chev = header.querySelector('.ti-chevron-down');
+  if (!grid) return;
+  const visible = grid.style.display !== 'none';
+  grid.style.display = visible ? 'none' : 'grid';
+  if (chev) chev.style.transform = visible ? '' : 'rotate(180deg)';
+}
+
+function toggleTanda(id) {
+  const el   = document.getElementById(id);
+  const chev = document.getElementById('chev_' + id);
+  if (!el) return;
+  const visible = el.style.display !== 'none';
+  el.style.display = visible ? 'none' : 'block';
+  if (chev) chev.style.transform = visible ? '' : 'rotate(180deg)';
 }
 
 function guardarTareaDescongelarMasa(clave, id, checked, cantidad) {
