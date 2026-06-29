@@ -484,20 +484,19 @@ function renderElaboracionesPrevias(diaIdx) {
       </div>`;
   }).join('');
 
-  // Para BOL: mostrar elaboraciones del día SIGUIENTE (lo que hay que preparar hoy para mañana)
-  // Para PAN: pie de MM para días futuros
-  const pieMM    = (typeof renderBloquepieMM === 'function') ? renderBloquepieMM(diaIdx) : '';
+  // PAN: pie de MM para días futuros
+  const pieMM = (typeof renderBloquepieMM === 'function') ? renderBloquepieMM(diaIdx) : '';
 
-  // Empastes y prefermento BOL: mostrar lo necesario para el DÍA SIGUIENTE
-  const diaIdxSiguiente = (diaIdx + 1) % 7;
-  const empastes = (typeof renderEmpastesPrevistos === 'function')
-    ? renderEmpastesPrevistos(diaIdxSiguiente, diaIdx)
+  // BOL: todo se muestra en el día seleccionado
+  // (la jefa revisa el martes para ver qué preparar hoy lunes)
+  const empastes = (App.areaCodigo === 'BOL' && typeof renderEmpastesPrevistos === 'function')
+    ? renderEmpastesPrevistos(diaIdx)
     : '';
   const prefermentoBOL = (App.areaCodigo === 'BOL')
-    ? renderPrefermentoBOL(diaIdxSiguiente)
+    ? renderPrefermentoBOL(diaIdx)
     : '';
   const tareasDescongelar = (App.areaCodigo === 'BOL')
-    ? renderTareasDescongelarBOL(diaIdxSiguiente)
+    ? renderTareasDescongelarBOL(diaIdx)
     : '';
 
   return `
@@ -995,7 +994,7 @@ function renderEmpastesPrevistos(diaIdxTarget, diaIdxActual) {
         <span class="empaste-icono">🧈</span>
         <div>
           <div class="empaste-titulo">Empastes a preparar</div>
-          <div class="empaste-subtitulo">Preparar hoy ${labelDia}</div>
+          <div class="empaste-subtitulo">Actividad previa — preparar antes de la producción</div>
         </div>
         <div style="display:flex;align-items:center;gap:10px;margin-left:auto">
           <label class="rdc-check-wrap" onclick="event.stopPropagation()">
@@ -1076,7 +1075,7 @@ function renderPrefermentoBOL(diaIdxTarget) {
           <div>
             <div class="empaste-titulo" style="color:#4A148C">${sr.nombre}</div>
             <div class="empaste-subtitulo" style="color:#7B1FA2">
-              Preparar hoy para producción del ${diasNombres[diaIdxTarget]}
+              Elaborar el día anterior a la producción
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;margin-left:auto">
@@ -1148,31 +1147,31 @@ function renderTareasDescongelarBOL(diaIdxTarget) {
     <div class="tarea-previa-bloque">
       <div class="tarea-previa-titulo">
         <i class="ti ti-snowflake" style="color:#1565C0"></i>
-        Tareas previas para ${diasNombres[diaIdxTarget]}
+        Preparación previa para este día
       </div>
 
-      ${masasNecesarias.length ? `
       <div class="tarea-seccion">
         <div class="tarea-seccion-label">🧊 Masas base a descongelar</div>
-        ${masasNecesarias.map(m => {
-          const checked = masasDescData[m.id]?.done === '1';
-          const cantManual = masasDescData[m.id]?.cantidad || m.cantidad;
+        ${masasBase.map(m => {
+          const claveMasaD = `fen_desc_masa_BOL_${obtenerSemanaActual()}_${diaIdxTarget}_${m.ID_MP}`;
+          const dataM = (() => { try { return JSON.parse(localStorage.getItem(claveMasaD)||'{}'); } catch(e) { return {}; } })();
+          const checked = dataM.done === '1';
+          const cant = dataM.cantidad !== undefined ? dataM.cantidad : 0;
           return `
           <div class="tarea-fila">
             <label class="rdc-check-wrap" onclick="event.stopPropagation()">
               <input type="checkbox" ${checked?'checked':''}
-                onchange="guardarTareaDescongelarMasa('${claveMasasCheck}','${m.id}',this.checked,this.closest('.tarea-fila').querySelector('input[type=number]').value)">
+                onchange="(function(el){try{const d=JSON.parse(localStorage.getItem('${claveMasaD}')||'{}');d.done=el.checked?'1':'0';localStorage.setItem('${claveMasaD}',JSON.stringify(d));}catch(e){};})(this)">
               <span class="rdc-check-box"></span>
             </label>
             <span class="tarea-nombre">${m.nombre}</span>
-            <input type="number" min="0" value="${cantManual}"
+            <input type="number" min="0" value="${cant}" placeholder="0"
               style="width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
-              oninput="guardarTareaDescongelarMasa('${claveMasasCheck}','${m.id}',document.querySelector('#check-masa-${m.id}')?.checked,this.value)"
-              placeholder="${m.cantidad}">
+              oninput="(function(v){try{const d=JSON.parse(localStorage.getItem('${claveMasaD}')||'{}');d.cantidad=parseInt(v)||0;localStorage.setItem('${claveMasaD}',JSON.stringify(d));}catch(e){};})(this.value)">
             <span style="font-size:12px;color:var(--txt3)">masas</span>
           </div>`;
         }).join('')}
-      </div>` : ''}
+      </div>
 
       <div class="tarea-seccion">
         <div class="tarea-seccion-label">❄️ Productos a descongelar</div>
