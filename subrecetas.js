@@ -1210,6 +1210,7 @@ function renderTareasDescongelarBOL(diaIdx) {
 
         if (!poolishItems.length) return '';
 
+        const maxPorTanda = cfg.bol?.amasadora_max_por_tanda || 16;
         return poolishItems.map(pool => {
           // Buscar receta de poolish para obtener ingredientes
           const poolReceta = App.recetas.find(r =>
@@ -1234,27 +1235,53 @@ function renderTareasDescongelarBOL(diaIdx) {
           const clavePool = `fen_poolish_BOL_${obtenerSemanaActual()}_${diaIdx}`;
           const listoPool = localStorage.getItem(clavePool) === '1';
 
+          // Calcular tandas igual que masa base
+          const tandasPool = [];
+          let restPool = totalMasasPlan;
+          while (restPool > 0) {
+            const t = Math.min(restPool, maxPorTanda);
+            tandasPool.push(t);
+            restPool -= t;
+          }
+
+          const claveTandasPool = `fen_poolish_tandas_BOL_${obtenerSemanaActual()}_${diaIdx}`;
+          const tandasPoolData = (() => { try { return JSON.parse(localStorage.getItem(claveTandasPool)||'[]'); } catch(e) { return []; } })();
+
           return `
           <div class="tarea-seccion">
-            <div class="tarea-seccion-label">🌱 ${pool.nombre}</div>
-            <div style="padding:4px 0">
-              ${ingsPool.map(ing => {
-                const gr = (parseFloat(ing.gramos)||0) * totalMasasPlan;
-                return `<div class="tarea-fila" style="border-bottom:1px solid rgba(156,39,176,.1)">
-                  <span class="tarea-nombre" style="color:#4A148C">${ing.nombre}</span>
-                  <span style="font-family:'DM Mono',monospace;font-weight:600;color:#6A1B9A">${formatearGramos(gr, true)}</span>
-                </div>`;
-              }).join('')}
-              <div class="tarea-fila" style="background:rgba(156,39,176,.06);font-weight:600">
-                <span class="tarea-nombre" style="color:#4A148C">Total (${totalMasasPlan} masas)</span>
-                <span style="font-family:'DM Mono',monospace;font-weight:700;color:#6A1B9A;font-size:15px">${formatearGramos(totalGrPool, true)}</span>
-                <label class="rdc-check-wrap" style="margin-left:10px">
-                  <input type="checkbox" ${listoPool?'checked':''}
-                    onchange="localStorage.setItem('${clavePool}',this.checked?'1':'0');this.closest('.tarea-fila').style.opacity=this.checked?'.5':'1'">
-                  <span class="rdc-check-box"></span>
-                </label>
-              </div>
+            <div class="tarea-seccion-label" style="display:flex;align-items:center;justify-content:space-between">
+              <span>🌱 ${pool.nombre}</span>
+              <span style="font-size:10px;color:#7B1FA2;font-weight:400">${tandasPool.length} tanda${tandasPool.length>1?'s':''} · ${formatearGramos(totalGrPool, true)} total</span>
             </div>
+            ${tandasPool.map((n, i) => {
+              const done = tandasPoolData[i] === '1';
+              const claveT = `${claveTandasPool}_${i}`;
+              return `
+              <div style="margin-bottom:6px;border:1px solid rgba(156,39,176,.2);border-radius:var(--r-md);overflow:hidden;${done?'opacity:.5':''}">
+                <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:rgba(156,39,176,.06)">
+                  <label class="rdc-check-wrap">
+                    <input type="checkbox" ${done?'checked':''}
+                      onchange="(function(el){try{const d=JSON.parse(localStorage.getItem('${claveTandasPool}')||'[]');d[${i}]=el.checked?'1':'0';localStorage.setItem('${claveTandasPool}',JSON.stringify(d));el.closest('[style*=margin-bottom]').style.opacity=el.checked?'.5':'1';}catch(e){};})(this)">
+                    <span class="rdc-check-box"></span>
+                  </label>
+                  <span style="font-size:12px;font-weight:600;color:#4A148C">
+                    Tanda ${i+1} — ${n} masa${n>1?'s':''}
+                  </span>
+                  <span style="margin-left:auto;font-family:'DM Mono',monospace;font-weight:700;color:#6A1B9A;font-size:13px">
+                    ${formatearGramos(pesoUnitario * n, true)}
+                  </span>
+                </div>
+                <div style="padding:4px 0">
+                  ${ingsPool.map(ing => {
+                    const gr = (parseFloat(ing.gramos)||0) * n;
+                    return `<div class="tarea-fila" style="border-bottom:1px solid rgba(156,39,176,.08)">
+                      <span class="tarea-nombre" style="color:#4A148C">${ing.nombre}</span>
+                      <span style="font-family:'DM Mono',monospace;font-weight:600;color:#6A1B9A">${formatearGramos(gr, true)}</span>
+                    </div>`;
+                  }).join('')}
+                </div>
+              </div>`;
+            }).join('')}
           </div>`;
         }).join('');
       })()}
