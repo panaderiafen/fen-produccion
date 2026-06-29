@@ -32,15 +32,14 @@ const CONFIG_SUBRECETAS_DEFAULT = {
     agua_pct: 90,
   },
   bol: {
-    prefermento: {
-      dias_elaboracion: [1, 3, 5], // Lun, Mié, Vie por defecto
-      harina_pct: 100,
-      agua_pct: 100,
-      levadura_pct: 0.5,
-    },
-    capacidad_masas: 20,       // pastóns máximos en congelador
-    capacidad_productos: 200,  // unidades máximas en congelador
-    stock: {},                 // { recetaId: unidades } — se edita semanalmente
+    amasadora_max_por_tanda: 16,   // masas base por tanda
+    amasadora_tandas_dia: 2,       // tandas por día (default = 32 masas/día)
+    capacidad_congelacion_masas: 40, // masas base máx en congelador
+    capacidad_productos: 200,      // unidades productos terminados
+    mantequilla_por_empaste: 250,  // gramos por bloque
+    stock_masas: {},               // { subRecetaId: unidades } stock masas congeladas
+    stock_productos: {},           // { recetaId: unidades } stock productos terminados
+    plan_masas: {},                // { subRecetaId: [7 días] } plan elaboración masas
   }
 };
 
@@ -497,6 +496,9 @@ function renderElaboracionesPrevias(diaIdx) {
   const prefermentoBOL = (App.areaCodigo === 'BOL')
     ? renderPrefermentoBOL(diaIdxSiguiente)
     : '';
+  const tareasDescongelar = (App.areaCodigo === 'BOL')
+    ? renderTareasDescongelarBOL(diaIdxSiguiente)
+    : '';
 
   return `
     <div class="elaboraciones-wrap">
@@ -504,6 +506,7 @@ function renderElaboracionesPrevias(diaIdx) {
       ${pieMM}
       ${prefermentoBOL}
       ${empastes}
+      ${tareasDescongelar}
 
       ${subRecetas.length ? `
       <div class="elab-seccion">
@@ -729,38 +732,32 @@ function renderVistaConfigSubrecetas() {
     ${App.areaCodigo === 'BOL' ? `
     <div class="card" style="margin-bottom:16px">
       <div class="card-head" style="background:#F3E5F5;color:#4A148C">
-        <i class="ti ti-snowflake" style="color:#6A1B9A"></i> Bollería — Congelación y Prefermento
+        <i class="ti ti-snowflake" style="color:#6A1B9A"></i> Bollería — Producción y Congelación
       </div>
       <div class="form-grid">
         <div class="campo">
-          <label>Capacidad máxima masas (pastóns)</label>
-          <input type="number" id="cfg-bol-masas" value="${cfg.bol?.capacidad_masas || 20}" min="1" step="1">
+          <label>Capacidad amasadora (masas por tanda)</label>
+          <input type="number" id="cfg-bol-tanda" value="${cfg.bol?.amasadora_max_por_tanda || 16}" min="1" step="1">
         </div>
         <div class="campo">
-          <label>Capacidad máxima productos (unidades)</label>
+          <label>Tandas por día (producción normal)</label>
+          <input type="number" id="cfg-bol-tandas-dia" value="${cfg.bol?.amasadora_tandas_dia || 2}" min="1" max="10" step="1">
+        </div>
+        <div class="campo">
+          <label>Capacidad máxima congelación masas</label>
+          <input type="number" id="cfg-bol-cap-masas" value="${cfg.bol?.capacidad_congelacion_masas || 40}" min="1" step="1">
+        </div>
+        <div class="campo">
+          <label>Capacidad máxima productos terminados</label>
           <input type="number" id="cfg-bol-productos" value="${cfg.bol?.capacidad_productos || 200}" min="1" step="1">
         </div>
-        <div class="campo full">
-          <label>Días de elaboración del prefermento</label>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px" id="cfg-bol-dias">
-            ${['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map((d,i) => `
-              <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:400;cursor:pointer">
-                <input type="checkbox" value="${i}" ${(cfg.bol?.prefermento?.dias_elaboracion || [1,3,5]).includes(i) ? 'checked' : ''}>
-                ${d}
-              </label>`).join('')}
-          </div>
-        </div>
         <div class="campo">
-          <label>Agua prefermento (% sobre harina)</label>
-          <input type="number" id="cfg-bol-agua" value="${cfg.bol?.prefermento?.agua_pct || 100}" min="50" max="120" step="1">
-        </div>
-        <div class="campo">
-          <label>Levadura prefermento (%)</label>
-          <input type="number" id="cfg-bol-lev" value="${cfg.bol?.prefermento?.levadura_pct || 0.5}" min="0.1" max="2" step="0.01">
+          <label>Mantequilla por empaste (g)</label>
+          <input type="number" id="cfg-bol-mantequilla" value="${cfg.bol?.mantequilla_por_empaste || 250}" min="100" step="10">
         </div>
         <div class="campo">
           <label>% Merma laminado referencia</label>
-          <input type="number" id="cfg-bol-merma" value="${cfg.bol?.merma_laminado_ref || 8}" min="0" max="30" step="0.1" placeholder="8">
+          <input type="number" id="cfg-bol-merma" value="${cfg.bol?.merma_laminado_ref || 8}" min="0" max="30" step="0.1">
         </div>
       </div>
     </div>` : ''}
@@ -814,18 +811,20 @@ function guardarConfigDesdeForm(btn) {
 
   // BOL config
   if (App.areaCodigo === 'BOL') {
-    const diasBOL = [];
-    document.querySelectorAll('#cfg-bol-dias input:checked').forEach(cb => diasBOL.push(parseInt(cb.value)));
-    if (!cfg.bol) cfg.bol = { stock: {} };
-    cfg.bol.capacidad_masas     = parseFloat(document.getElementById('cfg-bol-masas')?.value) || 20;
-    cfg.bol.capacidad_productos = parseFloat(document.getElementById('cfg-bol-productos')?.value) || 200;
-    cfg.bol.merma_laminado_ref  = parseFloat(document.getElementById('cfg-bol-merma')?.value) || 8;
-    cfg.bol.prefermento = {
-      dias_elaboracion: diasBOL.length > 0 ? diasBOL : [1,3,5],
-      harina_pct: 100,
-      agua_pct:   parseFloat(document.getElementById('cfg-bol-agua')?.value) || 100,
-      levadura_pct: parseFloat(document.getElementById('cfg-bol-lev')?.value) || 0.5,
-    };
+    if (!cfg.bol) cfg.bol = {};
+    // Preserve existing stock and plan data
+    const stockMasas = cfg.bol.stock_masas || {};
+    const stockProductos = cfg.bol.stock_productos || {};
+    const planMasas = cfg.bol.plan_masas || {};
+    cfg.bol.amasadora_max_por_tanda     = parseInt(document.getElementById('cfg-bol-tanda')?.value) || 16;
+    cfg.bol.amasadora_tandas_dia        = parseInt(document.getElementById('cfg-bol-tandas-dia')?.value) || 2;
+    cfg.bol.capacidad_congelacion_masas = parseInt(document.getElementById('cfg-bol-cap-masas')?.value) || 40;
+    cfg.bol.capacidad_productos         = parseInt(document.getElementById('cfg-bol-productos')?.value) || 200;
+    cfg.bol.mantequilla_por_empaste     = parseFloat(document.getElementById('cfg-bol-mantequilla')?.value) || 250;
+    cfg.bol.merma_laminado_ref          = parseFloat(document.getElementById('cfg-bol-merma')?.value) || 8;
+    cfg.bol.stock_masas    = stockMasas;
+    cfg.bol.stock_productos = stockProductos;
+    cfg.bol.plan_masas     = planMasas;
   }
 
   guardarConfigSubrecetas(cfg);
@@ -1104,6 +1103,114 @@ function renderPrefermentoBOL(diaIdxTarget) {
         </div>
       </div>`;
   }).join('');
+}
+
+// ── BOL: TAREAS PREVIAS DESCONGELAR ─────────────────────────
+function renderTareasDescongelarBOL(diaIdxTarget) {
+  if (App.areaCodigo !== 'BOL') return '';
+  const diasNombres = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+  const cfg = cargarConfigSubrecetas();
+  const stockMasas = cfg.bol?.stock_masas || {};
+
+  // Masas a descongelar = demanda del día target
+  const masasBase = App.materiasPrimas.filter(m => {
+    const esSubReceta = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
+    const nombre = (m.nombre || '').toLowerCase();
+    return esSubReceta && nombre.includes('masa') && !nombre.includes('madre') && !nombre.includes('poolish') &&
+      (!m.areas_habilitadas || m.areas_habilitadas.includes('BOL'));
+  });
+
+  // Calcular masas necesarias el día target desde plan
+  const planMasas = cfg.bol?.plan_masas || {};
+  const masasNecesarias = masasBase.map(m => ({
+    id: m.ID_MP,
+    nombre: m.nombre,
+    cantidad: (planMasas[m.ID_MP] || [])[diaIdxTarget] || 0
+  })).filter(m => m.cantidad > 0);
+
+  // Productos a descongelar (productos terminados del stock)
+  const stockProductos = cfg.bol?.stock_productos || {};
+  const recetasBOL = App.recetas.filter(r =>
+    r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta'
+  );
+
+  const claveDescongelar = `fen_descong_BOL_${obtenerSemanaActual()}_${diaIdxTarget}`;
+  const descongData = (() => {
+    try { return JSON.parse(localStorage.getItem(claveDescongelar) || '{}'); } catch(e) { return {}; }
+  })();
+
+  const claveMasasCheck = `fen_masas_desc_BOL_${obtenerSemanaActual()}_${diaIdxTarget}`;
+  const masasDescData = (() => {
+    try { return JSON.parse(localStorage.getItem(claveMasasCheck) || '{}'); } catch(e) { return {}; }
+  })();
+
+  return `
+    <div class="tarea-previa-bloque">
+      <div class="tarea-previa-titulo">
+        <i class="ti ti-snowflake" style="color:#1565C0"></i>
+        Tareas previas para ${diasNombres[diaIdxTarget]}
+      </div>
+
+      ${masasNecesarias.length ? `
+      <div class="tarea-seccion">
+        <div class="tarea-seccion-label">🧊 Masas base a descongelar</div>
+        ${masasNecesarias.map(m => {
+          const checked = masasDescData[m.id]?.done === '1';
+          const cantManual = masasDescData[m.id]?.cantidad || m.cantidad;
+          return `
+          <div class="tarea-fila">
+            <label class="rdc-check-wrap" onclick="event.stopPropagation()">
+              <input type="checkbox" ${checked?'checked':''}
+                onchange="guardarTareaDescongelarMasa('${claveMasasCheck}','${m.id}',this.checked,this.closest('.tarea-fila').querySelector('input[type=number]').value)">
+              <span class="rdc-check-box"></span>
+            </label>
+            <span class="tarea-nombre">${m.nombre}</span>
+            <input type="number" min="0" value="${cantManual}"
+              style="width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
+              oninput="guardarTareaDescongelarMasa('${claveMasasCheck}','${m.id}',document.querySelector('#check-masa-${m.id}')?.checked,this.value)"
+              placeholder="${m.cantidad}">
+            <span style="font-size:12px;color:var(--txt3)">masas</span>
+          </div>`;
+        }).join('')}
+      </div>` : ''}
+
+      <div class="tarea-seccion">
+        <div class="tarea-seccion-label">❄️ Productos a descongelar</div>
+        ${recetasBOL.map(r => {
+          const checked = descongData[r.ID_receta]?.done === '1';
+          const cant = descongData[r.ID_receta]?.cantidad || 0;
+          return `
+          <div class="tarea-fila">
+            <label class="rdc-check-wrap" onclick="event.stopPropagation()">
+              <input type="checkbox" ${checked?'checked':''}
+                onchange="guardarDescongData('${claveDescongelar}','${r.ID_receta}',this.checked,this.closest('.tarea-fila').querySelector('input[type=number]').value)">
+              <span class="rdc-check-box"></span>
+            </label>
+            <span class="tarea-nombre">${r.nombre}</span>
+            <input type="number" min="0" value="${cant}" placeholder="0"
+              style="width:70px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
+              oninput="guardarDescongData('${claveDescongelar}','${r.ID_receta}',false,this.value)">
+            <span style="font-size:12px;color:var(--txt3)">uni</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+}
+
+function guardarTareaDescongelarMasa(clave, id, checked, cantidad) {
+  try {
+    const data = JSON.parse(localStorage.getItem(clave) || '{}');
+    data[id] = { done: checked ? '1' : '0', cantidad: parseInt(cantidad) || 0 };
+    localStorage.setItem(clave, JSON.stringify(data));
+  } catch(e) {}
+}
+
+function guardarDescongData(clave, id, checked, cantidad) {
+  try {
+    const data = JSON.parse(localStorage.getItem(clave) || '{}');
+    data[id] = { done: checked ? '1' : '0', cantidad: parseInt(cantidad) || 0 };
+    localStorage.setItem(clave, JSON.stringify(data));
+  } catch(e) {}
 }
 
 // ── UTILIDAD: formatear gramos ────────────────────────────────
