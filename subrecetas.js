@@ -144,16 +144,22 @@ function calcularElaboracionesDia(diaIdx) {
       totalEmpastes += cantMasas;
 
       // Ingredientes de la masa base escalados por cantidad
-      const recetaMasa = App.recetas.find(r => r.nombre === masa.nombre && r.estado === 'consolidada');
+      // Buscar receta de masa base (puede ser sub_receta o consolidada)
+      const recetaMasa = App.recetas.find(r =>
+        r.nombre === masa.nombre ||
+        r.nombre?.toLowerCase() === masa.nombre?.toLowerCase()
+      );
       if (recetaMasa) {
         let ingsMasa = [];
         try { ingsMasa = JSON.parse(recetaMasa.ingredientes_JSON || '[]'); } catch(e) {}
         ingsMasa.forEach(ing => {
-          // Excluir poolish (sub receta) de los insumos directos
+          // Excluir sub recetas (poolish, etc) de los insumos directos
           if (idsSubRecetas.has(ing.id)) return;
           const gr = (parseFloat(ing.gramos) || 0) * cantMasas;
           insumosMap[ing.nombre] = (insumosMap[ing.nombre] || 0) + gr;
         });
+      } else {
+        console.warn('[fën] No se encontró receta para masa:', masa.nombre);
       }
     });
 
