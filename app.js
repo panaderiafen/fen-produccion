@@ -1009,6 +1009,153 @@ function autoguardarNota(recetaId) {
   }, 800);
 }
 
+// ── PLAN MASAS BASE BOL ──────────────────────────────────────
+function renderPlanMasasBOL() {
+  const cfg = cargarConfigSubrecetas();
+  const bolCfg = cfg.bol || {};
+  const maxPorTanda = bolCfg.amasadora_max_por_tanda || 16;
+  const tandasDia   = bolCfg.amasadora_tandas_dia || 2;
+  const maxDia      = maxPorTanda * tandasDia;
+  const planMasas   = bolCfg.plan_masas || {};
+  const diasNombres = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+
+  // Detectar sub recetas de masa base (pastones, no poolish)
+  const masasBase = App.materiasPrimas.filter(m => {
+    const esSubReceta = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
+    const nombre = (m.nombre || '').toLowerCase();
+    const esMasa = nombre.includes('masa') && !nombre.includes('madre') && !nombre.includes('poolish');
+    const esBOL = !m.areas_habilitadas || m.areas_habilitadas.includes('BOL');
+    return esSubReceta && esMasa && esBOL;
+  });
+
+  if (!masasBase.length) return `
+    <div class="card" style="margin-bottom:16px;border-color:#F3E5F5">
+      <div class="card-head" style="background:#F3E5F5;color:#4A148C">
+        <i class="ti ti-stack-2"></i> Plan de masas base
+      </div>
+      <div style="padding:16px;font-size:13px;color:var(--txt2)">
+        No hay masas base configuradas. Crea sub recetas de tipo masa en Bollería.
+      </div>
+    </div>`;
+
+  return `
+    <div class="card" style="margin-bottom:16px;border-color:#E1BEE7">
+      <div class="card-head" style="background:#F3E5F5;color:#4A148C">
+        <i class="ti ti-stack-2"></i> Plan de masas base
+        <span style="font-size:11px;font-weight:400;color:#7B1FA2;margin-left:8px">
+          Máx. ${maxDia} masas/día (${tandasDia} tandas × ${maxPorTanda})
+        </span>
+        <button class="btn-secundario" onclick="calcularPlanMasasAuto()"
+          style="margin-left:auto;font-size:12px;padding:4px 10px;border-color:#CE93D8;color:#6A1B9A">
+          <i class="ti ti-calculator"></i> Calcular automático
+        </button>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="plan-tabla">
+          <thead>
+            <tr>
+              <th class="th-nombre">Masa base</th>
+              ${diasNombres.map((d,i) => `<th style="min-width:70px;text-align:center">${d}</th>`).join('')}
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${masasBase.map(m => {
+              const plan = planMasas[m.ID_MP] || Array(7).fill(maxDia);
+              return `<tr>
+                <td class="td-nombre">${m.nombre}</td>
+                ${diasNombres.map((_,i) => `
+                  <td style="text-align:center">
+                    <input type="number" min="0" max="${maxDia}" placeholder="${maxDia}"
+                      data-masa="${m.ID_MP}" data-dia="${i}"
+                      value="${plan[i] !== undefined ? plan[i] : maxDia}"
+                      style="width:60px;text-align:center;padding:4px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit"
+                      oninput="actualizarTotalMasaFila(this)">
+                  </td>`).join('')}
+                <td class="td-total" id="total-masa-${m.ID_MP}">
+                  ${plan.reduce((s,v)=>s+(v||maxDia),0)}
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div style="padding:10px 16px;font-size:11px;color:var(--txt3)">
+        <i class="ti ti-info-circle"></i>
+        El plan de masas determina las tandas de elaboración y el poolish del día anterior.
+        Se guarda junto con el plan de producción.
+      </div>
+    </div>`;
+}
+
+function actualizarTotalMasaFila(input) {
+  const mid = input.dataset.masa;
+  const inputs = document.querySelectorAll(`input[data-masa="${mid}"]`);
+  const total = Array.from(inputs).reduce((s,el) => s + (parseInt(el.value)||0), 0);
+  const span = document.getElementById('total-masa-' + mid);
+  if (span) span.textContent = total;
+}
+
+function calcularPlanMasasAuto() {
+  const cfg = cargarConfigSubrecetas();
+  const bolCfg = cfg.bol || {};
+  const maxPorTanda = bolCfg.amasadora_max_por_tanda || 16;
+  const tandasDia   = bolCfg.amasadora_tandas_dia || 2;
+  const maxDia      = maxPorTanda * tandasDia;
+  const capCongelacion = bolCfg.capacidad_congelacion_masas || 40;
+  const stockMasas  = bolCfg.stock_masas || {};
+
+  // Para cada masa base calcular demanda por día desde plan de productos
+  const masasBase = App.materiasPrimas.filter(m => {
+    const esSubReceta = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
+    const nombre = (m.nombre || '').toLowerCase();
+    return esSubReceta && nombre.includes('masa') && !nombre.includes('madre') && !nombre.includes('poolish') &&
+      (!m.areas_habilitadas || m.areas_habilitadas.includes('BOL'));
+  });
+
+  masasBase.forEach(masa => {
+    let stockActual = stockMasas[masa.ID_MP] || 0;
+    const planCalculado = Array(7).fill(0);
+
+    for (let dia = 0; dia < 7; dia++) {
+      // Demanda del día: masas necesarias según plan de productos
+      let demanaDia = 0;
+      Object.entries(App.planSemana).forEach(([rid, cant]) => {
+        const unidades = cant[dia] || 0;
+        if (!unidades) return;
+        const receta = App.recetas.find(r => r.ID_receta === rid);
+        if (!receta) return;
+        let ingredientes = [];
+        try { ingredientes = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
+        const porciones = parseInt(receta.porciones_base) || 1;
+        ingredientes.forEach(ing => {
+          if (ing.id === masa.ID_MP) {
+            demanaDia += Math.ceil((parseFloat(ing.gramos)||1) / porciones * unidades);
+          }
+        });
+      });
+
+      // Descontar stock disponible
+      const masasNetas = Math.max(0, demanaDia - stockActual);
+      stockActual = Math.max(0, stockActual - demanaDia);
+
+      // Calcular cuánto elaborar: llenar al tope sin superar capacidad congelación
+      const espacioCongelador = capCongelacion - stockActual;
+      const aElaborar = Math.min(maxDia, Math.max(masasNetas, Math.min(espacioCongelador, maxDia)));
+      planCalculado[dia] = Math.max(0, aElaborar);
+      stockActual += aElaborar;
+    }
+
+    // Actualizar inputs
+    document.querySelectorAll(`input[data-masa="${masa.ID_MP}"]`).forEach((inp, i) => {
+      inp.value = planCalculado[i];
+    });
+    actualizarTotalMasaFila(document.querySelector(`input[data-masa="${masa.ID_MP}"]`));
+  });
+
+  toast('Plan calculado automáticamente — revisa y guarda');
+}
+
 // ── PLANIFICACIÓN SEMANAL ─────────────────────────────────────
 function renderVistaPlanificacion() {
   const recetasConsolidadas = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta');
@@ -1041,6 +1188,7 @@ function renderVistaPlanificacion() {
       <i class="ti ti-info-circle"></i>
       El plan se guarda por semana. Puedes modificarlo en cualquier momento — los cambios se reflejan en "Recetas del día".
     </p>
+    ${App.areaCodigo === 'BOL' ? renderPlanMasasBOL() : ''}
     ${!recetasConsolidadas.length ? `
       <div class="empty-state">
         <i class="ti ti-calendar-off"></i>
@@ -1115,6 +1263,20 @@ async function guardarPlanificacion() {
   // Guardar local inmediatamente (persiste aunque falle el Sheet)
   App.planSemana = plan;
   guardarPlanLocal(plan);
+
+  // Guardar plan de masas BOL si existe
+  if (App.areaCodigo === 'BOL') {
+    const cfg = cargarConfigSubrecetas();
+    if (!cfg.bol) cfg.bol = {};
+    cfg.bol.plan_masas = cfg.bol.plan_masas || {};
+    document.querySelectorAll('#vista-planificacion input[data-masa]').forEach(el => {
+      const mid = el.dataset.masa;
+      const dia = parseInt(el.dataset.dia);
+      if (!cfg.bol.plan_masas[mid]) cfg.bol.plan_masas[mid] = Array(7).fill(0);
+      cfg.bol.plan_masas[mid][dia] = parseInt(el.value) || 0;
+    });
+    guardarConfigSubrecetas(cfg);
+  }
 
   try {
     await escribirEnSheet('guardar_planificacion', {
