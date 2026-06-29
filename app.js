@@ -1796,17 +1796,25 @@ function renderVistaAprobaciones() {
                   <th style="text-align:right;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Costo</th>
                 </tr></thead>
                 <tbody>
-                  ${ingredientes.map(ing => `
+                  ${ingredientes.map(ing => {
+                    const tieneUnidades = ing.unidades !== undefined && ing.unidades !== null;
+                    const displayVal = tieneUnidades
+                      ? `${parseFloat(ing.unidades).toFixed(0)} uni`
+                      : `${parseFloat(ing.gramos||0).toFixed(1)}g`;
+                    return `
                     <tr>
                       <td style="padding:6px 10px;border-bottom:1px solid var(--border);color:var(--txt);font-weight:500">${ing.nombre}</td>
-                      <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:600">${parseFloat(ing.gramos||0).toFixed(1)}g</td>
+                      <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:600">${displayVal}</td>
                       ${r._area === 'PAN' || r.área === 'Panadería' ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:#E65100">${((parseFloat(ing.pct)||0)*100).toFixed(1)}%</td>` : ''}
                       <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2);font-size:11px">$${parseFloat(ing.costo||0).toFixed(0)}</td>
-                    </tr>`).join('')}
+                    </tr>`;
+                  }).join('')}
                   <tr style="background:var(--bg);font-weight:600">
                     <td style="padding:6px 10px">Total ingredientes</td>
                     <td style="padding:6px 10px;text-align:right;font-family:'DM Mono',monospace">
-                      ${ingredientes.reduce((s,i)=>s+(parseFloat(i.gramos)||0),0).toFixed(1)}g
+                      ${ingredientes.some(i=>i.unidades!=null)
+                        ? ingredientes.filter(i=>i.unidades==null).reduce((s,i)=>s+(parseFloat(i.gramos)||0),0).toFixed(1)+'g + sub recetas en uni'
+                        : ingredientes.reduce((s,i)=>s+(parseFloat(i.gramos)||0),0).toFixed(1)+'g'}
                     </td>
                     ${r._area === 'PAN' || r.área === 'Panadería' ? '<td></td>' : ''}
                     <td style="padding:6px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:11px">
