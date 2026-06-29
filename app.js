@@ -698,26 +698,33 @@ async function guardarReceta(recetaId) {
       const opcion = select.options[select.selectedIndex];
       const costoPorGramo = parseFloat(opcion.dataset.costo) || 0;
       const gramos = parseFloat(inputs[0]?.value) || 0;
-      const modoInput = inputs[0]?.dataset?.modo || 'gramos';
+      const tipoSel = tr.querySelector('.sel-unidad-tipo');
+      const modoInput = tipoSel ? tipoSel.value : 'gramos';
       const valorInput = parseFloat(inputs[0]?.value) || 0;
       const unidades = modoInput === 'unidades' ? valorInput : null;
-      // Si es unidades, calcular gramos desde la sub receta
+
+      // Si es unidades, buscar gramos desde sub receta para referencia
       let gramosCalc = gramos;
       if (modoInput === 'unidades' && valorInput > 0) {
-        const srReceta = App.recetas.find(r => r.nombre === opcion.text.replace('⟳ ',''));
+        const nombreSR = opcion.text.replace('⟳ ','');
+        const srReceta = App.recetas.find(r =>
+          r.nombre === nombreSR && r.estado === 'consolidada'
+        );
         if (srReceta) {
           let ingsR = [];
           try { ingsR = JSON.parse(srReceta.ingredientes_JSON || '[]'); } catch(e) {}
-          gramosCalc = ingsR.reduce((s,i) => s+(parseFloat(i.gramos)||0), 0) * valorInput;
+          const pesoUnitario = ingsR.reduce((s,i) => s+(parseFloat(i.gramos)||0), 0);
+          gramosCalc = pesoUnitario * valorInput;
         } else {
-          gramosCalc = valorInput; // fallback
+          gramosCalc = valorInput; // sin sub receta: guardar valor numérico
         }
       }
+
       ingredientes.push({
         id:       select.value,
         nombre:   opcion.text.replace('⟳ ',''),
         gramos:   gramosCalc,
-        unidades: unidades,
+        unidades: unidades, // null = gramos, número = unidades
         pct:      App.areaCodigo === 'PAN' ? ((parseFloat(inputs[1]?.value) || 0) / 100) : 0,
         costo:    costoPorGramo * gramosCalc,
       });
@@ -1510,7 +1517,7 @@ function cambiarDia(diaIdx, btn) {
   renderDia(diaIdx);
 }
 
-function renderDia(diaIdx) {
+async function renderDia(diaIdx) {
   const contenedor = document.getElementById('contenedor-dia');
   const idx = parseInt(diaIdx);
 
@@ -1536,9 +1543,15 @@ function renderDia(diaIdx) {
   const esPan = App.areaCodigo === 'PAN';
 
   // Bloque elaboraciones previas (sub recetas + insumos)
-  const htmlElaboraciones = (typeof renderElaboracionesPrevias === 'function')
-    ? renderElaboracionesPrevias(idx)
-    : '';
+  // Para BOL: cargar tareas desde Sheet primero (async)
+  let htmlElaboraciones = '';
+  if (App.areaCodigo === 'BOL' && typeof renderElaboracionesPreviasBOL === 'function') {
+    // Mostrar spinner mientras carga
+    contenedor.innerHTML = '<div style="padding:20px;text-align:center;color:var(--txt3)"><div class="spinner"></div> Cargando tareas...</div>';
+    htmlElaboraciones = await renderElaboracionesPreviasBOL(idx);
+  } else if (typeof renderElaboracionesPrevias === 'function') {
+    htmlElaboraciones = renderElaboracionesPrevias(idx);
+  }
 
   const htmlRecetas = recetasHoy.map(({ receta: r, unidades }) => {
     let ingredientes = [];
