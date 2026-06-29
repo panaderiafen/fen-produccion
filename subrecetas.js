@@ -1360,7 +1360,7 @@ function renderTareasDescongelarBOL(diaIdx) {
             <input type="number" min="0" value="${cant}" placeholder="${sugerido}"
               id="inp-desc-masa-${m.ID_MP}-${diaIdx}"
               style="width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
-              oninput="guardarTareaBOL(${diaIdx},'masas_desc_${m.ID_MP}',document.querySelector('input[onchange*=masas_desc_${m.ID_MP}]')?.checked||false,parseInt(this.value)||0);actualizarEmpastesDisplay(${diaIdx})">
+              oninput="guardarDescMasaBOL(${diaIdx},'${m.ID_MP}',this.value);actualizarEmpastesDisplay(${diaIdx})">
             <span style="font-size:12px;color:var(--txt3)">masas</span>
           </div>`;
         }).join('')}
@@ -1439,6 +1439,14 @@ function renderTareasDescongelarBOL(diaIdx) {
         }).join('')}
       </div>` : ''}
     </div>`;
+}
+
+function guardarDescMasaBOL(diaIdx, mpId, cantidad, done) {
+  const inp = document.getElementById(`inp-desc-masa-${mpId}-${diaIdx}`);
+  const cantActual = cantidad !== null ? parseInt(cantidad)||0 : (parseInt(inp?.value)||0);
+  const chk = document.querySelector(`input[onchange*="guardarDescMasaBOL(${diaIdx},'${mpId}'"]`);
+  const doneActual = done !== null && done !== undefined ? done : (chk?.checked || false);
+  guardarTareaBOL(diaIdx, `masas_desc_${mpId}`, doneActual, cantActual);
 }
 
 function actualizarDescMasa(clave, cantidad, done) {
