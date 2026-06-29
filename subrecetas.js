@@ -1228,18 +1228,88 @@ function renderTareasDescongelarBOL(diaIdx) {
   const recetasBOL = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta');
   const semana = obtenerSemanaActual();
 
-  // Calcular empastes = suma de masas confirmadas a descongelar
+  // Calcular empastes = suma de masas confirmadas
   let totalEmpastes = 0;
   masasBase.forEach(m => {
-    const claveD = `fen_desc_masa_BOL_${semana}_${diaIdx}_${m.ID_MP}`;
-    try {
-      const d = JSON.parse(localStorage.getItem(claveD) || '{}');
-      totalEmpastes += parseInt(d.cantidad) || sugeridas[m.ID_MP] || 0;
-    } catch(e) { totalEmpastes += sugeridas[m.ID_MP] || 0; }
+    const t = getTareaBOL(diaIdx, `masas_desc_${m.ID_MP}`);
+    totalEmpastes += t.cantidad || sugeridas[m.ID_MP] || 0;
+  });
+
+  // Plan por producto
+  const planificadoPorReceta = {};
+  recetasBOL.forEach(r => {
+    planificadoPorReceta[r.ID_receta] = App.planSemana[r.ID_receta]?.[diaIdx] || 0;
   });
 
   const claveDescProd = `fen_descong_prod_BOL_${semana}_${diaIdx}`;
-  const descProdData = (() => { try { return JSON.parse(localStorage.getItem(claveDescProd)||'{}'); } catch(e) { return {}; } })();
+
+  // Build HTML sections
+  const secMasas = masasBase.map(m => {
+    const t = getTareaBOL(diaIdx, `masas_desc_${m.ID_MP}`);
+    const sugerido = sugeridas[m.ID_MP] || 0;
+    const cant = t.cantidad !== undefined && t.cantidad !== null ? t.cantidad : sugerido;
+    const checked = t.estado === '1' || (cant >= sugerido && sugerido > 0);
+    const esParc = !checked && cant > 0 && cant < sugerido;
+    const bdColor = esParc ? '#F57C00' : checked ? '#4CAF50' : 'var(--border)';
+    const estadoHtml = esParc
+      ? `<span style="font-size:10px;color:#F57C00;font-weight:600;margin-left:6px">◑ Parcial: ${cant} de ${sugerido}</span>`
+      : checked
+      ? `<span style="font-size:10px;color:#2E7D32;font-weight:600;margin-left:6px">✓ Completo</span>`
+      : '';
+    return `
+    <div class="tarea-fila" style="${checked ? 'opacity:.6' : ''}">
+      <label class="rdc-check-wrap">
+        <input type="checkbox" id="chk-masa-${m.ID_MP}-${diaIdx}" ${checked ? 'checked' : ''}
+          onchange="guardarDescMasaBOL(${diaIdx},'${m.ID_MP}',null,this.checked)">
+        <span class="rdc-check-box"></span>
+      </label>
+      <div style="flex:1">
+        <span class="tarea-nombre">${m.nombre}</span>${estadoHtml}
+      </div>
+      <span style="font-size:11px;color:var(--txt3);margin-right:4px">Planif.: ${sugerido}</span>
+      <input type="number" min="0" value="${cant}" placeholder="${sugerido}"
+        id="inp-desc-masa-${m.ID_MP}-${diaIdx}"
+        style="width:55px;padding:4px 8px;border:1px solid ${bdColor};border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
+        oninput="guardarDescMasaBOL(${diaIdx},'${m.ID_MP}',this.value);actualizarEmpastesDisplay(${diaIdx})">
+      <span style="font-size:12px;color:var(--txt3)">masas</span>
+    </div>`;
+  }).join('');
+
+  const secEmpastes = ['porcionado', 'estirado'].map((paso, pi) => {
+    const t = getTareaBOL(diaIdx, `empaste_${paso}`);
+    const checked = t.estado === '1';
+    const cant = t.cantidad || totalEmpastes;
+    const label = pi === 0
+      ? `Porcionado de mantequilla (${totalEmpastes} × ${mantPorEmpaste}g)`
+      : 'Estirado de mantequilla';
+    const detalle = pi === 0
+      ? `${formatearGramos(totalEmpastes * mantPorEmpaste, true)} total`
+      : `${totalEmpastes} empastes listos para usar`;
+    return `
+    <div class="tarea-fila ${checked ? '' : ''}">
+      <label class="rdc-check-wrap">
+        <input type="checkbox" ${checked ? 'checked' : ''}
+          onchange="guardarTareaBOL(${diaIdx},'empaste_${paso}',this.checked,parseInt(this.closest('.tarea-fila').querySelector('input[type=number]').value)||${totalEmpastes});this.closest('.tarea-fila').style.opacity=this.checked?'.5':'1'">
+        <span class="rdc-check-box"></span>
+      </label>
+      <div style="flex:1;${checked ? 'opacity:.6' : ''}">
+        <div class="tarea-nombre" style="font-weight:500">${label}</div>
+        <div style="font-size:11px;color:var(--txt3)">${detalle}</div>
+      </div>
+      <input type="number" min="0" value="${cant}" placeholder="${totalEmpastes}"
+        style="width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
+        oninput="(function(v){guardarTareaBOL(${diaIdx},'empaste_${paso}',false,parseInt(v)||0);})(this.value)">
+      <span style="font-size:12px;color:var(--txt3)">emp.</span>
+    </div>`;
+  }).join('');
+
+  const secProductos = recetasBOL.map(r => {
+    const t = getTareaBOL(diaIdx, `prod_desc_${r.ID_receta}`);
+    const cant = t.cantidad || 0;
+    const checked = t.estado === '1';
+    const planif = planificadoPorReceta[r.ID_receta] || 0;
+    return renderProductoDescongelar(r, diaIdx, cant, planif, checked, cant > 0 && !checked);
+  }).join('');
 
   return `
     <div class="tarea-previa-bloque">
@@ -1247,131 +1317,10 @@ function renderTareasDescongelarBOL(diaIdx) {
         <i class="ti ti-clock" style="color:#1565C0"></i>
         Tareas previas — preparar el día anterior
       </div>
-
-      <!-- POOLISH desde plan de masas -->
-      ${(() => {
-        const planMasas = cfg.bol?.plan_masas || {};
-        const poolishItems = App.materiasPrimas.filter(m => {
-          const esSubReceta = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
-          const nombre = (m.nombre || '').toLowerCase();
-          return esSubReceta && nombre.includes('poolish') &&
-            (!m.areas_habilitadas || m.areas_habilitadas.includes('BOL'));
-        });
-
-        if (!poolishItems.length) return '';
-
-        const maxPorTanda = cfg.bol?.amasadora_max_por_tanda || 16;
-        return poolishItems.map(pool => {
-          // Buscar receta de poolish para obtener ingredientes
-          const poolReceta = App.recetas.find(r =>
-            r.nombre === pool.nombre && r.estado === 'consolidada'
-          );
-          let ingsPool = [];
-          if (poolReceta) {
-            try { ingsPool = JSON.parse(poolReceta.ingredientes_JSON || '[]'); } catch(e) {}
-          }
-          const pesoUnitario = ingsPool.reduce((s,i) => s+(parseFloat(i.gramos)||0), 0);
-
-          // Calcular total desde plan de masas
-          // Cada masa base usa 1 poolish unitario
-          let totalMasasPlan = 0;
-          masasBase.forEach(m => {
-            totalMasasPlan += (planMasas[m.ID_MP] || [])[diaIdx] || 0;
-          });
-
-          if (totalMasasPlan === 0 || pesoUnitario === 0) return '';
-
-          const totalGrPool = pesoUnitario * totalMasasPlan;
-          const clavePool = `fen_poolish_BOL_${obtenerSemanaActual()}_${diaIdx}`;
-          const listoPool = localStorage.getItem(clavePool) === '1';
-
-          // Calcular tandas igual que masa base
-          const tandasPool = [];
-          let restPool = totalMasasPlan;
-          while (restPool > 0) {
-            const t = Math.min(restPool, maxPorTanda);
-            tandasPool.push(t);
-            restPool -= t;
-          }
-
-          const claveTandasPool = `fen_poolish_tandas_BOL_${obtenerSemanaActual()}_${diaIdx}`;
-          const tandasPoolData = (() => { try { return JSON.parse(localStorage.getItem(claveTandasPool)||'[]'); } catch(e) { return []; } })();
-
-          const poolUid = `pool_${pool.ID_MP}_${diaIdx}`;
-          return `
-          <div class="tarea-seccion">
-            <div class="tarea-seccion-label" style="display:flex;align-items:center;justify-content:space-between">
-              <span>🌱 ${pool.nombre}</span>
-              <span style="font-size:10px;color:#7B1FA2;font-weight:400">${tandasPool.length} tanda${tandasPool.length>1?'s':''} · ${formatearGramos(totalGrPool, true)} total</span>
-            </div>
-            ${tandasPool.map((n, i) => {
-              const tData = getTareaBOL(diaIdx, `poolish_tanda_${i}`); const done = tData.estado === '1';
-              const tandaId = `tanda_pool_${poolUid}_${i}`;
-              return `
-              <div style="margin-bottom:6px;border:1px solid rgba(156,39,176,.2);border-radius:var(--r-md);overflow:hidden;${done?'opacity:.5':''}">
-                <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:rgba(156,39,176,.06);cursor:pointer"
-                  onclick="toggleTanda('${tandaId}')">
-                  <label class="rdc-check-wrap" onclick="event.stopPropagation()">
-                    <input type="checkbox" ${done?'checked':''}
-                      onchange="guardarTareaBOL(${diaIdx},'poolish_tanda_${i}',this.checked,${n});this.closest('[style*=margin-bottom]').style.opacity=this.checked?'.5':'1'">
-                    <span class="rdc-check-box"></span>
-                  </label>
-                  <span style="font-size:12px;font-weight:600;color:#4A148C">
-                    Tanda ${i+1} — ${n} masa${n>1?'s':''}
-                  </span>
-                  <span style="margin-left:auto;font-family:'DM Mono',monospace;font-weight:700;color:#6A1B9A;font-size:13px">
-                    ${formatearGramos(pesoUnitario * n, true)}
-                  </span>
-                  <i class="ti ti-chevron-down" id="chev_${tandaId}" style="color:#7B1FA2;font-size:14px;transition:transform .2s"></i>
-                </div>
-                <div id="${tandaId}" style="display:none;padding:4px 0">
-                  ${ingsPool.map(ing => {
-                    const gr = (parseFloat(ing.gramos)||0) * n;
-                    return `<div class="tarea-fila" style="border-bottom:1px solid rgba(156,39,176,.08)">
-                      <span class="tarea-nombre" style="color:#4A148C">${ing.nombre}</span>
-                      <span style="font-family:'DM Mono',monospace;font-weight:600;color:#6A1B9A">${formatearGramos(gr, true)}</span>
-                    </div>`;
-                  }).join('')}
-                </div>
-              </div>`;
-            }).join('')}
-          </div>`;
-        }).join('');
-      })()}
-
-      <!-- MASAS A DESCONGELAR -->
       <div class="tarea-seccion">
         <div class="tarea-seccion-label">🧊 Masas base a descongelar</div>
-        ${masasBase.map(m => {
-          const claveD = `fen_desc_masa_BOL_${semana}_${diaIdx}_${m.ID_MP}`;
-          const tDesc = getTareaBOL(diaIdx, `masas_desc_${m.ID_MP}`);
-          const sugerido = sugeridas[m.ID_MP] || 0;
-          const cant = tDesc.cantidad || sugerido;
-          const checked = tDesc.estado === '1' || (cant >= sugerido && sugerido > 0);
-          const esParc = !checked && cant > 0 && cant < sugerido;
-          return `
-          <div class="tarea-fila" style="${checked?'opacity:.6':''}">
-            <label class="rdc-check-wrap">
-              <input type="checkbox" ${checked?'checked':''}
-                onchange="guardarDescMasaBOL(${diaIdx},'${m.ID_MP}',null,this.checked)">
-              <span class="rdc-check-box"></span>
-            </label>
-            <div style="flex:1">
-              <span class="tarea-nombre">${m.nombre}</span>
-              ${esParc ? `<span style="font-size:10px;color:#F57C00;font-weight:600;margin-left:6px">◑ Parcial: ${cant} de ${sugerido}</span>` : ''}
-              ${checked ? `<span style="font-size:10px;color:#2E7D32;font-weight:600;margin-left:6px">✓ Completo</span>` : ''}
-            </div>
-            <span style="font-size:11px;color:var(--txt3);margin-right:4px">Planif.: ${sugerido}</span>
-            <input type="number" min="0" value="${cant}" placeholder="${sugerido}"
-              id="inp-desc-masa-${m.ID_MP}-${diaIdx}"
-              style="width:55px;padding:4px 8px;border:1px solid ${esParc?'#F57C00':checked?'#4CAF50':'var(--border)'};border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
-              oninput="guardarDescMasaBOL(${diaIdx},'${m.ID_MP}',this.value);actualizarEmpastesDisplay(${diaIdx})">
-            <span style="font-size:12px;color:var(--txt3)">masas</span>
-          </div>`;
-        }).join('')}
+        ${secMasas}
       </div>
-
-      <!-- EMPASTES A PREPARAR: 2 pasos -->
       <div class="tarea-seccion">
         <div class="tarea-seccion-label" style="display:flex;align-items:center;justify-content:space-between">
           <span>🧈 Empastes a preparar</span>
@@ -1379,83 +1328,60 @@ function renderTareasDescongelarBOL(diaIdx) {
             ${totalEmpastes} empastes · ${formatearGramos(totalEmpastes * mantPorEmpaste, true)}
           </span>
         </div>
-
-        ${['porcionado','estirado'].map((paso, pi) => {
-          const clavePaso = `fen_empaste_${paso}_BOL_${obtenerSemanaActual()}_${diaIdx}`;
-          const dataPaso = (() => { try { return JSON.parse(localStorage.getItem(clavePaso)||'{}'); } catch(e) { return {}; } })();
-          const tPaso = getTareaBOL(diaIdx, `empaste_${paso}`); const checked = tPaso.estado === '1'; const cant = tPaso.cantidad || totalEmpastes;
-          const label = pi === 0
-            ? `Porcionado de mantequilla (${totalEmpastes} × ${mantPorEmpaste}g)`
-            : `Estirado de mantequilla`;
-          const detalle = pi === 0
-            ? `${formatearGramos(totalEmpastes * mantPorEmpaste, true)} total`
-            : `${totalEmpastes} empastes listos para usar`;
-
-          return `
-          <div class="tarea-fila ${checked?'':''}">
-            <label class="rdc-check-wrap">
-              <input type="checkbox" ${checked?'checked':''}
-              onchange="guardarTareaBOL(${diaIdx},'empaste_${paso}',this.checked,parseInt(this.closest('.tarea-fila').querySelector('input[type=number]').value)||${totalEmpastes});this.closest('.tarea-fila').style.opacity=this.checked?'.5':'1'">
-              <span class="rdc-check-box"></span>
-            </label>
-            <div style="flex:1">
-              <div class="tarea-nombre" style="font-weight:500">${label}</div>
-              <div style="font-size:11px;color:var(--txt3)">${detalle}</div>
-            </div>
-            <input type="number" min="0" value="${cant}" placeholder="${totalEmpastes}"
-              style="width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
-              oninput="(function(v){
-                try{
-                  const d=JSON.parse(localStorage.getItem('${clavePaso}')||'{}');
-                  d.cantidad=parseInt(v)||0;
-                  localStorage.setItem('${clavePaso}',JSON.stringify(d));
-                }catch(e){}
-              })(this.value)">
-            <span style="font-size:12px;color:var(--txt3)">emp.</span>
-          </div>`;
-        }).join('')}
-
+        ${secEmpastes}
         <p style="font-size:11px;color:var(--txt3);padding:4px 12px 8px">
           Se actualiza según masas confirmadas a descongelar.
         </p>
       </div>
-
-      <!-- PRODUCTOS A DESCONGELAR -->
       ${recetasBOL.length ? `
       <div class="tarea-seccion">
         <div class="tarea-seccion-label">❄️ Productos terminados a descongelar</div>
-        ${recetasBOL.map(r => {
-          const tProd = getTareaBOL(diaIdx, `prod_desc_${r.ID_receta}`);
-          const cantProd = tProd.cantidad || 0;
-          const checkedProd = tProd.estado === '1';
-          const checked = checkedProd;
-          const cant = cantProd;
-          return `
-          <div class="tarea-fila" style="${checked?'opacity:.6':''}">
-            <label class="rdc-check-wrap">
-              <input type="checkbox" ${checked?'checked':''}
-                onchange="guardarTareaBOL(${diaIdx},'prod_desc_${r.ID_receta}',this.checked,parseInt(this.closest('.tarea-fila').querySelector('input[type=number]').value)||0)">
-              <span class="rdc-check-box"></span>
-            </label>
-            <div style="flex:1">
-              <span class="tarea-nombre">${r.nombre}</span>
-              ${cant > 0 && !checked ? `<span style="font-size:10px;color:#F57C00;font-weight:600;margin-left:6px">◑ ${cant} uni</span>` : ''}
-              ${checked ? `<span style="font-size:10px;color:#2E7D32;font-weight:600;margin-left:6px">✓ ${cant} uni</span>` : ''}
-            </div>
-            <input type="number" min="0" value="${cant}" placeholder="0"
-              style="width:65px;padding:4px 8px;border:1px solid ${cant>0&&!checked?'#F57C00':checked?'#4CAF50':'var(--border)'};border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
-              oninput="guardarTareaBOL(${diaIdx},'prod_desc_${r.ID_receta}',false,parseInt(this.value)||0)">
-            <span style="font-size:12px;color:var(--txt3)">uni</span>
-          </div>`;
-        }).join('')}
+        ${secProductos}
       </div>` : ''}
+    </div>`;
+}
+
+function renderProductoDescongelar(r, diaIdx, cant, planifProd, esCompleto, esParcProd) {
+  const bgC   = esCompleto ? '#F1F8E9' : esParcProd ? '#FFF8E1' : 'var(--surface)';
+  const bdC   = esCompleto ? '#A5D6A7' : esParcProd ? '#FFE082' : 'var(--border)';
+  const inpBd = esParcProd ? '#FFB300' : esCompleto ? '#4CAF50' : 'var(--border)';
+  const estadoTxt = esParcProd
+    ? `◑ Parcial: ${cant} descongelados`
+    : esCompleto ? `✓ Listo: ${cant} uni` : '';
+  const estadoColor = esParcProd ? '#F57C00' : '#2E7D32';
+
+  return `
+    <div style="background:${bgC};border:1px solid ${bdC};border-radius:6px;padding:10px 14px;margin-bottom:6px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <label class="rdc-check-wrap">
+          <input type="checkbox" ${esCompleto ? 'checked' : ''}
+            onchange="guardarTareaBOL(${diaIdx},'prod_desc_${r.ID_receta}',this.checked,parseInt(this.closest('div').querySelector('input[type=number]').value)||0)">
+          <span class="rdc-check-box"></span>
+        </label>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:600;color:#0D47A1">${r.nombre}</div>
+          <div style="font-size:11px;color:#555;margin-top:2px">
+            Planificado: <strong>${planifProd} uni</strong>
+            ${estadoTxt ? `&nbsp;·&nbsp;<span style="color:${estadoColor}">${estadoTxt}</span>` : ''}
+          </div>
+        </div>
+        <div style="text-align:right">
+          <input type="number" min="0" value="${cant}" placeholder="0"
+            style="width:65px;padding:5px 8px;border:1px solid ${inpBd};border-radius:4px;font-size:14px;font-weight:600;text-align:center;font-family:'DM Mono',monospace"
+            oninput="guardarTareaBOL(${diaIdx},'prod_desc_${r.ID_receta}',false,parseInt(this.value)||0)">
+          <div style="font-size:10px;color:#777;margin-top:2px">uni descongeladas</div>
+        </div>
+      </div>
     </div>`;
 }
 
 function guardarDescMasaBOL(diaIdx, mpId, cantidad, done) {
   const inp = document.getElementById(`inp-desc-masa-${mpId}-${diaIdx}`);
-  const cantActual = cantidad !== null ? parseInt(cantidad)||0 : (parseInt(inp?.value)||0);
-  const chk = document.querySelector(`input[onchange*="guardarDescMasaBOL(${diaIdx},'${mpId}'"]`);
+  // Use explicit null check - 0 is a valid value
+  const cantActual = cantidad !== null && cantidad !== undefined
+    ? (parseInt(cantidad) === 0 ? 0 : parseInt(cantidad) || 0)
+    : (inp?.value !== undefined ? parseInt(inp.value) : 0);
+  const chk = document.querySelector(`input[id="chk-masa-${mpId}-${diaIdx}"]`);
   const doneActual = done !== null && done !== undefined ? done : (chk?.checked || false);
   guardarTareaBOL(diaIdx, `masas_desc_${mpId}`, doneActual, cantActual);
 }
