@@ -1277,27 +1277,32 @@ function renderTareasDescongelarBOL(diaIdx) {
 
   const secEmpastes = ['porcionado', 'estirado'].map((paso, pi) => {
     const t = getTareaBOL(diaIdx, `empaste_${paso}`);
-    const checked = t.estado === '1';
-    const cant = t.cantidad || totalEmpastes;
+    const tEmp = getTareaBOL(diaIdx, `empaste_${paso}`);
+    const checked = tEmp.estado === '1';
+    const cant = (tEmp.estado !== '' && tEmp.cantidad !== undefined) ? (parseInt(tEmp.cantidad) || 0) : totalEmpastes;
     const label = pi === 0
       ? `Porcionado de mantequilla (${totalEmpastes} × ${mantPorEmpaste}g)`
       : 'Estirado de mantequilla';
-    const detalle = pi === 0
-      ? `${formatearGramos(totalEmpastes * mantPorEmpaste, true)} total`
-      : `${totalEmpastes} empastes listos para usar`;
+    const cantRef = totalEmpastes;
+    const esParc = !checked && cant > 0 && cant < cantRef;
+    const estadoLabel = checked
+      ? `<span style="font-size:10px;color:#2E7D32;font-weight:600">✓ ${cant} completos</span>`
+      : esParc
+        ? `<span style="font-size:10px;color:#F57C00;font-weight:600">◑ Parcial: ${cant} de ${cantRef}</span>`
+        : `<span style="font-size:11px;color:var(--txt3)">${pi===0?formatearGramos(totalEmpastes*mantPorEmpaste,true)+' total':totalEmpastes+' empastes'}</span>`;
     return `
-    <div class="tarea-fila ${checked ? '' : ''}">
+    <div class="tarea-fila" style="${checked?'opacity:.6':''}">
       <label class="rdc-check-wrap">
         <input type="checkbox" ${checked ? 'checked' : ''}
-          onchange="guardarTareaBOL(${diaIdx},'empaste_${paso}',this.checked,parseInt(this.closest('.tarea-fila').querySelector('input[type=number]').value)||${totalEmpastes});this.closest('.tarea-fila').style.opacity=this.checked?'.5':'1'">
+          onchange="guardarTareaBOL(${diaIdx},'empaste_${paso}',this.checked,parseInt(this.closest('.tarea-fila').querySelector('input[type=number]').value)||${totalEmpastes});this.closest('.tarea-fila').style.opacity=this.checked?'.6':'1'">
         <span class="rdc-check-box"></span>
       </label>
-      <div style="flex:1;${checked ? 'opacity:.6' : ''}">
+      <div style="flex:1">
         <div class="tarea-nombre" style="font-weight:500">${label}</div>
-        <div style="font-size:11px;color:var(--txt3)">${detalle}</div>
+        <div style="margin-top:2px">${estadoLabel}</div>
       </div>
       <input type="number" min="0" value="${cant}" placeholder="${totalEmpastes}"
-        style="width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
+        style="width:60px;padding:4px 8px;border:1px solid ${esParc?'#F57C00':checked?'#4CAF50':'var(--border)'};border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
         oninput="(function(v){guardarTareaBOL(${diaIdx},'empaste_${paso}',false,parseInt(v)||0);})(this.value)">
       <span style="font-size:12px;color:var(--txt3)">emp.</span>
     </div>`;
