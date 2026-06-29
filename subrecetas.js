@@ -427,6 +427,15 @@ function marcarPieMM(clave, listo, tipo) {
 }
 
 // ── RENDER BLOQUE ELABORACIONES PREVIAS ──────────────────────
+async function renderElaboracionesPreviasBOL(diaIdx, contenedor) {
+  if (App.areaCodigo === 'BOL') {
+    await cargarTareasBOL(diaIdx);
+  }
+  const html = renderElaboracionesPrevias(diaIdx);
+  if (contenedor) contenedor.innerHTML = html;
+  return html;
+}
+
 function renderElaboracionesPrevias(diaIdx) {
   const { subRecetasMap, insumosMap } = calcularElaboracionesDia(diaIdx);
   const subRecetas = Object.values(subRecetasMap);
@@ -1296,7 +1305,7 @@ function renderTareasDescongelarBOL(diaIdx) {
               <span style="font-size:10px;color:#7B1FA2;font-weight:400">${tandasPool.length} tanda${tandasPool.length>1?'s':''} · ${formatearGramos(totalGrPool, true)} total</span>
             </div>
             ${tandasPool.map((n, i) => {
-              const done = tandasPoolData[i] === '1';
+              const tData = getTareaBOL(diaIdx, `poolish_tanda_${i}`); const done = tData.estado === '1';
               const tandaId = `tanda_pool_${poolUid}_${i}`;
               return `
               <div style="margin-bottom:6px;border:1px solid rgba(156,39,176,.2);border-radius:var(--r-md);overflow:hidden;${done?'opacity:.5':''}">
@@ -1304,7 +1313,7 @@ function renderTareasDescongelarBOL(diaIdx) {
                   onclick="toggleTanda('${tandaId}')">
                   <label class="rdc-check-wrap" onclick="event.stopPropagation()">
                     <input type="checkbox" ${done?'checked':''}
-                      onchange="(function(el){try{const d=JSON.parse(localStorage.getItem('${claveTandasPool}')||'[]');d[${i}]=el.checked?'1':'0';localStorage.setItem('${claveTandasPool}',JSON.stringify(d));el.closest('[style*=margin-bottom]').style.opacity=el.checked?'.5':'1';}catch(e){};})(this)">
+                      onchange="guardarTareaBOL(${diaIdx},'poolish_tanda_${i}',this.checked,${n});this.closest('[style*=margin-bottom]').style.opacity=this.checked?'.5':'1'">
                     <span class="rdc-check-box"></span>
                   </label>
                   <span style="font-size:12px;font-weight:600;color:#4A148C">
@@ -1335,10 +1344,10 @@ function renderTareasDescongelarBOL(diaIdx) {
         <div class="tarea-seccion-label">🧊 Masas base a descongelar</div>
         ${masasBase.map(m => {
           const claveD = `fen_desc_masa_BOL_${semana}_${diaIdx}_${m.ID_MP}`;
-          const dataD = (() => { try { return JSON.parse(localStorage.getItem(claveD)||'{}'); } catch(e) { return {}; } })();
-          const checked = dataD.done === '1';
+          const tDesc = getTareaBOL(diaIdx, `masas_desc_${m.ID_MP}`);
+          const checked = tDesc.estado === '1';
           const sugerido = sugeridas[m.ID_MP] || 0;
-          const cant = dataD.cantidad !== undefined ? dataD.cantidad : sugerido;
+          const cant = tDesc.cantidad || sugerido;
           return `
           <div class="tarea-fila">
             <label class="rdc-check-wrap">
@@ -1369,8 +1378,7 @@ function renderTareasDescongelarBOL(diaIdx) {
         ${['porcionado','estirado'].map((paso, pi) => {
           const clavePaso = `fen_empaste_${paso}_BOL_${obtenerSemanaActual()}_${diaIdx}`;
           const dataPaso = (() => { try { return JSON.parse(localStorage.getItem(clavePaso)||'{}'); } catch(e) { return {}; } })();
-          const checked = dataPaso.done === '1';
-          const cant = dataPaso.cantidad !== undefined ? dataPaso.cantidad : totalEmpastes;
+          const tPaso = getTareaBOL(diaIdx, `empaste_${paso}`); const checked = tPaso.estado === '1'; const cant = tPaso.cantidad || totalEmpastes;
           const label = pi === 0
             ? `Porcionado de mantequilla (${totalEmpastes} × ${mantPorEmpaste}g)`
             : `Estirado de mantequilla`;
@@ -1382,14 +1390,7 @@ function renderTareasDescongelarBOL(diaIdx) {
           <div class="tarea-fila ${checked?'':''}">
             <label class="rdc-check-wrap">
               <input type="checkbox" ${checked?'checked':''}
-                onchange="(function(el){
-                  try{
-                    const d=JSON.parse(localStorage.getItem('${clavePaso}')||'{}');
-                    d.done=el.checked?'1':'0';
-                    localStorage.setItem('${clavePaso}',JSON.stringify(d));
-                    el.closest('.tarea-fila').style.opacity=el.checked?'.5':'1';
-                  }catch(e){}
-                })(this)">
+              onchange="guardarTareaBOL(${diaIdx},'empaste_${paso}',this.checked,parseInt(this.closest('.tarea-fila').querySelector('input[type=number]').value)||${totalEmpastes});this.closest('.tarea-fila').style.opacity=this.checked?'.5':'1'">
               <span class="rdc-check-box"></span>
             </label>
             <div style="flex:1">
@@ -1470,6 +1471,62 @@ function actualizarEmpastesDisplay(diaIdx) {
   });
   const display = document.getElementById(`empastes-display-${diaIdx}`);
   if (display) display.textContent = `${total} empastes · ${formatearGramos(total * mantPorEmpaste, true)}`;
+}
+
+// ── BOL TAREAS: SINCRONIZACIÓN CON SHEET ─────────────────────
+let _bolTareasCache = {}; // { "semana_dia": { tipo_tarea: {estado, cantidad} } }
+
+async function cargarTareasBOL(diaIdx) {
+  const semana = obtenerSemanaActual();
+  const clave  = `${semana}_${diaIdx}`;
+  try {
+    const payload = encodeURIComponent(JSON.stringify({
+      accion: 'leer_tareas_bol', semana_ID: semana, dia: diaIdx
+    }));
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
+    const data = await res.json();
+    if (data.ok && data.tareas) {
+      _bolTareasCache[clave] = {};
+      data.tareas.forEach(t => {
+        _bolTareasCache[clave][t.tipo_tarea] = {
+          estado:   t.estado,
+          cantidad: t.cantidad
+        };
+      });
+    }
+  } catch(e) {
+    console.warn('No se pudo cargar tareas BOL:', e);
+  }
+  return _bolTareasCache[clave] || {};
+}
+
+async function guardarTareaBOL(diaIdx, tipoTarea, estado, cantidad) {
+  const semana = obtenerSemanaActual();
+  const clave  = `${semana}_${diaIdx}`;
+
+  // Actualizar caché local inmediatamente
+  if (!_bolTareasCache[clave]) _bolTareasCache[clave] = {};
+  _bolTareasCache[clave][tipoTarea] = { estado, cantidad };
+
+  // Guardar en Sheet
+  try {
+    const payload = encodeURIComponent(JSON.stringify({
+      accion:      'guardar_tarea_bol',
+      semana_ID:   semana,
+      dia:         diaIdx,
+      tipo_tarea:  tipoTarea,
+      estado:      estado ? '1' : '0',
+      cantidad:    cantidad || 0,
+      dispositivo: navigator.userAgent.slice(0, 50)
+    }));
+    fetch(FEN.WEBAPP_URL + '?payload=' + payload).catch(e => console.warn(e));
+  } catch(e) {}
+}
+
+function getTareaBOL(diaIdx, tipoTarea) {
+  const semana = obtenerSemanaActual();
+  const clave  = `${semana}_${diaIdx}`;
+  return _bolTareasCache[clave]?.[tipoTarea] || { estado: '0', cantidad: 0 };
 }
 
 function toggleInsumos(header) {
@@ -1556,7 +1613,7 @@ function renderMasasElaborarBOL(diaIdx) {
         </div>
         ${tandas.map((n, i) => {
           const factor = n;
-          const done = tandasData[i] === '1';
+          const tMasa = getTareaBOL(diaIdx, `masa_tanda_${mp.ID_MP}_${i}`); const done = tMasa.estado === '1';
           const masaTandaId = `mt_${mp.ID_MP}_${diaIdx}_${i}`;
           return `
           <div style="border-top:1px solid rgba(156,39,176,.2);${done?'opacity:.5;background:#F3E5F5':''}">
@@ -1564,7 +1621,7 @@ function renderMasasElaborarBOL(diaIdx) {
               onclick="toggleTanda('${masaTandaId}')">
               <label class="rdc-check-wrap" onclick="event.stopPropagation()">
                 <input type="checkbox" ${done?'checked':''}
-                  onchange="(function(el){try{const d=JSON.parse(localStorage.getItem('${claveTandas}')||'[]');d[${i}]=el.checked?'1':'0';localStorage.setItem('${claveTandas}',JSON.stringify(d));el.closest('[style*=border-top]').style.opacity=el.checked?'.5':'1';}catch(e){};})(this)">
+                  onchange="guardarTareaBOL(${diaIdx},'masa_tanda_${mp.ID_MP}_${i}',this.checked,${n});this.closest('[style*=border-top]').style.opacity=this.checked?'.5':'1'">
                 <span class="rdc-check-box"></span>
               </label>
               <span style="font-size:13px;font-weight:600;color:#4A148C">
