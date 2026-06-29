@@ -124,6 +124,46 @@ function calcularElaboracionesDia(diaIdx) {
     });
   });
 
+  // Para BOL: agregar ingredientes de masas a elaborar y empastes
+  if (App.areaCodigo === 'BOL') {
+    const cfg = cargarConfigSubrecetas();
+    const planMasas = cfg.bol?.plan_masas || {};
+    const mantPorEmpaste = cfg.bol?.mantequilla_por_empaste || 250;
+    const masasBase = App.materiasPrimas.filter(m => {
+      const esSubReceta = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
+      const nombre = (m.nombre || '').toLowerCase();
+      return esSubReceta && nombre.includes('masa') && !nombre.includes('madre') && !nombre.includes('poolish') &&
+        (!m.areas_habilitadas || m.areas_habilitadas.includes('BOL'));
+    });
+
+    let totalEmpastes = 0;
+
+    masasBase.forEach(masa => {
+      const cantMasas = (planMasas[masa.ID_MP] || [])[diaIdx] || 0;
+      if (!cantMasas) return;
+      totalEmpastes += cantMasas;
+
+      // Ingredientes de la masa base escalados por cantidad
+      const recetaMasa = App.recetas.find(r => r.nombre === masa.nombre && r.estado === 'consolidada');
+      if (recetaMasa) {
+        let ingsMasa = [];
+        try { ingsMasa = JSON.parse(recetaMasa.ingredientes_JSON || '[]'); } catch(e) {}
+        ingsMasa.forEach(ing => {
+          // Excluir poolish (sub receta) de los insumos directos
+          if (idsSubRecetas.has(ing.id)) return;
+          const gr = (parseFloat(ing.gramos) || 0) * cantMasas;
+          insumosMap[ing.nombre] = (insumosMap[ing.nombre] || 0) + gr;
+        });
+      }
+    });
+
+    // Mantequilla de empastes
+    if (totalEmpastes > 0) {
+      const grMant = totalEmpastes * mantPorEmpaste;
+      insumosMap['Mantequilla empastes'] = (insumosMap['Mantequilla empastes'] || 0) + grMant;
+    }
+  }
+
   return { subRecetasMap, insumosMap };
 }
 
