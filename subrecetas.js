@@ -1228,11 +1228,10 @@ function renderTareasDescongelarBOL(diaIdx) {
   const recetasBOL = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta');
   const semana = obtenerSemanaActual();
 
-  // Calcular empastes = suma de masas confirmadas
+  // Calcular empastes desde plan de producción (masas necesarias según croissant/productos)
   let totalEmpastes = 0;
   masasBase.forEach(m => {
-    const t = getTareaBOL(diaIdx, `masas_desc_${m.ID_MP}`);
-    totalEmpastes += t.cantidad || sugeridas[m.ID_MP] || 0;
+    totalEmpastes += sugeridas[m.ID_MP] || 0;
   });
 
   // Plan por producto
