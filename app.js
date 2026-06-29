@@ -1605,12 +1605,21 @@ function renderDia(diaIdx) {
                 const pctMostrar = ing._modificado
                   ? (mod && mod[ing.id]?.pct_nuevo || 0).toFixed(2)
                   : ((parseFloat(ing.pct)||0)*100).toFixed(1);
+                // Si tiene unidades guardadas, mostrar en unidades
+                const tieneUnidades = ing.unidades !== undefined && ing.unidades !== null;
+                const unidadesEscaladas = tieneUnidades
+                  ? Math.ceil((parseFloat(ing.unidades)||0) * factor)
+                  : null;
                 return `<tr ${ing._modificado ? 'style="background:#FFF3E0"' : ''}>
                   <td class="td-nombre">
                     ${ing.nombre}
                     ${ing._modificado ? '<span style="font-size:10px;color:#F57C00;margin-left:4px">✦</span>' : ''}
                   </td>
-                  <td class="td-num" style="font-size:14px;font-weight:600;${ing._modificado?'color:#F57C00':''}">${gr.toFixed(0)}g</td>
+                  <td class="td-num" style="font-size:14px;font-weight:600;${ing._modificado?'color:#F57C00':''}">
+                    ${tieneUnidades
+                      ? `${unidadesEscaladas} uni`
+                      : `${gr.toFixed(0)}g`}
+                  </td>
                   ${esPan ? `<td class="td-pct" style="${ing._modificado?'color:#F57C00':''}">${pctMostrar}%</td>` : ''}
                 </tr>`;
               }).join('')}
