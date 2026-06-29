@@ -556,9 +556,7 @@ function renderElaboracionesPrevias(diaIdx) {
   // BOL: todo se muestra en el día seleccionado
   // (la jefa revisa el martes para ver qué preparar hoy lunes)
   const empastes = ''; // BOL empastes now in tareas previas section
-  const prefermentoBOL = (App.areaCodigo === 'BOL')
-    ? renderPrefermentoBOL(diaIdx)
-    : '';
+  const prefermentoBOL = ''; // BOL poolish now in tareas previas section
   const tareasDescongelar = (App.areaCodigo === 'BOL')
     ? renderTareasDescongelarBOL(diaIdx)
     : '';
@@ -569,7 +567,6 @@ function renderElaboracionesPrevias(diaIdx) {
     <div class="elaboraciones-wrap">
 
       ${pieMM}
-      ${prefermentoBOL}
       ${tareasDescongelar}
       ${masasElaborar ? `
       <div class="elab-seccion">
@@ -1321,12 +1318,80 @@ function renderTareasDescongelarBOL(diaIdx) {
     return renderProductoDescongelar(r, diaIdx, cant, planif, checked, cant > 0 && !checked);
   }).join('');
 
+  // ── POOLISH desde plan de masas ──────────────────────────────
+  const poolishMPs = App.materiasPrimas.filter(m => {
+    const esSubReceta = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
+    const esDeBOL = !m.areas_habilitadas || m.areas_habilitadas.includes('BOL');
+    const esPrefermento = (m.nombre || '').toLowerCase().includes('poolish');
+    return esSubReceta && esDeBOL && esPrefermento;
+  });
+
+  const secPoolish = poolishMPs.map(pool => {
+    const maxPorTanda = cfg.bol?.amasadora_max_por_tanda || 16;
+    const poolReceta = App.recetas.find(r => r.nombre === pool.nombre);
+    let ingsPool = [];
+    if (poolReceta) { try { ingsPool = JSON.parse(poolReceta.ingredientes_JSON || '[]'); } catch(e) {} }
+    const pesoUnitario = ingsPool.reduce((s,i) => s+(parseFloat(i.gramos)||0), 0);
+
+    // Total masas planificadas ese día
+    let totalMasasPlan = 0;
+    masasBase.forEach(m => { totalMasasPlan += (cfg.bol?.plan_masas?.[m.ID_MP] || [])[diaIdx] || 0; });
+    if (totalMasasPlan === 0 || pesoUnitario === 0) return '';
+
+    const totalGrPool = pesoUnitario * totalMasasPlan;
+    const tandasPool = [];
+    let restPool = totalMasasPlan;
+    while (restPool > 0) { tandasPool.push(Math.min(restPool, maxPorTanda)); restPool -= maxPorTanda; }
+
+    const claveTandasPool = `fen_poolish_tandas_BOL_${obtenerSemanaActual()}_${diaIdx}_${pool.ID_MP}`;
+    const tandasPoolData = (() => { try { return JSON.parse(localStorage.getItem(claveTandasPool)||'[]'); } catch(e) { return []; } })();
+
+    return `
+    <div class="tarea-seccion">
+      <div class="tarea-seccion-label" style="display:flex;align-items:center;justify-content:space-between">
+        <span>🌱 ${pool.nombre}</span>
+        <span style="font-size:10px;color:#7B1FA2;font-weight:400">${tandasPool.length} tanda${tandasPool.length>1?'s':''} · ${formatearGramos(totalGrPool, true)} total</span>
+      </div>
+      ${tandasPool.map((n, i) => {
+        const tPool = getTareaBOL(diaIdx, `poolish_tanda_${i}`);
+        const done = tPool.estado === '1';
+        const masaTandaId = `tanda_pool_${pool.ID_MP}_${diaIdx}_${i}`;
+        return `
+        <div style="margin-bottom:6px;border:1px solid rgba(156,39,176,.2);border-radius:var(--r-md);overflow:hidden;${done?'opacity:.5':''}">
+          <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:rgba(156,39,176,.06);cursor:pointer"
+            onclick="toggleTanda('${masaTandaId}')">
+            <label class="rdc-check-wrap" onclick="event.stopPropagation()">
+              <input type="checkbox" ${done?'checked':''}
+                onchange="guardarTareaBOL(${diaIdx},'poolish_tanda_${i}',this.checked,${n});this.closest('[style*=margin-bottom]').style.opacity=this.checked?'.5':'1'">
+              <span class="rdc-check-box"></span>
+            </label>
+            <span style="font-size:12px;font-weight:600;color:#4A148C">Tanda ${i+1} — ${n} masa${n>1?'s':''}</span>
+            <span style="margin-left:auto;font-family:'DM Mono',monospace;font-weight:700;color:#6A1B9A;font-size:13px">
+              ${formatearGramos(pesoUnitario * n, true)}
+            </span>
+            <i class="ti ti-chevron-down" id="chev_${masaTandaId}" style="color:#7B1FA2;font-size:14px;transition:transform .2s"></i>
+          </div>
+          <div id="${masaTandaId}" style="display:none;padding:4px 0">
+            ${ingsPool.map(ing => {
+              const gr = (parseFloat(ing.gramos)||0) * n;
+              return `<div class="tarea-fila" style="border-bottom:1px solid rgba(156,39,176,.08)">
+                <span class="tarea-nombre" style="color:#4A148C">${ing.nombre}</span>
+                <span style="font-family:'DM Mono',monospace;font-weight:600;color:#6A1B9A">${formatearGramos(gr, true)}</span>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('');
+
   return `
     <div class="tarea-previa-bloque">
       <div class="tarea-previa-titulo">
         <i class="ti ti-clock" style="color:#1565C0"></i>
         Tareas previas — preparar el día anterior
       </div>
+      ${secPoolish}
       <div class="tarea-seccion">
         <div class="tarea-seccion-label">🧊 Masas base a descongelar</div>
         ${secMasas}
