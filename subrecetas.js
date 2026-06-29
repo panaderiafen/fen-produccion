@@ -1360,7 +1360,7 @@ function renderTareasDescongelarBOL(diaIdx) {
             <input type="number" min="0" value="${cant}" placeholder="${sugerido}"
               id="inp-desc-masa-${m.ID_MP}-${diaIdx}"
               style="width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
-              oninput="actualizarDescMasa('${claveD}',this.value,null);actualizarEmpastesDisplay(${diaIdx})">
+              oninput="guardarTareaBOL(${diaIdx},'masas_desc_${m.ID_MP}',document.querySelector('input[onchange*=masas_desc_${m.ID_MP}]')?.checked||false,parseInt(this.value)||0);actualizarEmpastesDisplay(${diaIdx})">
             <span style="font-size:12px;color:var(--txt3)">masas</span>
           </div>`;
         }).join('')}
@@ -1420,19 +1420,20 @@ function renderTareasDescongelarBOL(diaIdx) {
       <div class="tarea-seccion">
         <div class="tarea-seccion-label">❄️ Productos terminados a descongelar</div>
         ${recetasBOL.map(r => {
-          const checked = descProdData[r.ID_receta]?.done === '1';
-          const cant = descProdData[r.ID_receta]?.cantidad || 0;
+          const tProd = getTareaBOL(diaIdx, `prod_desc_${r.ID_receta}`);
+          const checked = tProd.estado === '1';
+          const cant = tProd.cantidad || 0;
           return `
           <div class="tarea-fila">
             <label class="rdc-check-wrap">
               <input type="checkbox" ${checked?'checked':''}
-                onchange="actualizarDescProd('${claveDescProd}','${r.ID_receta}',this.checked,null)">
+                onchange="guardarTareaBOL(${diaIdx},'prod_desc_${r.ID_receta}',this.checked,parseInt(this.closest('.tarea-fila').querySelector('input[type=number]').value)||0)">
               <span class="rdc-check-box"></span>
             </label>
             <span class="tarea-nombre">${r.nombre}</span>
             <input type="number" min="0" value="${cant}" placeholder="0"
               style="width:70px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;text-align:center;font-family:inherit"
-              oninput="actualizarDescProd('${claveDescProd}','${r.ID_receta}',null,this.value)">
+              oninput="guardarTareaBOL(${diaIdx},'prod_desc_${r.ID_receta}',false,parseInt(this.value)||0)">
             <span style="font-size:12px;color:var(--txt3)">uni</span>
           </div>`;
         }).join('')}
