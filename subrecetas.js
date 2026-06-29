@@ -500,9 +500,7 @@ function renderElaboracionesPrevias(diaIdx) {
 
   // BOL: todo se muestra en el día seleccionado
   // (la jefa revisa el martes para ver qué preparar hoy lunes)
-  const empastes = (App.areaCodigo === 'BOL' && typeof renderEmpastesPrevistos === 'function')
-    ? renderEmpastesPrevistos(diaIdx)
-    : '';
+  const empastes = ''; // BOL empastes now in tareas previas section
   const prefermentoBOL = (App.areaCodigo === 'BOL')
     ? renderPrefermentoBOL(diaIdx)
     : '';
@@ -518,7 +516,6 @@ function renderElaboracionesPrevias(diaIdx) {
       ${pieMM}
       ${prefermentoBOL}
       ${tareasDescongelar}
-      ${empastes}
       ${masasElaborar ? `
       <div class="elab-seccion">
         <div class="elab-seccion-titulo">
