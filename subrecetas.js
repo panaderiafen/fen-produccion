@@ -1278,8 +1278,8 @@ function renderTareasDescongelarBOL(diaIdx) {
   const secEmpastes = ['porcionado', 'estirado'].map((paso, pi) => {
     const t = getTareaBOL(diaIdx, `empaste_${paso}`);
     const tEmp = getTareaBOL(diaIdx, `empaste_${paso}`);
-    const checked = tEmp.estado === '1';
     const cant = (tEmp.estado !== '' && tEmp.cantidad !== undefined) ? (parseInt(tEmp.cantidad) || 0) : totalEmpastes;
+    const checked = tEmp.estado === '1' || (cant >= totalEmpastes && totalEmpastes > 0 && tEmp.estado !== '');
     const label = pi === 0
       ? `Porcionado de mantequilla (${totalEmpastes} × ${mantPorEmpaste}g)`
       : 'Estirado de mantequilla';
