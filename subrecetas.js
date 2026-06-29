@@ -542,7 +542,7 @@ function renderElaboracionesPrevias(diaIdx) {
           Insumos del día
           <i class="ti ti-chevron-down" style="margin-left:auto;font-size:14px;color:var(--txt3);transition:transform .2s"></i>
         </div>
-        <div class="insumos-grid" id="insumos-grid-dia" style="display:none">${insumosHtml}</div>
+        <div class="insumos-grid" id="insumos-grid-${diaIdx}" style="display:none">${insumosHtml}</div>
       </div>` : ''}
 
     </div>
@@ -1433,10 +1433,10 @@ function actualizarEmpastesDisplay(diaIdx) {
 }
 
 function toggleInsumos(header) {
-  const grid = document.getElementById('insumos-grid-dia');
-  const chev = header.querySelector('.ti-chevron-down');
+  const grid = header.nextElementSibling;
+  const chev = header.querySelector('.ti-chevron-down, .ti-chevron-up');
   if (!grid) return;
-  const visible = grid.style.display !== 'none';
+  const visible = grid.style.display !== 'none' && grid.style.display !== '';
   grid.style.display = visible ? 'none' : 'grid';
   if (chev) chev.style.transform = visible ? '' : 'rotate(180deg)';
 }
@@ -1517,35 +1517,42 @@ function renderMasasElaborarBOL(diaIdx) {
         ${tandas.map((n, i) => {
           const factor = n;
           const done = tandasData[i] === '1';
-          const claveT = `${claveTandas}_t${i}`;
+          const masaTandaId = `mt_${mp.ID_MP}_${diaIdx}_${i}`;
           return `
-          <div style="border-top:1px solid rgba(156,39,176,.2);padding:10px 16px;${done?'opacity:.5;background:#F3E5F5':''}">
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-              <label class="rdc-check-wrap">
+          <div style="border-top:1px solid rgba(156,39,176,.2);${done?'opacity:.5;background:#F3E5F5':''}">
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;background:${done?'#EDE7F6':'rgba(156,39,176,.04)'}"
+              onclick="toggleTanda('${masaTandaId}')">
+              <label class="rdc-check-wrap" onclick="event.stopPropagation()">
                 <input type="checkbox" ${done?'checked':''}
-                  onchange="(function(el){try{const d=JSON.parse(localStorage.getItem('${claveTandas}')||'[]');d[${i}]=el.checked?'1':'0';localStorage.setItem('${claveTandas}',JSON.stringify(d));el.closest('[style]').style.opacity=el.checked?'.5':'1';}catch(e){};})(this)">
+                  onchange="(function(el){try{const d=JSON.parse(localStorage.getItem('${claveTandas}')||'[]');d[${i}]=el.checked?'1':'0';localStorage.setItem('${claveTandas}',JSON.stringify(d));el.closest('[style*=border-top]').style.opacity=el.checked?'.5':'1';}catch(e){};})(this)">
                 <span class="rdc-check-box"></span>
               </label>
               <span style="font-size:13px;font-weight:600;color:#4A148C">
                 Tanda ${i+1} — ${n} masa${n>1?'s':''}
               </span>
+              <span style="margin-left:auto;font-family:'DM Mono',monospace;font-weight:600;color:#6A1B9A;font-size:13px">
+                ${formatearGramos(ingredientes.reduce((s,ing)=>s+(parseFloat(ing.gramos)||0)*n,0), true)}
+              </span>
+              <i class="ti ti-chevron-down" id="chev_${masaTandaId}" style="color:#7B1FA2;font-size:14px;transition:transform .2s"></i>
             </div>
-            ${ingredientes.length ? `
-            <div class="elab-desglose" style="display:block">
-              ${ingredientes.map(ing => {
-                const gr = (parseFloat(ing.gramos)||0) * factor;
-                return `<div class="elab-fila">
-                  <span class="elab-comp-nombre">${ing.nombre}</span>
-                  <span class="elab-comp-val">${formatearGramos(gr, true)}</span>
-                </div>`;
-              }).join('')}
-              <div class="elab-fila elab-total-fila">
-                <span class="elab-comp-nombre">Total tanda</span>
-                <span class="elab-comp-val elab-total-val">
-                  ${formatearGramos(ingredientes.reduce((s,i)=>s+(parseFloat(i.gramos)||0)*factor,0), true)}
-                </span>
-              </div>
-            </div>` : '<p style="font-size:12px;color:var(--txt3);padding:0 0 4px">Sin ingredientes — edita la sub receta para agregar.</p>'}
+            <div id="${masaTandaId}" style="display:none">
+              ${ingredientes.length ? `
+              <div class="elab-desglose" style="display:block">
+                ${ingredientes.map(ing => {
+                  const gr = (parseFloat(ing.gramos)||0) * n;
+                  return `<div class="elab-fila">
+                    <span class="elab-comp-nombre">${ing.nombre}</span>
+                    <span class="elab-comp-val">${formatearGramos(gr, true)}</span>
+                  </div>`;
+                }).join('')}
+                <div class="elab-fila elab-total-fila">
+                  <span class="elab-comp-nombre">Total tanda</span>
+                  <span class="elab-comp-val elab-total-val">
+                    ${formatearGramos(ingredientes.reduce((s,i)=>s+(parseFloat(i.gramos)||0)*n,0), true)}
+                  </span>
+                </div>
+              </div>` : '<p style="font-size:12px;color:var(--txt3);padding:8px 16px">Sin ingredientes — edita la sub receta.</p>'}
+            </div>
           </div>`;
         }).join('')}
       </div>`;
