@@ -170,6 +170,17 @@ function calcularElaboracionesDia(diaIdx) {
     }
   }
 
+  // Para PAN: agregar ingredientes de sub recetas (MM, Poolish) al insumosMap
+  if (App.areaCodigo === 'PAN') {
+    subRecetasMap.forEach(sr => {
+      const desglose = calcularDesglose(sr.id, sr.totalGramos);
+      desglose.forEach(comp => {
+        if (!comp.nombre || comp.esPie) return;
+        insumosMap[comp.nombre] = (insumosMap[comp.nombre] || 0) + comp.gramos;
+      });
+    });
+  }
+
   return { subRecetasMap, insumosMap };
 }
 
@@ -862,9 +873,9 @@ function renderResumenSemanalBOL() {
 
 function renderResumenSemanal() {
   if (App.areaCodigo === 'BOL') return renderResumenSemanalBOL();
-  const { resumen, diasNombres } = calcularResumenSemanal();
-  const tieneSubRecetas = Object.keys(resumen.subRecetas).length > 0;
-  const tieneInsumos    = Object.keys(resumen.insumos).length > 0;
+  const { resumen, diasNombres, insumosExtra } = calcularResumenSemanal();
+  const tieneSubRecetas = resumen.subRecetas && Object.keys(resumen.subRecetas).length > 0;
+  const tieneInsumos    = resumen.insumos && Object.keys(resumen.insumos).length > 0;
 
   if (!tieneSubRecetas && !tieneInsumos) {
     return '<p style="font-size:12px;color:var(--txt3);padding:12px">Sin producción planificada esta semana.</p>';
@@ -872,10 +883,15 @@ function renderResumenSemanal() {
 
   let html = '';
 
+  // ELABORACIONES con detalle de sub ingredientes
   if (tieneSubRecetas) {
     html += `<div class="rsm-seccion"><div class="rsm-titulo">Elaboraciones</div>`;
     Object.values(resumen.subRecetas).forEach(sr => {
       const total = sr.porDia.reduce((s, v) => s + v, 0);
+      // Calcular desglose ingredientes para la semana
+      const desgloseSemana = calcularDesglose(sr.id, total);
+      const harinasSR = desgloseSemana.filter(c => c.nombre.toLowerCase().includes('harina'));
+
       html += `
         <div class="rsm-item">
           <div class="rsm-item-nombre">${sr.nombre}</div>
@@ -886,40 +902,99 @@ function renderResumenSemanal() {
               : `<span class="rsm-dia-pill rsm-dia-sin">${diasNombres[i]}</span>`
             ).join('')}
           </div>
+          ${harinasSR.length ? `
+          <div style="margin-top:6px;padding:6px 10px;background:var(--bg);border-radius:var(--r-sm);font-size:11px">
+            ${harinasSR.map(h => `<span style="margin-right:12px;color:var(--txt2)">${h.nombre}: <strong>${formatearGramos(h.gramos)}</strong></span>`).join('')}
+          </div>` : ''}
+          ${sr.nombre.toLowerCase().includes('semilla') ? `
+          <div style="margin-top:4px;padding:6px 10px;background:var(--bg);border-radius:var(--r-sm);font-size:11px">
+            ${desgloseSemana.map(c => `<span style="margin-right:12px;color:var(--txt2)">${c.nombre}: <strong>${formatearGramos(c.gramos)}</strong></span>`).join('')}
+          </div>` : ''}
         </div>`;
     });
     html += '</div>';
   }
 
-  if (tieneInsumos) {
-    // Agrupar por categoría igual que el diario
-    const harinasTotal = {};
-    const otrosTotal   = {};
+  // INSUMOS semana — merge recetas + sub recetas
+  const insumosTotal = {}; // { nombre: { recetas: 0, subrecetas: 0, fuentes: [] } }
+
+  // Desde recetas directas
+  if (resumen.insumos) {
     Object.entries(resumen.insumos).forEach(([nombre, dias]) => {
       const total = dias.reduce((s,v) => s+v, 0);
-      const esSemilla = ['linaza','avena','maravilla','calabaza','nuez','sésamo','semilla'].some(k => nombre.toLowerCase().includes(k));
-      const esHarina  = nombre.toLowerCase().includes('harina');
-      const esLev     = nombre.toLowerCase().includes('levadura');
-      const esSal     = nombre.toLowerCase().includes('sal');
-      const cat = esHarina ? 'Harinas' : esLev ? 'Levadura' : esSal ? 'Sal' : esSemilla ? 'Semillas' : 'Otros';
-      if (!otrosTotal[cat]) otrosTotal[cat] = [];
-      otrosTotal[cat].push({ nombre, total });
+      if (!insumosTotal[nombre]) insumosTotal[nombre] = { recetas: 0, subrecetas: 0, fuentes: [] };
+      insumosTotal[nombre].recetas += total;
+    });
+  }
+
+  // Desde sub recetas
+  if (insumosExtra) {
+    Object.entries(insumosExtra).forEach(([nombre, data]) => {
+      if (!insumosTotal[nombre]) insumosTotal[nombre] = { recetas: 0, subrecetas: 0, fuentes: [] };
+      insumosTotal[nombre].subrecetas += data.total;
+      insumosTotal[nombre].fuentes = [...(data.fuentes || [])];
+    });
+  }
+
+  if (Object.keys(insumosTotal).length) {
+    const categorias = { Harinas: [], Levadura: [], Sal: [], Agua: [], Otros: [] };
+    Object.entries(insumosTotal).forEach(([nombre, vals]) => {
+      const total = vals.recetas + vals.subrecetas;
+      if (total === 0) return;
+      const n = nombre.toLowerCase();
+      const cat = n.includes('harina') ? 'Harinas'
+        : n.includes('levadura') ? 'Levadura'
+        : n.includes('sal') ? 'Sal'
+        : n.includes('agua') ? 'Agua'
+        : 'Otros';
+      categorias[cat].push({ nombre, total, recetas: vals.recetas, subrecetas: vals.subrecetas, fuentes: vals.fuentes });
     });
 
     html += `<div class="rsm-seccion"><div class="rsm-titulo">Insumos semana</div>`;
-    Object.entries(otrosTotal).forEach(([cat, items]) => {
+    Object.entries(categorias).forEach(([cat, items]) => {
+      if (!items.length) return;
       html += `<div class="rsm-cat">${cat}</div>`;
-      items.forEach(({ nombre, total }) => {
-        const esHarina = ['harina','masa madre','poolish'].some(k => nombre.toLowerCase().includes(k)) && cat === 'Harinas';
+      items.forEach(({ nombre, total, recetas, subrecetas, fuentes }) => {
+        const esHarina = cat === 'Harinas';
         const sacos = esHarina ? Math.ceil(total/25000) : 0;
-        html += `<div class="rsm-item-simple"><span>${nombre}</span><span>${formatearGramos(total)}${sacos > 0 ? ' <span style="font-size:10px;color:var(--txt3)">('+sacos+' saco'+(sacos>1?'s':'')+')</span>' : ''}</span></div>`;
+        const detalle = subrecetas > 0
+          ? `${formatearGramos(total)} <span style="font-size:10px;color:var(--txt3)">(recetas ${formatearGramos(recetas)} + sub ${formatearGramos(subrecetas)})</span>`
+          : formatearGramos(total);
+        html += `<div class="rsm-item-simple"><span>${nombre}</span><span>${detalle}${sacos>0?` <span style="font-size:10px;color:var(--txt3)">(${sacos} saco${sacos>1?'s':''})</span>`:''}</span></div>`;
       });
+    });
+    html += '</div>';
+  }
+
+  // PRODUCCIÓN semanal
+  const recetasConsolidadas = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta');
+  const produccionSemana = recetasConsolidadas.map(r => {
+    const porDia = diasNombres.map((_, i) => App.planSemana[r.ID_receta]?.[i] || 0);
+    const total = porDia.reduce((s,v)=>s+v,0);
+    return { nombre: r.nombre, porDia, total };
+  }).filter(p => p.total > 0);
+
+  if (produccionSemana.length) {
+    html += `<div class="rsm-seccion"><div class="rsm-titulo">Producción semanal</div>`;
+    produccionSemana.forEach(p => {
+      html += `
+        <div class="rsm-item">
+          <div class="rsm-item-nombre">${p.nombre}</div>
+          <div class="rsm-item-total">${p.total} uni</div>
+          <div class="rsm-dias">
+            ${p.porDia.map((v, i) => v > 0
+              ? `<span class="rsm-dia-pill rsm-dia-con">${diasNombres[i]}<br><strong>${v}</strong></span>`
+              : `<span class="rsm-dia-pill rsm-dia-sin">${diasNombres[i]}</span>`
+            ).join('')}
+          </div>
+        </div>`;
     });
     html += '</div>';
   }
 
   return html;
 }
+
 
 // ── VISTA CONFIGURACIÓN SUB RECETAS ──────────────────────────
 function renderVistaConfigSubrecetas() {
@@ -1395,6 +1470,67 @@ function renderPrefermentoBOL(diaIdxTarget) {
         </div>
       </div>`;
   }).join('');
+}
+
+// ── PAN: MODAL TANDAS MM BLANCA ──────────────────────────────
+function abrirModalTandasMM(srId, totalGramos) {
+  const cfg = cargarConfigSubrecetas();
+  const desglose = calcularDesglose(srId, totalGramos);
+  const nombreSR = App.materiasPrimas.find(m => m.ID_MP === srId)?.nombre || 'Masa Madre';
+
+  const modal = document.getElementById('modal-tandas-mm');
+  document.getElementById('mm-tandas-titulo').textContent = nombreSR;
+  document.getElementById('mm-tandas-total').textContent = formatearGramos(totalGramos, true);
+  document.getElementById('mm-total-gramos').value = totalGramos;
+  document.getElementById('mm-sr-id').value = srId;
+
+  // Default 2 tandas iguales
+  const claveT = `fen_mm_tandas_${srId}_${App._diaActivo||0}`;
+  const saved = (() => { try { return JSON.parse(localStorage.getItem(claveT)||'null'); } catch(e) { return null; } })();
+  const nTandas = saved?.n || 2;
+  document.getElementById('mm-num-tandas').value = nTandas;
+
+  renderMmTandasBody(desglose, totalGramos, nTandas);
+  modal.classList.remove('hidden');
+}
+
+function renderMmTandasBody(desglose, totalGramos, nTandas) {
+  const body = document.getElementById('mm-tandas-body');
+  const grPorTanda = totalGramos / nTandas;
+
+  body.innerHTML = Array.from({length: nTandas}, (_, i) => {
+    const factor = grPorTanda / totalGramos;
+    return `
+      <div style="border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;margin-bottom:8px">
+        <div style="padding:8px 12px;background:var(--area-bg);font-size:12px;font-weight:600;color:var(--area-color)">
+          Tanda ${i+1} — ${formatearGramos(grPorTanda, true)}
+        </div>
+        <div style="padding:4px 0">
+          ${desglose.map(comp => `
+            <div style="display:flex;justify-content:space-between;padding:5px 12px;font-size:12px;border-bottom:1px solid var(--border)">
+              <span>${comp.nombre}</span>
+              <span style="font-family:'DM Mono',monospace;font-weight:600">${formatearGramos(comp.gramos * factor, true)}</span>
+            </div>`).join('')}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function actualizarMMTandas() {
+  const srId = document.getElementById('mm-sr-id').value;
+  const totalGramos = parseFloat(document.getElementById('mm-total-gramos').value) || 0;
+  const nTandas = parseInt(document.getElementById('mm-num-tandas').value) || 2;
+  const desglose = calcularDesglose(srId, totalGramos);
+  renderMmTandasBody(desglose, totalGramos, nTandas);
+}
+
+function guardarMMTandas() {
+  const srId = document.getElementById('mm-sr-id').value;
+  const nTandas = parseInt(document.getElementById('mm-num-tandas').value) || 2;
+  const claveT = `fen_mm_tandas_${srId}_${App._diaActivo||0}`;
+  localStorage.setItem(claveT, JSON.stringify({ n: nTandas }));
+  document.getElementById('modal-tandas-mm').classList.add('hidden');
+  toast('Tandas guardadas');
 }
 
 // ── BOL: TAREAS PREVIAS DESCONGELAR ─────────────────────────
