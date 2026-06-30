@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
-  <link rel="stylesheet" href="main.css?v=1782784959">
+  <link rel="stylesheet" href="main.css?v=1782785679">
 </head>
 <body>
 
@@ -106,6 +106,7 @@
       <!-- Vista: resumen semanal -->
       <div class="vista" id="vista-resumen-semanal"></div>
       <div class="vista" id="vista-consolidado-mensual"></div>
+      <div class="vista" id="vista-stock-caf"></div>
 
     </main>
   </div>
@@ -277,11 +278,53 @@
   </div>
 </div>
 
+<!-- Modal: Movimiento de stock CAF -->
+<div class="modal-fondo hidden" id="modal-mov-stock">
+  <div class="modal" style="max-width:440px;text-align:left">
+    <div class="modal-ico" style="background:#FFEBEE;color:#B71C1C">
+      <i class="ti ti-package"></i>
+    </div>
+    <h3 style="text-align:center">Registrar movimiento</h3>
+    <div class="form-grid" style="margin-top:14px">
+      <div class="campo full">
+        <label>Item</label>
+        <select id="mov-stock-mp" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px"></select>
+      </div>
+      <div class="campo">
+        <label>Tipo</label>
+        <select id="mov-stock-tipo" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+          <option value="compra">Compra (entrada)</option>
+          <option value="consumo">Consumo</option>
+          <option value="merma">Merma</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label>Cantidad</label>
+        <input type="number" id="mov-stock-cantidad" min="0" step="0.01" placeholder="0">
+      </div>
+      <div class="campo full">
+        <label>Barista</label>
+        <select id="mov-stock-barista" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px"></select>
+      </div>
+      <div class="campo full">
+        <label>Nota (opcional)</label>
+        <input type="text" id="mov-stock-nota" placeholder="Ej: compra proveedor X">
+      </div>
+    </div>
+    <div class="modal-acciones">
+      <button class="btn-secundario" onclick="document.getElementById('modal-mov-stock').classList.add('hidden')">Cancelar</button>
+      <button class="btn-primario" onclick="guardarMovStock(this)">
+        <i class="ti ti-check"></i> Registrar
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="config.js?v=1782784959"></script>
-<script src="subrecetas.js?v=1782784959"></script>
-<script src="app.js?v=1782784959"></script>
+<script src="config.js?v=1782785679"></script>
+<script src="subrecetas.js?v=1782785679"></script>
+<script src="app.js?v=1782785679"></script>
 </body>
 </html>
