@@ -31,6 +31,12 @@ const CONFIG_SUBRECETAS_DEFAULT = {
     harina_pct: 100,
     agua_pct: 90,
   },
+  caf: {
+    gramos_por_shot: 14,
+    tipos_leche: ['Entera', 'Descremada', 'Sin lactosa', 'Vegetal (avena)', 'Vegetal (almendra)'],
+    baristas: ['Por definir'],
+    stock: {}, // { itemId: { nombre, unidad, cantidad } } -- café tolva, café bodega, leches
+  },
   bol: {
     amasadora_max_por_tanda: 16,   // masas base por tanda
     amasadora_tandas_dia: 2,       // tandas por día (default = 32 masas/día)
@@ -1101,6 +1107,47 @@ function renderVistaConfigSubrecetas() {
 
     ` : ''}
 
+    ${App.areaCodigo === 'CAF' ? `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head" style="background:#FFEBEE;color:#B71C1C">
+        <i class="ti ti-coffee" style="color:#B71C1C"></i> Cafetería — Parámetros
+      </div>
+      <div class="form-grid">
+        <div class="campo">
+          <label>Gramos de café por shot</label>
+          <input type="number" id="cfg-caf-gramos-shot" value="${cfg.caf?.gramos_por_shot || 14}" min="1" max="30" step="0.5">
+        </div>
+        <div class="campo full">
+          <label>Tipos de leche disponibles</label>
+          <div id="cfg-caf-leches-lista" style="margin-top:6px">
+            ${(cfg.caf?.tipos_leche || []).map((l, i) => `
+              <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
+                <input type="text" value="${l}" data-leche-idx="${i}"
+                  style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+                <button type="button" onclick="this.closest('div').remove()" class="btn-fila-del"><i class="ti ti-x"></i></button>
+              </div>`).join('')}
+          </div>
+          <button type="button" class="btn-secundario" style="font-size:12px;margin-top:4px" onclick="agregarLecheConfig()">
+            <i class="ti ti-plus"></i> Agregar tipo de leche
+          </button>
+        </div>
+        <div class="campo full">
+          <label>Baristas (lista fija)</label>
+          <div id="cfg-caf-baristas-lista" style="margin-top:6px">
+            ${(cfg.caf?.baristas || []).map((b, i) => `
+              <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
+                <input type="text" value="${b}" data-barista-idx="${i}"
+                  style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+                <button type="button" onclick="this.closest('div').remove()" class="btn-fila-del"><i class="ti ti-x"></i></button>
+              </div>`).join('')}
+          </div>
+          <button type="button" class="btn-secundario" style="font-size:12px;margin-top:4px" onclick="agregarBaristaConfig()">
+            <i class="ti ti-plus"></i> Agregar barista
+          </button>
+        </div>
+      </div>
+    </div>` : ''}
+
     ${App.areaCodigo === 'BOL' ? `
     <div class="card" style="margin-bottom:16px">
       <div class="card-head" style="background:#F3E5F5;color:#4A148C">
@@ -1197,6 +1244,25 @@ function guardarConfigDesdeForm(btn) {
     cfg.bol.stock_masas    = stockMasas;
     cfg.bol.stock_productos = stockProductos;
     cfg.bol.plan_masas     = planMasas;
+  }
+
+  if (App.areaCodigo === 'CAF') {
+    if (!cfg.caf) cfg.caf = { stock: {} };
+    cfg.caf.gramos_por_shot = parseFloat(document.getElementById('cfg-caf-gramos-shot')?.value) || 14;
+
+    const leches = [];
+    document.querySelectorAll('#cfg-caf-leches-lista input[type=text]').forEach(inp => {
+      if (inp.value.trim()) leches.push(inp.value.trim());
+    });
+    cfg.caf.tipos_leche = leches;
+
+    const baristas = [];
+    document.querySelectorAll('#cfg-caf-baristas-lista input[type=text]').forEach(inp => {
+      if (inp.value.trim()) baristas.push(inp.value.trim());
+    });
+    cfg.caf.baristas = baristas;
+
+    cfg.caf.stock = cfg.caf.stock || {};
   }
 
   guardarConfigSubrecetas(cfg);
