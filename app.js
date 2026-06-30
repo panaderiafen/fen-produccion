@@ -209,6 +209,9 @@ function renderSidebar() {
       items.push({ id: 'resumen-semanal',     icon: 'ti-chart-grid-dots', label: 'Resumen semanal' });
       items.push({ id: 'consolidado-mensual', icon: 'ti-calendar-stats',  label: 'Consolidado mensual' });
     }
+    if (App.areaCodigo === 'CAF') {
+      items.push({ id: 'stock-caf', icon: 'ti-package', label: 'Stock materias primas' });
+    }
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL' || App.areaCodigo === 'CAF') {
       items.push({ id: 'config-subrecetas',   icon: 'ti-adjustments',     label: App.areaCodigo === 'CAF' ? 'Configuración' : 'Config sub recetas' });
     }
@@ -273,6 +276,7 @@ function navegarA(vistaId) {
     case 'config-subrecetas':   renderVistaConfigSubrecetas(); break;
     case 'resumen-semanal':     renderVistaResumenSemanal(); break;
     case 'consolidado-mensual': renderVistaConsolidado();    break;
+    case 'stock-caf':           renderVistaStockCAF();        break;
     default: mostrarVista('empty');
   }
 }
@@ -1879,6 +1883,202 @@ function renderVistaResumenSemanal() {
     <div class="rsm-wrap">${html}</div>
   `;
   mostrarVista('resumen-semanal');
+}
+
+// ── STOCK CAFETERÍA ────────────────────────────────────────────
+let _stockCAFCache = [];
+
+async function renderVistaStockCAF() {
+  const vista = document.getElementById('vista-stock-caf');
+  if (!vista) return;
+  mostrarVista('stock-caf');
+
+  vista.innerHTML = `
+    <div class="vista-header">
+      <div>
+        <div class="vista-eyebrow">Cafetería</div>
+        <h1 class="vista-titulo">Stock de materias primas</h1>
+      </div>
+      <button class="btn-primario" onclick="abrirModalMovStock()">
+        <i class="ti ti-plus"></i> Registrar movimiento
+      </button>
+    </div>
+    <div id="stock-caf-body">
+      <div style="padding:20px;text-align:center;color:var(--txt3)"><div class="spinner"></div> Cargando...</div>
+    </div>
+  `;
+
+  await cargarStockCAF();
+}
+
+async function cargarStockCAF() {
+  const body = document.getElementById('stock-caf-body');
+  if (!body) return;
+
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_stock_caf' }));
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
+    const data = await res.json();
+    _stockCAFCache = data.movimientos || [];
+
+    // Calcular saldo actual por MP
+    const mpItems = App.materiasPrimas.filter(m =>
+      !m.areas_habilitadas || m.areas_habilitadas.includes('CAF')
+    );
+
+    const saldos = {};
+    mpItems.forEach(m => { saldos[m.ID_MP] = { nombre: m.nombre, saldo: 0, unidad: m.unidad || 'unid' }; });
+
+    _stockCAFCache.forEach(mov => {
+      if (!saldos[mov.mp_id]) saldos[mov.mp_id] = { nombre: mov.nombre, saldo: 0, unidad: '' };
+      const cant = parseFloat(mov.cantidad) || 0;
+      if (mov.tipo === 'compra') saldos[mov.mp_id].saldo += cant;
+      else saldos[mov.mp_id].saldo -= cant; // consumo, merma
+    });
+
+    const itemsConMovimiento = Object.entries(saldos).filter(([id, s]) =>
+      _stockCAFCache.some(m => m.mp_id === id) || mpItems.some(m => m.ID_MP === id)
+    );
+
+    if (!itemsConMovimiento.length) {
+      body.innerHTML = '<p style="padding:20px;color:var(--txt3);font-size:13px">Sin materias primas configuradas para Cafetería. Agrégalas en "Materias primas" con área habilitada CAF.</p>';
+      return;
+    }
+
+    body.innerHTML = `
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head"><i class="ti ti-package"></i> Stock actual</div>
+        <table class="tabla-vista">
+          <thead><tr>
+            <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Item</th>
+            <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Stock actual</th>
+          </tr></thead>
+          <tbody>
+            ${itemsConMovimiento.map(([id, s]) => `
+              <tr>
+                <td class="td-nombre">${s.nombre}</td>
+                <td class="td-num" style="font-weight:700;color:${s.saldo<=0?'#C62828':'var(--txt)'}">
+                  ${s.saldo.toFixed(s.unidad==='unidades'?0:2)} ${s.unidad}
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-head" style="cursor:pointer" onclick="toggleHistoricoStock(this)">
+          <i class="ti ti-history"></i> Histórico de movimientos
+          <i class="ti ti-chevron-down" style="margin-left:auto;font-size:14px;transition:transform .2s"></i>
+        </div>
+        <div id="historico-stock-body" style="display:none">
+          <div style="padding:10px 16px">
+            <input type="text" placeholder="Buscar por item o barista..." id="buscar-historico"
+              style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit"
+              oninput="filtrarHistoricoStock(this.value)">
+          </div>
+          <table class="tabla-vista" id="tabla-historico-stock">
+            <thead><tr>
+              <th style="text-align:left;padding:7px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Fecha</th>
+              <th style="text-align:left;padding:7px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Item</th>
+              <th style="text-align:center;padding:7px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Tipo</th>
+              <th style="text-align:right;padding:7px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Cantidad</th>
+              <th style="text-align:left;padding:7px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Barista</th>
+            </tr></thead>
+            <tbody>
+              ${_stockCAFCache.slice().reverse().map(mov => `
+                <tr>
+                  <td style="font-size:12px;color:var(--txt2);padding:6px 16px">${mov.fecha}</td>
+                  <td style="font-size:12px;padding:6px 16px">${mov.nombre}</td>
+                  <td style="text-align:center;padding:6px 16px">
+                    <span style="font-size:10px;padding:2px 8px;border-radius:99px;font-weight:600;
+                      background:${mov.tipo==='compra'?'#E8F5E9':mov.tipo==='merma'?'#FFEBEE':'#FFF3E0'};
+                      color:${mov.tipo==='compra'?'#2E7D32':mov.tipo==='merma'?'#C62828':'#E65100'}">
+                      ${mov.tipo}
+                    </span>
+                  </td>
+                  <td style="text-align:right;font-family:'DM Mono',monospace;padding:6px 16px">${mov.cantidad}</td>
+                  <td style="font-size:12px;padding:6px 16px">${mov.barista||'—'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  } catch(e) {
+    body.innerHTML = `<p style="padding:20px;color:#C62828;font-size:13px">Error: ${e.message}</p>`;
+  }
+}
+
+function toggleHistoricoStock(header) {
+  const body = document.getElementById('historico-stock-body');
+  const chev = header.querySelector('.ti-chevron-down');
+  if (!body) return;
+  const visible = body.style.display !== 'none';
+  body.style.display = visible ? 'none' : 'block';
+  if (chev) chev.style.transform = visible ? '' : 'rotate(180deg)';
+}
+
+function filtrarHistoricoStock(texto) {
+  const filas = document.querySelectorAll('#tabla-historico-stock tbody tr');
+  const t = texto.toLowerCase();
+  filas.forEach(fila => {
+    const match = fila.textContent.toLowerCase().includes(t);
+    fila.style.display = match ? '' : 'none';
+  });
+}
+
+function abrirModalMovStock() {
+  const cfg = cargarConfigSubrecetas();
+  const baristas = cfg.caf?.baristas || [];
+  const mpItems = App.materiasPrimas.filter(m =>
+    !m.areas_habilitadas || m.areas_habilitadas.includes('CAF')
+  );
+
+  const modal = document.getElementById('modal-mov-stock');
+  document.getElementById('mov-stock-mp').innerHTML = mpItems.map(m =>
+    `<option value="${m.ID_MP}" data-nombre="${m.nombre}">${m.nombre}</option>`
+  ).join('');
+  document.getElementById('mov-stock-barista').innerHTML =
+    '<option value="">— Selecciona —</option>' +
+    baristas.map(b => `<option value="${b}">${b}</option>`).join('');
+  document.getElementById('mov-stock-cantidad').value = '';
+  document.getElementById('mov-stock-nota').value = '';
+
+  modal.classList.remove('hidden');
+}
+
+async function guardarMovStock(btn) {
+  const mpSel = document.getElementById('mov-stock-mp');
+  const mpId = mpSel.value;
+  const nombre = mpSel.selectedOptions[0]?.dataset.nombre || '';
+  const tipo = document.getElementById('mov-stock-tipo').value;
+  const cantidad = parseFloat(document.getElementById('mov-stock-cantidad').value) || 0;
+  const nota = document.getElementById('mov-stock-nota').value.trim();
+  const barista = document.getElementById('mov-stock-barista').value;
+
+  if (!mpId || cantidad <= 0 || !barista) {
+    toast('Completa item, cantidad y barista');
+    return;
+  }
+
+  bloquearBtn(btn, 'Guardando...');
+  try {
+    const payload = encodeURIComponent(JSON.stringify({
+      accion: 'mov_stock_caf', mp_id: mpId, nombre, tipo, cantidad, nota, barista
+    }));
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
+    const data = await res.json();
+    if (data.ok) {
+      document.getElementById('modal-mov-stock').classList.add('hidden');
+      toast('Movimiento registrado');
+      await cargarStockCAF();
+    } else {
+      toast('Error: ' + data.msg);
+    }
+  } catch(e) {
+    toast('Error de conexión');
+  }
+  desbloquearBtn(btn, '<i class="ti ti-check"></i> Registrar', true);
 }
 
 // ── CONSOLIDADO MENSUAL ──────────────────────────────────────
