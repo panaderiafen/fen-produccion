@@ -204,11 +204,13 @@ function renderSidebar() {
       { id: 'maestro',           icon: 'ti-book',           label: 'Maestro de recetas' },
     ];
     if (App.areaCodigo === 'CAF') items.splice(2, 2);
-    // Panadería tiene secciones extra
+    // Secciones extra de gestión avanzada
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL') {
       items.push({ id: 'resumen-semanal',     icon: 'ti-chart-grid-dots', label: 'Resumen semanal' });
       items.push({ id: 'consolidado-mensual', icon: 'ti-calendar-stats',  label: 'Consolidado mensual' });
-      items.push({ id: 'config-subrecetas',   icon: 'ti-adjustments',     label: 'Config sub recetas' });
+    }
+    if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL' || App.areaCodigo === 'CAF') {
+      items.push({ id: 'config-subrecetas',   icon: 'ti-adjustments',     label: App.areaCodigo === 'CAF' ? 'Configuración' : 'Config sub recetas' });
     }
     items.forEach(item => nav.appendChild(crearNavItem(item)));
   } else {
