@@ -1118,18 +1118,9 @@ function renderVistaConfigSubrecetas() {
           <input type="number" id="cfg-caf-gramos-shot" value="${cfg.caf?.gramos_por_shot || 14}" min="1" max="30" step="0.5">
         </div>
         <div class="campo full">
-          <label>Tipos de leche disponibles</label>
-          <div id="cfg-caf-leches-lista" style="margin-top:6px">
-            ${(cfg.caf?.tipos_leche || []).map((l, i) => `
-              <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
-                <input type="text" value="${l}" data-leche-idx="${i}"
-                  style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
-                <button type="button" onclick="this.closest('div').remove()" class="btn-fila-del"><i class="ti ti-x"></i></button>
-              </div>`).join('')}
-          </div>
-          <button type="button" class="btn-secundario" style="font-size:12px;margin-top:4px" onclick="agregarLecheConfig()">
-            <i class="ti ti-plus"></i> Agregar tipo de leche
-          </button>
+          <p style="font-size:11px;color:var(--txt3);margin:0 0 8px;padding:8px 10px;background:var(--bg);border-radius:var(--r-sm)">
+            <i class="ti ti-info-circle"></i> Los tipos de leche y café se gestionan como Materias Primas — ve a "Materias primas" para agregarlos con su costo y stock.
+          </p>
         </div>
         <div class="campo full">
           <label>Baristas (lista fija)</label>
@@ -1196,37 +1187,43 @@ function renderVistaConfigSubrecetas() {
 function guardarConfigDesdeForm(btn) {
   bloquearBtn(btn, 'Guardando...');
   const cfg = {
-    mm_blanca: {
+    mm_blanca: cfg.mm_blanca || {},
+    mm_integral: cfg.mm_integral || {},
+    poolish: cfg.poolish || {}
+  };
+
+  if (App.areaCodigo === 'PAN') {
+    cfg.mm_blanca = {
       nombre:    'Masa madre blanca',
-      pie_pct:   parseFloat(document.getElementById('cfg-mm-blanca-pie').value) || 20,
+      pie_pct:   parseFloat(document.getElementById('cfg-mm-blanca-pie')?.value) || 20,
       harina_pct: 100,
-      agua_pct:  parseFloat(document.getElementById('cfg-mm-blanca-agua').value) || 90,
-    },
-    mm_integral: {
+      agua_pct:  parseFloat(document.getElementById('cfg-mm-blanca-agua')?.value) || 90,
+    };
+    cfg.mm_integral = {
       nombre:    'Masa madre integral',
-      pie_pct:   parseFloat(document.getElementById('cfg-mm-integral-pie').value) || 20,
+      pie_pct:   parseFloat(document.getElementById('cfg-mm-integral-pie')?.value) || 20,
       harina_pct: 100,
-      agua_pct:  parseFloat(document.getElementById('cfg-mm-integral-agua').value) || 90,
-    },
-    poolish: {
+      agua_pct:  parseFloat(document.getElementById('cfg-mm-integral-agua')?.value) || 90,
+    };
+    cfg.poolish = {
       nombre:       'Poolish',
       harina_pct:   100,
-      agua_pct:     parseFloat(document.getElementById('cfg-poolish-agua').value) || 100,
-      levadura_pct: parseFloat(document.getElementById('cfg-poolish-lev').value) || 0.36,
-    }
-  };
-  // Leer días de elaboración del pie
-  const diasPie = [];
-  document.querySelectorAll('#cfg-pie-dias input[type="checkbox"]:checked').forEach(cb => {
-    diasPie.push(parseInt(cb.value));
-  });
-  cfg.pie_mm = {
-    dias_elaboracion: diasPie.length > 0 ? diasPie : [1, 4],
-    reserva_pct:   parseFloat(document.getElementById('cfg-pie-reserva').value) || 20,
-    mm_madura_pct: parseFloat(document.getElementById('cfg-pie-madura').value) || 20,
-    harina_pct:    100,
-    agua_pct:      parseFloat(document.getElementById('cfg-pie-agua').value) || 90,
-  };
+      agua_pct:     parseFloat(document.getElementById('cfg-poolish-agua')?.value) || 100,
+      levadura_pct: parseFloat(document.getElementById('cfg-poolish-lev')?.value) || 0.36,
+    };
+    // Leer días de elaboración del pie
+    const diasPie = [];
+    document.querySelectorAll('#cfg-pie-dias input[type="checkbox"]:checked').forEach(cb => {
+      diasPie.push(parseInt(cb.value));
+    });
+    cfg.pie_mm = {
+      dias_elaboracion: diasPie.length > 0 ? diasPie : [1, 4],
+      reserva_pct:   parseFloat(document.getElementById('cfg-pie-reserva')?.value) || 20,
+      mm_madura_pct: parseFloat(document.getElementById('cfg-pie-madura')?.value) || 20,
+      harina_pct:    100,
+      agua_pct:      parseFloat(document.getElementById('cfg-pie-agua')?.value) || 90,
+    };
+  }
 
   // BOL config
   if (App.areaCodigo === 'BOL') {
@@ -1249,12 +1246,6 @@ function guardarConfigDesdeForm(btn) {
   if (App.areaCodigo === 'CAF') {
     if (!cfg.caf) cfg.caf = { stock: {} };
     cfg.caf.gramos_por_shot = parseFloat(document.getElementById('cfg-caf-gramos-shot')?.value) || 14;
-
-    const leches = [];
-    document.querySelectorAll('#cfg-caf-leches-lista input[type=text]').forEach(inp => {
-      if (inp.value.trim()) leches.push(inp.value.trim());
-    });
-    cfg.caf.tipos_leche = leches;
 
     const baristas = [];
     document.querySelectorAll('#cfg-caf-baristas-lista input[type=text]').forEach(inp => {
