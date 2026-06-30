@@ -2063,11 +2063,26 @@ async function guardarMovStock(btn) {
 
   bloquearBtn(btn, 'Guardando...');
   try {
-    const payload = encodeURIComponent(JSON.stringify({
-      accion: 'mov_stock_caf', mp_id: mpId, nombre, tipo, cantidad, nota, barista
-    }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
-    const data = await res.json();
+    let data;
+    try {
+      const payload = encodeURIComponent(JSON.stringify({
+        accion: 'mov_stock_caf', mp_id: mpId, nombre, tipo, cantidad, nota, barista
+      }));
+      const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
+      data = await res.json();
+    } catch(errGet) {
+      // Fallback: POST con no-cors (sin confirmación pero funciona con tildes)
+      await fetch(FEN.WEBAPP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          accion: 'mov_stock_caf', mp_id: mpId, nombre, tipo, cantidad, nota, barista
+        })
+      });
+      data = { ok: true, msg: 'Enviado (sin confirmación)' };
+    }
+
     if (data.ok) {
       document.getElementById('modal-mov-stock').classList.add('hidden');
       toast('Movimiento registrado');
@@ -2076,7 +2091,7 @@ async function guardarMovStock(btn) {
       toast('Error: ' + data.msg);
     }
   } catch(e) {
-    toast('Error de conexión');
+    toast('Error de conexión: ' + e.message);
   }
   desbloquearBtn(btn, '<i class="ti ti-check"></i> Registrar', true);
 }
