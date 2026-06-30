@@ -479,7 +479,7 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
           <thead>
             <tr>
               <th style="min-width:200px">Ingrediente</th>
-              <th>Gramos</th>
+              <th>Gramos <span style="font-size:9px;color:var(--txt3);font-weight:400">(usar .)</span></th>
               ${esPan ? '<th style="color:var(--area-color)">% panadero</th>' : ''}
               <th></th>
             </tr>
@@ -870,7 +870,12 @@ function renderVistaMisRecetas() {
               return `<tr>
                 <td class="td-nombre">
                   ${r.nombre || r.ID_receta}
-                  ${esConsolidada ? '<span style="font-size:10px;color:#2E7D32;margin-left:6px"><i class="ti ti-lock"></i> En maestro</span>' : ''}
+                  <span style="font-size:10px;padding:1px 6px;border-radius:99px;margin-left:6px;font-weight:600;
+                    background:${r.tipo_receta==='sub_receta'?'#EDE9FE':'#E8F5E9'};
+                    color:${r.tipo_receta==='sub_receta'?'#5B21B6':'#166534'}">
+                    ${r.tipo_receta==='sub_receta'?'⟳ Sub receta':'Receta'}
+                  </span>
+                  ${esConsolidada ? '<span style="font-size:10px;color:#2E7D32;margin-left:4px"><i class="ti ti-lock"></i></span>' : ''}
                 </td>
                 <td style="text-align:center">
                   <span class="estado-badge" style="color:${est.color};background:${est.bg}">${est.label}</span>
