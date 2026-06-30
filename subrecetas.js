@@ -1186,10 +1186,14 @@ function renderVistaConfigSubrecetas() {
 
 function guardarConfigDesdeForm(btn) {
   bloquearBtn(btn, 'Guardando...');
+  const cfgPrevia = cargarConfigSubrecetas();
   const cfg = {
-    mm_blanca: cfg.mm_blanca || {},
-    mm_integral: cfg.mm_integral || {},
-    poolish: cfg.poolish || {}
+    mm_blanca: cfgPrevia.mm_blanca || {},
+    mm_integral: cfgPrevia.mm_integral || {},
+    poolish: cfgPrevia.poolish || {},
+    pie_mm: cfgPrevia.pie_mm || {},
+    bol: cfgPrevia.bol || {},
+    caf: cfgPrevia.caf || {}
   };
 
   if (App.areaCodigo === 'PAN') {
@@ -1535,6 +1539,18 @@ function renderPrefermentoBOL(diaIdxTarget) {
 }
 
 // ── PAN: MODAL TANDAS MM BLANCA ──────────────────────────────
+function agregarBaristaConfig() {
+  const lista = document.getElementById('cfg-caf-baristas-lista');
+  if (!lista) return;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;margin-bottom:6px;align-items:center';
+  div.innerHTML = `
+    <input type="text" value="" placeholder="Nombre del barista"
+      style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+    <button type="button" onclick="this.closest('div').remove()" class="btn-fila-del"><i class="ti ti-x"></i></button>`;
+  lista.appendChild(div);
+}
+
 function abrirModalTandasMM(srId, totalGramos) {
   const cfg = cargarConfigSubrecetas();
   const desglose = calcularDesglose(srId, totalGramos);
