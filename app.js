@@ -1379,6 +1379,114 @@ async function sincronizarPlan(btn) {
   toast('Plan sincronizado desde Sheet');
 }
 
+// ── MODAL DE TANDAS ──────────────────────────────────────────
+function abrirModalTandas(recetaId, totalUnidades) {
+  const r = App.recetas.find(x => x.ID_receta === recetaId);
+  if (!r) return;
+
+  let ingredientes = [];
+  try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+
+  const clave = `fen_tandas_${App.areaCodigo}_${recetaId}_${App._diaActivo || 0}`;
+  const tandasGuardadas = (() => { try { return JSON.parse(localStorage.getItem(clave) || '[]'); } catch(e) { return []; } })();
+  const tandasIniciales = tandasGuardadas.length > 0 ? tandasGuardadas : [totalUnidades];
+
+  const modal = document.getElementById('modal-tandas');
+  document.getElementById('tandas-titulo').textContent = r.nombre;
+  document.getElementById('tandas-total').textContent = totalUnidades;
+  document.getElementById('tandas-receta-id').value = recetaId;
+  document.getElementById('tandas-total-val').value = totalUnidades;
+
+  renderTandasBody(ingredientes, tandasIniciales, totalUnidades);
+  modal.classList.remove('hidden');
+}
+
+function renderTandasBody(ingredientes, tandas, totalUnidades) {
+  const body = document.getElementById('tandas-body');
+  const porciones = parseInt(App.recetas.find(r => r.ID_receta === document.getElementById('tandas-receta-id').value)?.porciones_base) || 1;
+  const pesoBaseIngr = ingredientes.reduce((s,i) => s+(parseFloat(i.gramos)||0), 0);
+
+  let html = '';
+  let acumulado = 0;
+  tandas.forEach((n, i) => {
+    acumulado += n;
+    const factor = n / porciones;
+    const restante = totalUnidades - acumulado;
+    html += `
+      <div class="tanda-modal-bloque" id="tanda-bloque-${i}">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 0">
+          <span style="font-size:12px;font-weight:700;color:var(--area-color);min-width:60px">Tanda ${i+1}</span>
+          <input type="number" min="1" max="${totalUnidades}" value="${n}"
+            style="width:70px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:14px;font-weight:600;text-align:center;font-family:'DM Mono',monospace"
+            oninput="actualizarTandaModal(${i},this.value)">
+          <span style="font-size:11px;color:var(--txt3)">uni</span>
+          ${restante > 0 ? `<span style="font-size:11px;color:#F57C00">→ quedan ${restante}</span>` : `<span style="font-size:11px;color:#2E7D32">✓ completo</span>`}
+          ${tandas.length > 1 ? `<button onclick="eliminarTanda(${i})" style="margin-left:auto;background:none;border:none;color:var(--txt3);cursor:pointer;font-size:16px">×</button>` : ''}
+        </div>
+        <div style="background:var(--bg);border-radius:var(--r-sm);padding:8px;margin-bottom:4px">
+          ${ingredientes.map(ing => {
+            const gr = (parseFloat(ing.gramos)||0) * factor;
+            const pct = (parseFloat(ing.pct)||0)*100;
+            return `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:12px;border-bottom:1px solid var(--border)">
+              <span>${ing.nombre}</span>
+              <span style="font-family:'DM Mono',monospace;font-weight:600">${gr.toFixed(0)}g${pct>0?` <span style="color:var(--txt3)">${pct.toFixed(1)}%</span>`:''}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  });
+  body.innerHTML = html;
+}
+
+function actualizarTandaModal(idx, valor) {
+  const recetaId = document.getElementById('tandas-receta-id').value;
+  const total = parseInt(document.getElementById('tandas-total-val').value);
+  const r = App.recetas.find(x => x.ID_receta === recetaId);
+  let ingredientes = [];
+  try { ingredientes = JSON.parse(r?.ingredientes_JSON || '[]'); } catch(e) {}
+  
+  const inputs = document.querySelectorAll('#tandas-body input[type=number]');
+  const tandas = Array.from(inputs).map((inp, i) => i === idx ? parseInt(valor)||0 : parseInt(inp.value)||0);
+  renderTandasBody(ingredientes, tandas, total);
+}
+
+function agregarTanda() {
+  const recetaId = document.getElementById('tandas-receta-id').value;
+  const total = parseInt(document.getElementById('tandas-total-val').value);
+  const r = App.recetas.find(x => x.ID_receta === recetaId);
+  let ingredientes = [];
+  try { ingredientes = JSON.parse(r?.ingredientes_JSON || '[]'); } catch(e) {}
+  const inputs = document.querySelectorAll('#tandas-body input[type=number]');
+  const tandas = Array.from(inputs).map(inp => parseInt(inp.value)||0);
+  const usadas = tandas.reduce((s,v)=>s+v,0);
+  const restante = Math.max(0, total - usadas);
+  tandas.push(restante);
+  renderTandasBody(ingredientes, tandas, total);
+}
+
+function eliminarTanda(idx) {
+  const recetaId = document.getElementById('tandas-receta-id').value;
+  const total = parseInt(document.getElementById('tandas-total-val').value);
+  const r = App.recetas.find(x => x.ID_receta === recetaId);
+  let ingredientes = [];
+  try { ingredientes = JSON.parse(r?.ingredientes_JSON || '[]'); } catch(e) {}
+  const inputs = document.querySelectorAll('#tandas-body input[type=number]');
+  const tandas = Array.from(inputs).map(inp => parseInt(inp.value)||0);
+  tandas.splice(idx, 1);
+  renderTandasBody(ingredientes, tandas, total);
+}
+
+function guardarTandasModal() {
+  const recetaId = document.getElementById('tandas-receta-id').value;
+  const diaIdx = App._diaActivo || 0;
+  const clave = `fen_tandas_${App.areaCodigo}_${recetaId}_${diaIdx}`;
+  const inputs = document.querySelectorAll('#tandas-body input[type=number]');
+  const tandas = Array.from(inputs).map(inp => parseInt(inp.value)||0);
+  localStorage.setItem(clave, JSON.stringify(tandas));
+  document.getElementById('modal-tandas').classList.add('hidden');
+  toast('Tandas guardadas');
+}
+
 // ── MODIFICADORES DE RECETA POR DÍA ─────────────────────────
 function claveModificador(recetaId, diaIdx) {
   return `fen_mod_${App.areaCodigo}_${recetaId}_${diaIdx}`;
@@ -1595,7 +1703,10 @@ async function renderDia(diaIdx) {
             const pesoCrudo = (totalIngr/porciones).toFixed(0);
             return pesoCrudo > 0 ? `<span style="font-size:11px;color:var(--txt3);font-weight:400">${pesoCrudo}g/ud</span>` : '';
           })()}
-          <span class="rdc-badge">${unidades} unidad${unidades>1?'es':''}</span>
+          <span class="rdc-badge" style="cursor:pointer" title="Dividir en tandas"
+            onclick="event.stopPropagation();abrirModalTandas('${rid}',${unidades})">
+            ${unidades} unidad${unidades>1?'es':''}
+          </span>
           <i class="ti ti-chevron-down rdc-chevron" id="chev-${rid}"></i>
           ${esPan ? `
           <button class="rdc-mod-btn ${mod ? 'rdc-mod-activo' : ''}"
