@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
-  <link rel="stylesheet" href="main.css?v=1782771893">
+  <link rel="stylesheet" href="main.css?v=1782779916">
 </head>
 <body>
 
@@ -221,11 +221,67 @@
   </div>
 </div>
 
+<!-- Modal: Tandas receta del día -->
+<div class="modal-fondo hidden" id="modal-tandas">
+  <div class="modal" style="max-width:520px;text-align:left">
+    <div class="modal-ico" style="background:#FFF3E0;color:#E65100">
+      <i class="ti ti-stack-2"></i>
+    </div>
+    <h3 id="tandas-titulo" style="text-align:center;margin-bottom:4px"></h3>
+    <p style="font-size:12px;color:var(--txt3);text-align:center;margin-bottom:12px">
+      Total: <strong id="tandas-total"></strong> unidades — no modifica el plan
+    </p>
+    <input type="hidden" id="tandas-receta-id">
+    <input type="hidden" id="tandas-total-val">
+    <div id="tandas-body" style="max-height:380px;overflow-y:auto"></div>
+    <div style="margin-top:10px">
+      <button class="btn-secundario" onclick="agregarTanda()" style="width:100%;font-size:13px">
+        <i class="ti ti-plus"></i> Agregar tanda
+      </button>
+    </div>
+    <div class="modal-acciones">
+      <button class="btn-secundario" onclick="document.getElementById('modal-tandas').classList.add('hidden')">Cancelar</button>
+      <button class="btn-primario" onclick="guardarTandasModal()">
+        <i class="ti ti-check"></i> Guardar tandas
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Tandas MM blanca -->
+<div class="modal-fondo hidden" id="modal-tandas-mm">
+  <div class="modal" style="max-width:480px;text-align:left">
+    <div class="modal-ico" style="background:#F0F7EF;color:#2E4A1E">
+      <span style="font-size:22px">🌱</span>
+    </div>
+    <h3 id="mm-tandas-titulo" style="text-align:center;margin-bottom:4px"></h3>
+    <p style="font-size:12px;color:var(--txt3);text-align:center;margin-bottom:12px">
+      Total: <strong id="mm-tandas-total"></strong>
+    </p>
+    <input type="hidden" id="mm-total-gramos">
+    <input type="hidden" id="mm-sr-id">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 14px;background:var(--bg);border-radius:var(--r-md)">
+      <label style="font-size:13px;font-weight:500">Dividir en</label>
+      <input type="number" id="mm-num-tandas" min="1" max="6" value="2"
+        style="width:60px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:14px;font-weight:600;text-align:center;font-family:'DM Mono',monospace"
+        oninput="actualizarMMTandas()">
+      <label style="font-size:13px;font-weight:500">tandas iguales</label>
+    </div>
+    <div id="mm-tandas-body" style="max-height:340px;overflow-y:auto"></div>
+    <div class="modal-acciones">
+      <button class="btn-secundario" onclick="document.getElementById('modal-tandas-mm').classList.add('hidden')">Cerrar</button>
+      <button class="btn-primario" onclick="guardarMMTandas()">
+        <i class="ti ti-check"></i> Guardar
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="config.js?v=1782771893"></script>
-<script src="subrecetas.js?v=1782771893"></script>
-<script src="app.js?v=1782771893"></script>
+<script src="config.js?v=1782779916"></script>
+<script src="subrecetas.js?v=1782779916"></script>
+<script src="app.js?v=1782779916"></script>
 </body>
 </html>
