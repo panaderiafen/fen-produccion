@@ -505,6 +505,11 @@ function renderElaboracionesPrevias(diaIdx) {
             <div class="elab-usado-wrap">${usadaEn}</div>
           </div>
           ${App.areaCodigo === 'BOL' ? `<span style="font-size:11px;color:var(--txt3);margin-right:4px">${sr.recetasQueUsan.reduce((s,r)=>s+Math.ceil(r.gramos/164.3),0)} empastes</span>` : ''}
+          ${App.areaCodigo === 'PAN' ? `
+          <button class="btn-secundario" style="font-size:11px;padding:3px 10px;margin-right:6px"
+            onclick="event.stopPropagation();abrirModalTandasMM('${sr.id}',${sr.totalGramos})">
+            <i class="ti ti-stack-2"></i> Tandas
+          </button>` : ''}
           <span class="elab-total-badge">${totalStr}</span>
         </div>
         <div class="elab-desglose" id="desglose-${sr.id}">
