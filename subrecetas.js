@@ -172,7 +172,7 @@ function calcularElaboracionesDia(diaIdx) {
 
   // Para PAN: agregar ingredientes de sub recetas (MM, Poolish) al insumosMap
   if (App.areaCodigo === 'PAN') {
-    subRecetasMap.forEach(sr => {
+    Object.values(subRecetasMap).forEach(sr => {
       const desglose = calcularDesglose(sr.id, sr.totalGramos);
       desglose.forEach(comp => {
         if (!comp.nombre || comp.esPie) return;
