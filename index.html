@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
-  <link rel="stylesheet" href="main.css?v=1782786594">
+  <link rel="stylesheet" href="main.css?v=1783198229">
 </head>
 <body>
 
@@ -320,11 +320,37 @@
   </div>
 </div>
 
+<!-- Modal: Asignar MP existente -->
+<div class="modal-fondo hidden" id="modal-asignar-mp">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-ico" style="background:#FFF3E0;color:#E65100">
+      <i class="ti ti-link"></i>
+    </div>
+    <h3>Asignar a MP existente</h3>
+    <p style="font-size:13px;color:var(--txt2);margin-bottom:12px">
+      La solicitud "<strong id="asignar-mp-nueva-nombre"></strong>" se reemplazará por una MP ya existente en el maestro.
+    </p>
+    <input type="hidden" id="asignar-mp-nueva-id">
+    <div class="campo" style="margin-bottom:16px">
+      <label>MP existente a usar</label>
+      <select id="asignar-mp-select"
+        style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+      </select>
+    </div>
+    <div class="modal-acciones">
+      <button class="btn-secundario" onclick="document.getElementById('modal-asignar-mp').classList.add('hidden')">Cancelar</button>
+      <button class="btn-primario" onclick="confirmarAsignarMP()">
+        <i class="ti ti-check"></i> Confirmar asignación
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="config.js?v=1782786594"></script>
-<script src="subrecetas.js?v=1782786594"></script>
-<script src="app.js?v=1782786594"></script>
+<script src="config.js?v=1783198229"></script>
+<script src="subrecetas.js?v=1783198229"></script>
+<script src="app.js?v=1783198229"></script>
 </body>
 </html>
