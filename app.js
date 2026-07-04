@@ -2411,6 +2411,57 @@ async function eliminarReceta(recetaId, area) {
   await renderVistaMaestroAdmin();
 }
 
+// ── ADMIN: FLUJO SOLICITUD MP ─────────────────────────────────
+async function notificarJefaMP(mpId, nombre) {
+  // Cambia estado a "recibida" en el Sheet para que la jefa sepa que fue leída
+  await escribirEnSheet('editar_mp', { ID_MP: mpId, campo: 'estado', valor: 'recibida' });
+  toast(`Notificado: "${nombre}" fue recibida`);
+  Cache.invalidarTodo();
+  renderVistaMateriasPrimas();
+}
+
+async function aprobarMP(mpId) {
+  // Activa la MP en el maestro — queda disponible aunque no tenga costo
+  const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
+  if (!mp) return;
+
+  const sinCosto = !mp.costo_neto || parseFloat(mp.costo_neto) === 0;
+  if (sinCosto) {
+    if (!confirm(`"${mp.nombre}" no tiene costo asignado. ¿Agregar igual al maestro? Aparecerá en rojo hasta que se costee.`)) return;
+  }
+
+  await escribirEnSheet('editar_mp', { ID_MP: mpId, campo: 'estado', valor: 'activa' });
+  toast(`"${mp.nombre}" agregada al maestro`);
+  Cache.invalidarTodo();
+  await cargarMateriasPrimas();
+  renderVistaMateriasPrimas();
+}
+
+function asignarMPExistente(mpIdNueva, nombreNueva) {
+  // Mostrar modal para seleccionar MP existente a la que asignar
+  const existentes = App.materiasPrimas.filter(m => m.estado === 'activa' && m.ID_MP !== mpIdNueva);
+  const modal = document.getElementById('modal-asignar-mp');
+  document.getElementById('asignar-mp-nueva-id').value = mpIdNueva;
+  document.getElementById('asignar-mp-nueva-nombre').textContent = nombreNueva;
+  document.getElementById('asignar-mp-select').innerHTML =
+    '<option value="">— Selecciona una MP existente —</option>' +
+    existentes.map(m => `<option value="${m.ID_MP}">${m.nombre}</option>`).join('');
+  modal.classList.remove('hidden');
+}
+
+async function confirmarAsignarMP() {
+  const mpNuevaId  = document.getElementById('asignar-mp-nueva-id').value;
+  const mpExistId  = document.getElementById('asignar-mp-select').value;
+  if (!mpExistId) { toast('Selecciona una MP existente'); return; }
+
+  // Marcar la nueva como "reemplazada" para que no aparezca en pendientes
+  await escribirEnSheet('editar_mp', { ID_MP: mpNuevaId, campo: 'estado', valor: 'reemplazada' });
+  document.getElementById('modal-asignar-mp').classList.add('hidden');
+  toast('Asignación realizada — la jefa usará la MP existente');
+  Cache.invalidarTodo();
+  renderVistaMateriasPrimas();
+}
+
 // ── ADMIN: MATERIAS PRIMAS ────────────────────────────────────
 function renderVistaMP() {
   const mp = App.materiasPrimas;
@@ -2424,9 +2475,41 @@ function renderVistaMP() {
       </button>
     </div>
     ${pendientes.length ? `
-      <div class="alerta-prueba" style="background:#E3F2FD;border-color:#90CAF9;color:#0D47A1">
-        <i class="ti ti-bell" style="color:#1565C0"></i>
-        <span><strong>${pendientes.length} solicitud${pendientes.length>1?'es':''} pendiente${pendientes.length>1?'s':''}</strong> de nuevas materias primas.</span>
+      <div class="card" style="margin-bottom:16px;border-color:#FFA726">
+        <div class="card-head" style="background:#FFF3E0;color:#E65100">
+          <i class="ti ti-bell"></i>
+          Solicitudes de nuevas materias primas (${pendientes.length})
+        </div>
+        ${pendientes.map(p => {
+          const areaLabel = Object.values(FEN.AREAS).find(a => a.hoja_recetas === p.area)?.nombre || p.area;
+          const sinCosto = !p.costo_neto || parseFloat(p.costo_neto) === 0;
+          return `
+          <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+            <div style="flex:1;min-width:180px">
+              <div style="font-size:14px;font-weight:600">${p.nombre}</div>
+              <div style="font-size:11px;color:var(--txt2);margin-top:2px">
+                Solicitada por <strong>${areaLabel}</strong> · ${p.categoría||'Sin categoría'}
+              </div>
+              ${sinCosto ? `<span style="font-size:10px;color:#C62828;font-weight:600;background:#FFEBEE;padding:2px 6px;border-radius:99px">
+                ⚠ Sin costear
+              </span>` : `<span style="font-size:11px;color:var(--txt2)">Costo: ${clp(p.costo_neto)}</span>`}
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn-secundario" style="font-size:12px;padding:5px 10px;border-color:#90CAF9;color:#1565C0"
+                onclick="notificarJefaMP('${p.ID_MP}','${p.nombre}')" title="Notificar a la jefa que fue recibida">
+                <i class="ti ti-send"></i> Recibido
+              </button>
+              <button class="btn-primario" style="font-size:12px;padding:5px 10px"
+                onclick="aprobarMP('${p.ID_MP}')" title="Agregar al maestro de MP">
+                <i class="ti ti-check"></i> Agregar al maestro
+              </button>
+              <button class="btn-secundario" style="font-size:12px;padding:5px 10px"
+                onclick="asignarMPExistente('${p.ID_MP}','${p.nombre}')" title="Asignar a una MP ya existente">
+                <i class="ti ti-link"></i> Usar MP existente
+              </button>
+            </div>
+          </div>`;
+        }).join('')}
       </div>` : ''}
     <div class="card">
       <div class="card-head"><i class="ti ti-list"></i> Catálogo (${mp.filter(m=>m.estado==='activa').length} activas)</div>
@@ -2448,10 +2531,11 @@ function renderVistaMP() {
               : {c:'#9E9E9E',bg:'#F5F5F5',l:'Inactiva'};
             return `<tr>
               <td class="td-nombre">${m.nombre}
+                ${(!m.costo_neto||parseFloat(m.costo_neto)===0)&&m.estado==='activa' ? '<span style="font-size:10px;color:#C62828;font-weight:600;margin-left:4px">⚠ sin costo</span>' : ''}
                 <br><span style="font-size:11px;color:var(--txt3);font-weight:400">${m.ID_MP}</span>
               </td>
               <td style="font-size:13px;color:var(--txt2)">${m.categoría||'—'}</td>
-              <td class="td-num">${clp(m.costo_neto)}</td>
+              <td class="td-num" style="${(!m.costo_neto||parseFloat(m.costo_neto)===0)&&m.estado==='activa'?'color:#C62828':''}">${clp(m.costo_neto)||'—'}</td>
               <td class="td-num" style="font-size:11px">${parseFloat(m.costo_por_gramo||0).toFixed(4)}</td>
               <td style="text-align:center">
                 <span class="estado-badge" style="color:${est.c};background:${est.bg}">${est.l}</span>
