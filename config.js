@@ -85,19 +85,19 @@ async function escribirEnSheet(accion, datos) {
 
   const body = JSON.stringify({ accion, ...datos });
 
-  // Intentar GET solo para payloads pequeños y sin caracteres especiales
-  if (body.length < 800) {
+  // Intentar GET solo si el payload es seguro (sin tildes ni caracteres especiales)
+  const esSeguoParaGET = body.length < 600 && !/[áéíóúñÁÉÍÓÚÑüÜ¿¡]/.test(body);
+  if (esSeguoParaGET) {
     try {
       const payload = encodeURIComponent(body);
       const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
       return await res.json();
     } catch(e) {
-      // Si falla GET (URI malformed u otro), caer a POST
-      console.warn('GET falló, usando POST:', e.message);
+      console.warn('[fën] GET falló, usando POST:', e.message);
     }
   }
 
-  // POST con no-cors para todo lo demás
+  // POST con no-cors para payloads grandes o con caracteres especiales
   try {
     await fetch(FEN.WEBAPP_URL, {
       method: 'POST',
@@ -107,7 +107,7 @@ async function escribirEnSheet(accion, datos) {
     });
     return { ok: true, msg: 'Enviado' };
   } catch(e) {
-    console.error('Error POST Sheet:', e);
+    console.error('[fën] Error POST Sheet:', e);
     return { ok: false, msg: e.message };
   }
 }
