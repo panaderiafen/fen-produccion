@@ -363,6 +363,16 @@ function verificarAlertas() {
 // ── FORMULARIO NUEVA / EDITAR RECETA ─────────────────────────
 function renderVistaFormReceta(recetaId, tipoForzado) {
   App._recetaEditandoId = recetaId || null;
+  // Track area from recipe if admin is editing
+  if (recetaId && !App.areaCodigo) {
+    const r = App.recetas.find(x => x.ID_receta === recetaId);
+    if (r) {
+      // Find area code from recipe area name
+      App._areaCodigoFormulario = Object.entries(FEN.AREAS).find(([_, a]) => a.nombre === r.área)?.[0] || '';
+    }
+  } else {
+    App._areaCodigoFormulario = App.areaCodigo || '';
+  }
   const receta = recetaId ? App.recetas.find(r => r.ID_receta === recetaId) : null;
   const esPan  = App.areaCodigo === 'PAN';
   const esEdicion = !!receta;
@@ -2738,7 +2748,7 @@ async function enviarSolicitudMP() {
       nombre,
       es_nueva: esNueva,
       solicitada_por: App.area?.nombre || '',
-      area_codigo: App.areaCodigo || '',
+      area_codigo: App._areaCodigoFormulario || App.areaCodigo || '',
       receta_id: App._recetaEditandoId || '',
       fecha: new Date().toISOString()
     }));
@@ -2750,7 +2760,7 @@ async function enviarSolicitudMP() {
     await escribirEnSheet('solicitar_mp', {
       nombre, es_nueva: esNueva,
       solicitada_por: App.area?.nombre || '',
-      area_codigo: App.areaCodigo || '',
+      area_codigo: App._areaCodigoFormulario || App.areaCodigo || '',
       receta_id: App._recetaEditandoId || '',
     });
   }
