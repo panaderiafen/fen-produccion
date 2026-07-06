@@ -1356,3 +1356,15 @@ input, select, textarea { font-family: inherit; }
 }
 .tanda-body { display: none; }
 .tanda-body.activa { display: block; }
+
+/* ── AVISOS ──────────────────────────────────────── */
+.aviso-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1.5px solid;
+  border-radius: var(--r-md);
+  margin-bottom: 8px;
+}
+.avisos-container:empty { display: none; }
