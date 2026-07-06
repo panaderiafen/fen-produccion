@@ -2443,31 +2443,11 @@ async function aprobarMP(mpId) {
     if (!confirm(`"${mp.nombre}" no tiene costo. ¿Agregar igual? Aparecerá en rojo hasta costearse.`)) return;
   }
 
-  // 1. Activar MP
   await escribirEnSheet('editar_mp', { ID_MP: mpId, campo: 'estado', valor: 'activa' });
 
-  // 2. Habilitar el área en la MP
-  const areaCode = mp.area_codigo || mp.areas_habilitadas || '';
-  if (areaCode) {
-    await escribirEnSheet('editar_mp', { ID_MP: mpId, campo: 'areas_habilitadas', valor: areaCode });
-  }
-
-  // 3. Reemplazar en la receta si hay receta_id_origen
-  if (mp.receta_id_origen && areaCode) {
-    await escribirEnSheet('reemplazar_mp_receta', {
-      area_codigo: areaCode,
-      receta_id:   mp.receta_id_origen,
-      mp_id_vieja: mpId,
-      mp_id_nueva:  mpId, // misma MP, solo cambia estado
-      nombre_nueva: mp.nombre
-    });
-  }
-
-  // Actualizar estado local
+  // Actualizar local
   mp.estado = 'activa';
-  if (areaCode) mp.areas_habilitadas = areaCode;
-
-  toast(`"${mp.nombre}" agregada al maestro`);
+  toast(`"${mp.nombre}" agregada al maestro — la jefa puede usarla en su receta`);
   Cache.invalidar('MP_maestro');
   renderVistaMateriasPrimas();
 }
@@ -2521,12 +2501,12 @@ async function confirmarAsignarMP() {
     });
   }
 
-  // Actualizar estado local
+  // Actualizar local
   const mpSol = App.materiasPrimas.find(m => m.ID_MP === mpSolicitudId);
   if (mpSol) mpSol.estado = 'reemplazada';
 
   document.getElementById('modal-asignar-mp').classList.add('hidden');
-  toast(`Reemplazado por "${nombreExist}" en la receta`);
+  toast(`Asignado "${nombreExist}" — la jefa debe actualizar el ingrediente en su receta`);
   Cache.invalidar('MP_maestro');
   renderVistaMateriasPrimas();
 }
@@ -2733,51 +2713,34 @@ function solicitarNuevaMP(selectEl) {
 }
 
 async function enviarSolicitudMP() {
-  const nombre     = document.getElementById('solicitar-mp-nombre').value.trim();
-  const esNueva    = document.getElementById('solicitar-mp-nueva').checked;
-  const tmpNombre  = document.getElementById('solicitar-mp-tmp').value.trim() || nombre;
-  const gramos     = document.getElementById('solicitar-mp-gramos').value;
+  const nombre    = document.getElementById('solicitar-mp-nombre').value.trim();
+  const esNueva   = document.getElementById('solicitar-mp-nueva').checked;
+  const tmpNombre = document.getElementById('solicitar-mp-tmp').value.trim() || nombre;
+  const gramos    = document.getElementById('solicitar-mp-gramos').value;
 
   if (!nombre) { toast('Escribe el nombre de la MP', 'error'); return; }
 
-  // Enviar solicitud via GET para obtener el ID asignado
-  let mpTmpId = 'TMP_' + Date.now();
-  try {
-    const payload = encodeURIComponent(JSON.stringify({
-      accion: 'solicitar_mp',
-      nombre,
-      es_nueva: esNueva,
-      solicitada_por: App.area?.nombre || '',
-      area_codigo: App._areaCodigoFormulario || App.areaCodigo || '',
-      receta_id: App._recetaEditandoId || '',
-      fecha: new Date().toISOString()
-    }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
-    const data = await res.json();
-    if (data.ok && data.id) mpTmpId = data.id;
-  } catch(e) {
-    console.warn('[fën] solicitar_mp via POST (sin ID de retorno)');
-    await escribirEnSheet('solicitar_mp', {
-      nombre, es_nueva: esNueva,
-      solicitada_por: App.area?.nombre || '',
-      area_codigo: App._areaCodigoFormulario || App.areaCodigo || '',
-      receta_id: App._recetaEditandoId || '',
-    });
-  }
+  // Enviar solicitud al Sheet
+  escribirEnSheet('solicitar_mp', {
+    nombre,
+    es_nueva: esNueva,
+    solicitada_por: App.area?.nombre || '',
+    area_codigo: App.areaCodigo || '',
+    fecha: new Date().toISOString()
+  });
 
-  // Agregar ingrediente temporal al formulario con el ID real de la solicitud
+  // Agregar ingrediente temporal al formulario (en amarillo)
   if (tmpNombre) {
     const tbody = document.getElementById('tbody-ingr');
     const tr = document.createElement('tr');
     tr.style.background = '#FFF9C4';
-    tr.dataset.mpTmpId = mpTmpId;
     tr.innerHTML = `
       <td>
         <select disabled style="color:#F57C00;font-weight:500">
-          <option>⏳ ${tmpNombre} (pendiente · ${mpTmpId})</option>
+          <option>⏳ ${tmpNombre} (pendiente habilitación)</option>
         </select>
       </td>
-      <td><input type="number" placeholder="0" value="${gramos || ''}" min="0" step="0.01" data-tmp="${mpTmpId}"></td>
+      <td><input type="number" placeholder="0" value="${gramos || ''}" min="0" step="0.01"></td>
       ${App.areaCodigo === 'PAN' ? '<td><input type="number" placeholder="0.00" readonly style="color:var(--txt3)"></td>' : ''}
       <td><button class="btn-fila-del" onclick="this.closest('tr').remove()" aria-label="Eliminar"><i class="ti ti-x"></i></button></td>
     `;
