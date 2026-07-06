@@ -166,6 +166,67 @@ function actualizarTopbarAdmin() {
   `;
 }
 
+// ── SISTEMA DE AVISOS ────────────────────────────────────────
+let _avisosCache = [];
+let _avisosLeidos = new Set(JSON.parse(localStorage.getItem('fen_avisos_leidos') || '[]'));
+
+async function cargarAvisos() {
+  if (!App.areaCodigo) return;
+  try {
+    const payload = encodeURIComponent(JSON.stringify({
+      accion: 'leer_avisos',
+      area_codigo: App.areaCodigo
+    }));
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
+    const data = await res.json();
+    if (data.ok) {
+      _avisosCache = (data.avisos || []).filter(a => !_avisosLeidos.has(a.id));
+      renderAvisos();
+    }
+  } catch(e) {
+    console.warn('[fën] No se pudieron cargar avisos:', e.message);
+  }
+}
+
+function marcarAvisoLeido(id) {
+  _avisosLeidos.add(id);
+  localStorage.setItem('fen_avisos_leidos', JSON.stringify([..._avisosLeidos]));
+  _avisosCache = _avisosCache.filter(a => a.id !== id);
+  renderAvisos();
+}
+
+function renderAvisos() {
+  // Render in all target containers
+  const contenedores = document.querySelectorAll('.avisos-container');
+  const avisosPendientes = _avisosCache.filter(a => !_avisosLeidos.has(a.id));
+
+  if (!avisosPendientes.length) {
+    contenedores.forEach(c => c.innerHTML = '');
+    return;
+  }
+
+  const iconos = {
+    mp_recibida: { ico: 'ti-clock', color: '#1565C0', bg: '#E3F2FD' },
+    mp_aprobada: { ico: 'ti-check', color: '#2E7D32', bg: '#E8F5E9' },
+    mp_asignada: { ico: 'ti-link',  color: '#E65100', bg: '#FFF3E0' },
+  };
+
+  const html = avisosPendientes.map(a => {
+    const cfg = iconos[a.tipo] || { ico: 'ti-bell', color: '#F57C00', bg: '#FFF8E1' };
+    return `
+      <div class="aviso-card" style="background:${cfg.bg};border-color:${cfg.color}20">
+        <i class="ti ${cfg.ico}" style="color:${cfg.color};font-size:16px;flex-shrink:0"></i>
+        <span style="flex:1;font-size:13px;color:var(--txt)">${a.mensaje}</span>
+        <button onclick="marcarAvisoLeido('${a.id}')"
+          style="background:none;border:1px solid ${cfg.color}40;border-radius:var(--r-sm);padding:4px 10px;font-size:11px;color:${cfg.color};cursor:pointer;white-space:nowrap;font-family:inherit">
+          Entendido
+        </button>
+      </div>`;
+  }).join('');
+
+  contenedores.forEach(c => { c.innerHTML = html; });
+}
+
 // ── SINCRONIZAR TODO ──────────────────────────────────────────
 async function sincronizarTodo(btn) {
   const icon = btn.querySelector('i');
@@ -851,6 +912,7 @@ function renderVistaMisRecetas() {
   const enPrueba = recetas.filter(r => r.estado === 'en_prueba');
 
   vista.innerHTML = `
+    <div class="avisos-container" style="margin-bottom:12px"></div>
     <div class="vista-header">
       <div>
         <div class="vista-eyebrow">${App.area?.nombre || ''}</div>
@@ -2424,12 +2486,23 @@ async function eliminarReceta(recetaId, area) {
 
 // ── ADMIN: FLUJO SOLICITUD MP ─────────────────────────────────
 async function notificarJefaMP(mpId, nombre) {
-  await escribirEnSheet('editar_mp', { ID_MP: mpId, campo: 'estado', valor: 'recibida' });
-  // Actualizar estado local sin recargar todo
   const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
+  const areaCode = mp?.area_codigo || mp?.areas_habilitadas?.split(',')?.[0] || '';
+
+  await escribirEnSheet('editar_mp', { ID_MP: mpId, campo: 'estado', valor: 'recibida' });
+
+  // Crear aviso para la jefa del área
+  if (areaCode) {
+    escribirEnSheet('crear_aviso', {
+      area_codigo: areaCode,
+      tipo: 'mp_recibida',
+      mensaje: `Tu solicitud de "${nombre}" fue recibida por administración — está siendo revisada.`,
+      mp_id: mpId
+    });
+  }
+
   if (mp) mp.estado = 'recibida';
   toast(`Notificado: "${nombre}" fue recibida`);
-  // Solo re-renderizar la vista de MP sin invalidar caché de recetas
   Cache.invalidar('MP_maestro');
   renderVistaMateriasPrimas();
 }
@@ -2445,9 +2518,18 @@ async function aprobarMP(mpId) {
 
   await escribirEnSheet('editar_mp', { ID_MP: mpId, campo: 'estado', valor: 'activa' });
 
-  // Actualizar local
+  const areaCode = mp.area_codigo || mp.areas_habilitadas?.split(',')?.[0] || '';
+  if (areaCode) {
+    escribirEnSheet('crear_aviso', {
+      area_codigo: areaCode,
+      tipo: 'mp_aprobada',
+      mensaje: `"${mp.nombre}" fue aprobada y está disponible — actualiza tu receta para usarla.`,
+      mp_id: mpId
+    });
+  }
+
   mp.estado = 'activa';
-  toast(`"${mp.nombre}" agregada al maestro — la jefa puede usarla en su receta`);
+  toast(`"${mp.nombre}" aprobada — aviso enviado a la jefa`);
   Cache.invalidar('MP_maestro');
   renderVistaMateriasPrimas();
 }
@@ -2506,7 +2588,18 @@ async function confirmarAsignarMP() {
   if (mpSol) mpSol.estado = 'reemplazada';
 
   document.getElementById('modal-asignar-mp').classList.add('hidden');
-  toast(`Asignado "${nombreExist}" — la jefa debe actualizar el ingrediente en su receta`);
+  const mpSolObj = App.materiasPrimas.find(m => m.ID_MP === mpSolicitudId);
+  const areaCode2 = mpSolObj?.area_codigo || areaCode || '';
+  if (areaCode2) {
+    escribirEnSheet('crear_aviso', {
+      area_codigo: areaCode2,
+      tipo: 'mp_asignada',
+      mensaje: `Tu solicitud fue resuelta: usa "${nombreExist}" en lugar del ingrediente pendiente.`,
+      mp_id: mpSolicitudId
+    });
+  }
+
+  toast(`Asignado "${nombreExist}" — aviso enviado a la jefa`);
   Cache.invalidar('MP_maestro');
   renderVistaMateriasPrimas();
 }
