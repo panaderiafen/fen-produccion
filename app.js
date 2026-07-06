@@ -2530,7 +2530,10 @@ function renderVistaMP() {
           Solicitudes de nuevas materias primas (${pendientes.length})
         </div>
         ${pendientes.map(p => {
-          const areaLabel = Object.values(FEN.AREAS).find(a => a.hoja_recetas === p.area)?.nombre || p.area;
+          const areaLabel = p.solicitada_por ||
+            Object.entries(FEN.AREAS).find(([k,_]) => k === p.area_codigo)?.[1]?.nombre ||
+            Object.values(FEN.AREAS).find(a => a.hoja_recetas === p.area)?.nombre ||
+            p.area || 'Área desconocida';
           const sinCosto = !p.costo_neto || parseFloat(p.costo_neto) === 0;
           return `
           <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
@@ -2721,11 +2724,13 @@ async function enviarSolicitudMP() {
   if (!nombre) { toast('Escribe el nombre de la MP', 'error'); return; }
 
   // Enviar solicitud al Sheet
+  const areaNombre = App.area?.nombre || (App.areaCodigo ? FEN.AREAS[App.areaCodigo]?.nombre : '') || '';
   escribirEnSheet('solicitar_mp', {
     nombre,
     es_nueva: esNueva,
-    solicitada_por: App.area?.nombre || '',
+    solicitada_por: areaNombre,
     area_codigo: App.areaCodigo || '',
+    categoría: 'Pendiente de clasificar',
     fecha: new Date().toISOString()
   });
 
