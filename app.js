@@ -2415,14 +2415,12 @@ async function eliminarReceta(recetaId, area) {
 // ── ADMIN: FLUJO SOLICITUD MP ─────────────────────────────────
 async function notificarJefaMP(mpId, nombre) {
   await escribirEnSheet('editar_mp', { ID_MP: mpId, campo: 'estado', valor: 'recibida' });
-  // Habilitar el área en la MP solicitada para que aparezca en el selector
+  // Actualizar estado local sin recargar todo
   const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
-  if (mp?.area_codigo) {
-    await escribirEnSheet('editar_mp', { ID_MP: mpId, campo: 'areas_habilitadas', valor: mp.area_codigo });
-  }
+  if (mp) mp.estado = 'recibida';
   toast(`Notificado: "${nombre}" fue recibida`);
-  Cache.invalidarTodo();
-  await cargarMateriasPrimas();
+  // Solo re-renderizar la vista de MP sin invalidar caché de recetas
+  Cache.invalidar('MP_maestro');
   renderVistaMateriasPrimas();
 }
 
@@ -2455,9 +2453,12 @@ async function aprobarMP(mpId) {
     });
   }
 
-  toast(`"${mp.nombre}" agregada al maestro y habilitada en ${areaCode}`);
-  Cache.invalidarTodo();
-  await cargarMateriasPrimas();
+  // Actualizar estado local
+  mp.estado = 'activa';
+  if (areaCode) mp.areas_habilitadas = areaCode;
+
+  toast(`"${mp.nombre}" agregada al maestro`);
+  Cache.invalidar('MP_maestro');
   renderVistaMateriasPrimas();
 }
 
@@ -2465,9 +2466,9 @@ function asignarMPExistente(mpIdSolicitud, nombreSolicitud) {
   const mp = App.materiasPrimas.find(m => m.ID_MP === mpIdSolicitud);
   const areaCode = mp?.area_codigo || mp?.areas_habilitadas || '';
 
-  // Mostrar solo MPs activas del área correspondiente
+  // Mostrar todas las MPs activas para que admin pueda asignar cualquiera
   const existentes = App.materiasPrimas.filter(m =>
-    m.estado === 'activa' && m.ID_MP !== mpIdSolicitud
+    (m.estado === 'activa' || m.estado === 'recibida') && m.ID_MP !== mpIdSolicitud
   );
   const modal = document.getElementById('modal-asignar-mp');
   document.getElementById('asignar-mp-nueva-id').value = mpIdSolicitud;
@@ -2510,17 +2511,20 @@ async function confirmarAsignarMP() {
     });
   }
 
+  // Actualizar estado local
+  const mpSol = App.materiasPrimas.find(m => m.ID_MP === mpSolicitudId);
+  if (mpSol) mpSol.estado = 'reemplazada';
+
   document.getElementById('modal-asignar-mp').classList.add('hidden');
   toast(`Reemplazado por "${nombreExist}" en la receta`);
-  Cache.invalidarTodo();
-  await cargarMateriasPrimas();
+  Cache.invalidar('MP_maestro');
   renderVistaMateriasPrimas();
 }
 
 // ── ADMIN: MATERIAS PRIMAS ────────────────────────────────────
 function renderVistaMP() {
   const mp = App.materiasPrimas;
-  const pendientes = mp.filter(m => m.estado === 'pendiente');
+  const pendientes = mp.filter(m => m.estado === 'pendiente' || m.estado === 'recibida');
   const vista = document.getElementById('vista-mp');
   vista.innerHTML = `
     <div class="vista-header">
@@ -2544,6 +2548,7 @@ function renderVistaMP() {
               <div style="font-size:14px;font-weight:600">${p.nombre}</div>
               <div style="font-size:11px;color:var(--txt2);margin-top:2px">
                 Solicitada por <strong>${areaLabel}</strong> · ${p.categoría||'Sin categoría'}
+                ${p.estado==='recibida' ? '<span style="font-size:10px;color:#1565C0;font-weight:600;margin-left:6px">✓ Acuse de recibo enviado</span>' : ''}
               </div>
               ${sinCosto ? `<span style="font-size:10px;color:#C62828;font-weight:600;background:#FFEBEE;padding:2px 6px;border-radius:99px">
                 ⚠ Sin costear
