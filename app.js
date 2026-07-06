@@ -362,6 +362,7 @@ function verificarAlertas() {
 
 // ── FORMULARIO NUEVA / EDITAR RECETA ─────────────────────────
 function renderVistaFormReceta(recetaId, tipoForzado) {
+  App._recetaEditandoId = recetaId || null;
   const receta = recetaId ? App.recetas.find(r => r.ID_receta === recetaId) : null;
   const esPan  = App.areaCodigo === 'PAN';
   const esEdicion = !!receta;
@@ -2413,52 +2414,106 @@ async function eliminarReceta(recetaId, area) {
 
 // ── ADMIN: FLUJO SOLICITUD MP ─────────────────────────────────
 async function notificarJefaMP(mpId, nombre) {
-  // Cambia estado a "recibida" en el Sheet para que la jefa sepa que fue leída
   await escribirEnSheet('editar_mp', { ID_MP: mpId, campo: 'estado', valor: 'recibida' });
-  toast(`Notificado: "${nombre}" fue recibida`);
-  Cache.invalidarTodo();
-  renderVistaMateriasPrimas();
-}
-
-async function aprobarMP(mpId) {
-  // Activa la MP en el maestro — queda disponible aunque no tenga costo
+  // Habilitar el área en la MP solicitada para que aparezca en el selector
   const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
-  if (!mp) return;
-
-  const sinCosto = !mp.costo_neto || parseFloat(mp.costo_neto) === 0;
-  if (sinCosto) {
-    if (!confirm(`"${mp.nombre}" no tiene costo asignado. ¿Agregar igual al maestro? Aparecerá en rojo hasta que se costee.`)) return;
+  if (mp?.area_codigo) {
+    await escribirEnSheet('editar_mp', { ID_MP: mpId, campo: 'areas_habilitadas', valor: mp.area_codigo });
   }
-
-  await escribirEnSheet('editar_mp', { ID_MP: mpId, campo: 'estado', valor: 'activa' });
-  toast(`"${mp.nombre}" agregada al maestro`);
+  toast(`Notificado: "${nombre}" fue recibida`);
   Cache.invalidarTodo();
   await cargarMateriasPrimas();
   renderVistaMateriasPrimas();
 }
 
-function asignarMPExistente(mpIdNueva, nombreNueva) {
-  // Mostrar modal para seleccionar MP existente a la que asignar
-  const existentes = App.materiasPrimas.filter(m => m.estado === 'activa' && m.ID_MP !== mpIdNueva);
+async function aprobarMP(mpId) {
+  const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
+  if (!mp) return;
+
+  const sinCosto = !mp.costo_neto || parseFloat(mp.costo_neto) === 0;
+  if (sinCosto) {
+    if (!confirm(`"${mp.nombre}" no tiene costo. ¿Agregar igual? Aparecerá en rojo hasta costearse.`)) return;
+  }
+
+  // 1. Activar MP
+  await escribirEnSheet('editar_mp', { ID_MP: mpId, campo: 'estado', valor: 'activa' });
+
+  // 2. Habilitar el área en la MP
+  const areaCode = mp.area_codigo || mp.areas_habilitadas || '';
+  if (areaCode) {
+    await escribirEnSheet('editar_mp', { ID_MP: mpId, campo: 'areas_habilitadas', valor: areaCode });
+  }
+
+  // 3. Reemplazar en la receta si hay receta_id_origen
+  if (mp.receta_id_origen && areaCode) {
+    await escribirEnSheet('reemplazar_mp_receta', {
+      area_codigo: areaCode,
+      receta_id:   mp.receta_id_origen,
+      mp_id_vieja: mpId,
+      mp_id_nueva:  mpId, // misma MP, solo cambia estado
+      nombre_nueva: mp.nombre
+    });
+  }
+
+  toast(`"${mp.nombre}" agregada al maestro y habilitada en ${areaCode}`);
+  Cache.invalidarTodo();
+  await cargarMateriasPrimas();
+  renderVistaMateriasPrimas();
+}
+
+function asignarMPExistente(mpIdSolicitud, nombreSolicitud) {
+  const mp = App.materiasPrimas.find(m => m.ID_MP === mpIdSolicitud);
+  const areaCode = mp?.area_codigo || mp?.areas_habilitadas || '';
+
+  // Mostrar solo MPs activas del área correspondiente
+  const existentes = App.materiasPrimas.filter(m =>
+    m.estado === 'activa' && m.ID_MP !== mpIdSolicitud
+  );
   const modal = document.getElementById('modal-asignar-mp');
-  document.getElementById('asignar-mp-nueva-id').value = mpIdNueva;
-  document.getElementById('asignar-mp-nueva-nombre').textContent = nombreNueva;
+  document.getElementById('asignar-mp-nueva-id').value = mpIdSolicitud;
+  document.getElementById('asignar-mp-area').value = areaCode;
+  document.getElementById('asignar-mp-receta').value = mp?.receta_id_origen || '';
+  document.getElementById('asignar-mp-nueva-nombre').textContent = nombreSolicitud;
   document.getElementById('asignar-mp-select').innerHTML =
     '<option value="">— Selecciona una MP existente —</option>' +
-    existentes.map(m => `<option value="${m.ID_MP}">${m.nombre}</option>`).join('');
+    existentes.map(m => `<option value="${m.ID_MP}" data-nombre="${m.nombre}">${m.nombre}</option>`).join('');
   modal.classList.remove('hidden');
 }
 
 async function confirmarAsignarMP() {
-  const mpNuevaId  = document.getElementById('asignar-mp-nueva-id').value;
-  const mpExistId  = document.getElementById('asignar-mp-select').value;
+  const mpSolicitudId = document.getElementById('asignar-mp-nueva-id').value;
+  const mpExistId     = document.getElementById('asignar-mp-select').value;
+  const areaCode      = document.getElementById('asignar-mp-area').value;
+  const recetaId      = document.getElementById('asignar-mp-receta').value;
+  const nombreExist   = document.getElementById('asignar-mp-select').selectedOptions[0]?.dataset.nombre || '';
+
   if (!mpExistId) { toast('Selecciona una MP existente'); return; }
 
-  // Marcar la nueva como "reemplazada" para que no aparezca en pendientes
-  await escribirEnSheet('editar_mp', { ID_MP: mpNuevaId, campo: 'estado', valor: 'reemplazada' });
+  // 1. Marcar solicitud como reemplazada
+  await escribirEnSheet('editar_mp', { ID_MP: mpSolicitudId, campo: 'estado', valor: 'reemplazada' });
+
+  // 2. Habilitar el área en la MP existente si no la tiene
+  const mpExist = App.materiasPrimas.find(m => m.ID_MP === mpExistId);
+  if (mpExist && areaCode && !(mpExist.areas_habilitadas||'').includes(areaCode)) {
+    const nuevasAreas = ((mpExist.areas_habilitadas||'') + ',' + areaCode).replace(/^,/, '');
+    await escribirEnSheet('editar_mp', { ID_MP: mpExistId, campo: 'areas_habilitadas', valor: nuevasAreas });
+  }
+
+  // 3. Reemplazar ingrediente en la receta automáticamente
+  if (recetaId && areaCode) {
+    await escribirEnSheet('reemplazar_mp_receta', {
+      area_codigo:  areaCode,
+      receta_id:    recetaId,
+      mp_id_vieja:  mpSolicitudId,
+      mp_id_nueva:  mpExistId,
+      nombre_nueva: nombreExist
+    });
+  }
+
   document.getElementById('modal-asignar-mp').classList.add('hidden');
-  toast('Asignación realizada — la jefa usará la MP existente');
+  toast(`Reemplazado por "${nombreExist}" en la receta`);
   Cache.invalidarTodo();
+  await cargarMateriasPrimas();
   renderVistaMateriasPrimas();
 }
 
@@ -2662,7 +2717,7 @@ function solicitarNuevaMP(selectEl) {
   }
 }
 
-function enviarSolicitudMP() {
+async function enviarSolicitudMP() {
   const nombre     = document.getElementById('solicitar-mp-nombre').value.trim();
   const esNueva    = document.getElementById('solicitar-mp-nueva').checked;
   const tmpNombre  = document.getElementById('solicitar-mp-tmp').value.trim() || nombre;
@@ -2670,32 +2725,49 @@ function enviarSolicitudMP() {
 
   if (!nombre) { toast('Escribe el nombre de la MP', 'error'); return; }
 
-  // Agregar ingrediente temporal al formulario
+  // Enviar solicitud via GET para obtener el ID asignado
+  let mpTmpId = 'TMP_' + Date.now();
+  try {
+    const payload = encodeURIComponent(JSON.stringify({
+      accion: 'solicitar_mp',
+      nombre,
+      es_nueva: esNueva,
+      solicitada_por: App.area?.nombre || '',
+      area_codigo: App.areaCodigo || '',
+      receta_id: App._recetaEditandoId || '',
+      fecha: new Date().toISOString()
+    }));
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
+    const data = await res.json();
+    if (data.ok && data.id) mpTmpId = data.id;
+  } catch(e) {
+    console.warn('[fën] solicitar_mp via POST (sin ID de retorno)');
+    await escribirEnSheet('solicitar_mp', {
+      nombre, es_nueva: esNueva,
+      solicitada_por: App.area?.nombre || '',
+      area_codigo: App.areaCodigo || '',
+      receta_id: App._recetaEditandoId || '',
+    });
+  }
+
+  // Agregar ingrediente temporal al formulario con el ID real de la solicitud
   if (tmpNombre) {
     const tbody = document.getElementById('tbody-ingr');
     const tr = document.createElement('tr');
     tr.style.background = '#FFF9C4';
+    tr.dataset.mpTmpId = mpTmpId;
     tr.innerHTML = `
       <td>
-        <select disabled style="color:var(--txt2)">
-          <option>⏳ ${tmpNombre} (pendiente habilitación)</option>
+        <select disabled style="color:#F57C00;font-weight:500">
+          <option>⏳ ${tmpNombre} (pendiente · ${mpTmpId})</option>
         </select>
       </td>
-      <td><input type="number" placeholder="0" value="${gramos || ''}" min="0" step="0.01" data-tmp="true"></td>
+      <td><input type="number" placeholder="0" value="${gramos || ''}" min="0" step="0.01" data-tmp="${mpTmpId}"></td>
       ${App.areaCodigo === 'PAN' ? '<td><input type="number" placeholder="0.00" readonly style="color:var(--txt3)"></td>' : ''}
       <td><button class="btn-fila-del" onclick="this.closest('tr').remove()" aria-label="Eliminar"><i class="ti ti-x"></i></button></td>
     `;
     tbody.appendChild(tr);
   }
-
-  // Enviar solicitud
-  escribirEnSheet('solicitar_mp', {
-    nombre,
-    es_nueva: esNueva,
-    solicitada_por: App.area?.nombre || '',
-    area_codigo: App.areaCodigo || '',
-    fecha: new Date().toISOString()
-  });
 
   cerrarModalSolicitarMP();
   toast('Solicitud enviada a administración');
