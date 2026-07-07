@@ -2504,7 +2504,7 @@ async function notificarJefaMP(mpId, nombre) {
   if (mp) mp.estado = 'recibida';
   toast(`Notificado: "${nombre}" fue recibida`);
   Cache.invalidar('MP_maestro');
-  renderVistaMateriasPrimas();
+  renderVistaMP();
 }
 
 async function aprobarMP(mpId) {
@@ -2531,7 +2531,7 @@ async function aprobarMP(mpId) {
   mp.estado = 'activa';
   toast(`"${mp.nombre}" aprobada — aviso enviado a la jefa`);
   Cache.invalidar('MP_maestro');
-  renderVistaMateriasPrimas();
+  renderVistaMP();
 }
 
 function asignarMPExistente(mpIdSolicitud, nombreSolicitud) {
@@ -2601,7 +2601,7 @@ async function confirmarAsignarMP() {
 
   toast(`Asignado "${nombreExist}" — aviso enviado a la jefa`);
   Cache.invalidar('MP_maestro');
-  renderVistaMateriasPrimas();
+  renderVistaMP();
 }
 
 // ── ADMIN: MATERIAS PRIMAS ────────────────────────────────────
