@@ -326,9 +326,9 @@ function navegarA(vistaId) {
   document.querySelectorAll('.vista').forEach(v => v.classList.remove('active'));
   switch(vistaId) {
     case 'nueva-receta':    renderVistaFormReceta(null, 'receta'); break;
-    case 'mis-recetas':     renderVistaMisRecetas(); break;
+    case 'mis-recetas':     renderVistaMisRecetas(); cargarAvisos(); break;
     case 'planificacion':   renderVistaPlanificacion(); break;
-    case 'recetas-del-dia': renderVistaRecetasDelDia(); break;
+    case 'recetas-del-dia': renderVistaRecetasDelDia(); cargarAvisos(); break;
     case 'maestro':         renderVistaMaestro(); break;
     case 'aprobaciones':    renderVistaAprobaciones(); break;
     case 'materias-primas': renderVistaMP(); break;
