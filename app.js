@@ -2262,7 +2262,54 @@ async function cargarConsolidado() {
 
     const diasLabel = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 
-    body.innerHTML = Object.entries(porSemana)
+    // ── Totales del mes ───────────────────────────────────────
+    const totalesProduccion = {};
+    const totalesInsumos    = {};
+    data.filas.forEach(f => {
+      if (f.tipo === 'produccion') {
+        if (!totalesProduccion[f.nombre]) totalesProduccion[f.nombre] = 0;
+        totalesProduccion[f.nombre] += parseFloat(f.total) || 0;
+      } else if (f.tipo === 'insumo_mp') {
+        if (!totalesInsumos[f.nombre]) totalesInsumos[f.nombre] = 0;
+        totalesInsumos[f.nombre] += parseFloat(f.total) || 0;
+      }
+    });
+
+    const mesesNombres = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const mesNombre = mesesNombres[parseInt(mes)] || mes;
+
+    const cardTotales = `
+      <div class="card" style="margin-bottom:20px;border-color:var(--area-color);border-width:2px">
+        <div class="card-head" style="background:var(--area-color);color:#fff">
+          <i class="ti ti-chart-bar"></i>
+          Resumen ${mesNombre} ${año} — Totales del mes
+        </div>
+        ${Object.keys(totalesProduccion).length ? `
+        <div style="padding:8px 12px 4px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--txt3);letter-spacing:.4px">
+          Producción total
+        </div>
+        <div style="padding:0 12px 8px;display:flex;flex-wrap:wrap;gap:8px">
+          ${Object.entries(totalesProduccion).map(([nombre, total]) => `
+            <div style="background:var(--area-bg);border-radius:var(--r-md);padding:8px 14px;min-width:140px">
+              <div style="font-size:11px;color:var(--txt3)">${nombre}</div>
+              <div style="font-size:18px;font-weight:700;color:var(--area-color);font-family:'DM Mono',monospace">${total.toFixed(0)}</div>
+              <div style="font-size:10px;color:var(--txt3)">unidades</div>
+            </div>`).join('')}
+        </div>` : ''}
+        ${Object.keys(totalesInsumos).length ? `
+        <div style="padding:8px 12px 4px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--txt3);letter-spacing:.4px;border-top:1px solid var(--border)">
+          Insumos MP total
+        </div>
+        <div style="padding:0 12px 12px;display:flex;flex-wrap:wrap;gap:8px">
+          ${Object.entries(totalesInsumos).map(([nombre, total]) => `
+            <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);padding:8px 14px;min-width:140px">
+              <div style="font-size:11px;color:var(--txt3)">${nombre}</div>
+              <div style="font-size:18px;font-weight:700;color:var(--txt);font-family:'DM Mono',monospace">${formatearGramos(total)}</div>
+            </div>`).join('')}
+        </div>` : ''}
+      </div>`;
+
+    body.innerHTML = cardTotales + Object.entries(porSemana)
       .sort(([a],[b]) => a.localeCompare(b))
       .map(([semana, filas]) => {
         const produccion = filas.filter(f => f.tipo === 'produccion');
