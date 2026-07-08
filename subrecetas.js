@@ -284,13 +284,15 @@ function calcularPieMM(diaIdxActual) {
   const posActual = diasElaboracion.indexOf(diaIdxActual);
   const siguienteElaboracion = diasElaboracion[(posActual + 1) % diasElaboracion.length];
 
-  // Días que cubre: desde mañana hasta el día anterior a la siguiente elaboración
+  // Días que cubre: desde mañana HASTA el día de la siguiente elaboración inclusive
+  // (porque el pie se elabora POST jornada, así que el día de elaboración también necesita pie)
   const diasCubiertos = [];
   let dia = (diaIdxActual + 1) % 7;
   while (dia !== siguienteElaboracion) {
     diasCubiertos.push(dia);
     dia = (dia + 1) % 7;
   }
+  diasCubiertos.push(siguienteElaboracion); // incluir el día de la siguiente elaboración
 
   // Días del período siguiente (para calcular reserva)
   const diasSiguientePeriodo = [];
