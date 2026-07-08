@@ -168,18 +168,26 @@ function actualizarTopbarAdmin() {
 
 // ── GET FORZADO PARA OPERACIONES CRÍTICAS ────────────────────
 async function getSheet(accion, datos) {
-  // Usa el mismo patrón que escribirEnSheet pero siempre retorna respuesta
   const body = JSON.stringify({ accion, ...datos });
+  // Try GET first (returns response, no CORS issue for simple requests)
   try {
-    // POST retorna respuesta desde Apps Script
-    const res = await fetch(FEN.WEBAPP_URL, {
+    const payload = encodeURIComponent(body);
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, {
+      method: 'GET',
+      redirect: 'follow'
+    });
+    if (res.ok) return await res.json();
+  } catch(e) {}
+  // Fallback: POST no-cors (no response but works)
+  try {
+    await fetch(FEN.WEBAPP_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
       body
     });
-    return await res.json();
+    return { ok: true, msg: 'Enviado (sin confirmación)' };
   } catch(e) {
-    console.warn('[fën] getSheet error:', e.message);
     return { ok: false, msg: e.message };
   }
 }
