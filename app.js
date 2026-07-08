@@ -168,28 +168,9 @@ function actualizarTopbarAdmin() {
 
 // ── GET FORZADO PARA OPERACIONES CRÍTICAS ────────────────────
 async function getSheet(accion, datos) {
-  const body = JSON.stringify({ accion, ...datos });
-  // Try GET first (returns response, no CORS issue for simple requests)
-  try {
-    const payload = encodeURIComponent(body);
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, {
-      method: 'GET',
-      redirect: 'follow'
-    });
-    if (res.ok) return await res.json();
-  } catch(e) {}
-  // Fallback: POST no-cors (no response but works)
-  try {
-    await fetch(FEN.WEBAPP_URL, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body
-    });
-    return { ok: true, msg: 'Enviado (sin confirmación)' };
-  } catch(e) {
-    return { ok: false, msg: e.message };
-  }
+  // Apps Script solo acepta POST no-cors desde GitHub Pages
+  // No podemos confirmar la respuesta, pero sí llega al Sheet
+  return await escribirEnSheet(accion, datos);
 }
 
 // ── SISTEMA DE AVISOS ────────────────────────────────────────
