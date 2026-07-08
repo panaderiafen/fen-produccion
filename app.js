@@ -2497,7 +2497,7 @@ async function notificarJefaMP(mpId, nombre) {
   const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
   const areaCode = mp?.area_codigo || mp?.areas_habilitadas?.split(',')?.[0] || '';
 
-  await escribirEnSheet('editar_mp', { ID_MP: mpId, campo: 'estado', valor: 'recibida' });
+  await getSheet('editar_campo_mp', { ID_MP: mpId, campo: 'estado', valor: 'recibida' });
 
   // Crear aviso para la jefa del área via GET (payload pequeño)
   if (areaCode) {
@@ -2528,7 +2528,7 @@ async function aprobarMP(mpId) {
     if (!confirm(`"${mp.nombre}" no tiene costo. ¿Agregar igual? Aparecerá en rojo hasta costearse.`)) return;
   }
 
-  await escribirEnSheet('editar_mp', { ID_MP: mpId, campo: 'estado', valor: 'activa' });
+  await getSheet('editar_campo_mp', { ID_MP: mpId, campo: 'estado', valor: 'activa' });
 
   const areaCode = mp.area_codigo || mp.areas_habilitadas?.split(',')?.[0] || '';
   if (areaCode) {
@@ -2579,7 +2579,7 @@ async function confirmarAsignarMP() {
   if (!mpExistId) { toast('Selecciona una MP existente'); return; }
 
   // 1. Marcar solicitud como reemplazada
-  const r1 = await getSheet('editar_mp', { ID_MP: mpSolicitudId, campo: 'estado', valor: 'reemplazada' });
+  const r1 = await getSheet('editar_campo_mp', { ID_MP: mpSolicitudId, campo: 'estado', valor: 'reemplazada' });
   console.log('[fën] marcar reemplazada:', r1);
 
   // 2. Habilitar el área en la MP existente
@@ -2589,7 +2589,7 @@ async function confirmarAsignarMP() {
     if (!areasActuales.includes(areaCode)) {
       areasActuales.push(areaCode);
       const nuevasAreas = areasActuales.join(',');
-      const r2 = await getSheet('editar_mp', { ID_MP: mpExistId, campo: 'areas_habilitadas', valor: nuevasAreas });
+      const r2 = await getSheet('editar_campo_mp', { ID_MP: mpExistId, campo: 'areas_habilitadas', valor: nuevasAreas });
       console.log('[fën] habilitar area:', r2);
       mpExist.areas_habilitadas = nuevasAreas;
     }
