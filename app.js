@@ -2266,31 +2266,51 @@ async function cargarConsolidado() {
       .sort(([a],[b]) => a.localeCompare(b))
       .map(([semana, filas]) => {
         const produccion = filas.filter(f => f.tipo === 'produccion');
+        const insumos    = filas.filter(f => f.tipo === 'insumo_mp');
+
+        const renderTabla = (filasList, esInsumo) => `
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead>
+                <tr style="background:var(--bg)">
+                  <th style="text-align:left;padding:7px 12px;border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;font-size:10px;text-transform:uppercase">
+                    ${esInsumo ? 'Materia prima' : 'Producto'}
+                  </th>
+                  ${diasLabel.map(d=>`<th style="text-align:right;padding:7px 8px;border-bottom:1px solid var(--border);color:var(--txt3);font-size:10px">${d}</th>`).join('')}
+                  <th style="text-align:right;padding:7px 12px;border-bottom:1px solid var(--border);color:var(--txt3);font-size:10px;font-weight:700">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${filasList.map(f => {
+                  const esGramos = esInsumo;
+                  return `<tr>
+                    <td style="padding:6px 12px;border-bottom:1px solid var(--border);font-weight:500">${f.nombre}</td>
+                    ${f.dias.map(v=>`<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2)">${v>0?(esGramos?formatearGramos(v):v):''}</td>`).join('')}
+                    <td style="padding:6px 12px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:700;color:var(--area-color)">
+                      ${esGramos ? formatearGramos(f.total) : f.total}
+                    </td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>`;
+
         return `
           <div class="card" style="margin-bottom:16px">
             <div class="card-head" style="background:var(--area-bg);color:var(--area-color)">
               <i class="ti ti-calendar-week"></i>
               ${semana}
             </div>
-            <div style="overflow-x:auto">
-              <table style="width:100%;border-collapse:collapse;font-size:12px">
-                <thead>
-                  <tr style="background:var(--bg)">
-                    <th style="text-align:left;padding:7px 12px;border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;font-size:10px;text-transform:uppercase">Producto/Insumo</th>
-                    ${diasLabel.map(d=>`<th style="text-align:right;padding:7px 8px;border-bottom:1px solid var(--border);color:var(--txt3);font-size:10px">${d}</th>`).join('')}
-                    <th style="text-align:right;padding:7px 12px;border-bottom:1px solid var(--border);color:var(--txt3);font-size:10px;font-weight:700">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${produccion.map(f => `
-                    <tr>
-                      <td style="padding:6px 12px;border-bottom:1px solid var(--border);font-weight:500">${f.nombre}</td>
-                      ${f.dias.map(v=>`<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace">${v>0?v:''}</td>`).join('')}
-                      <td style="padding:6px 12px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:700;color:var(--area-color)">${f.total}</td>
-                    </tr>`).join('')}
-                </tbody>
-              </table>
+            ${produccion.length ? `
+            <div style="padding:8px 12px 4px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--txt3);letter-spacing:.4px">
+              Producción
             </div>
+            ${renderTabla(produccion, false)}` : ''}
+            ${insumos.length ? `
+            <div style="padding:8px 12px 4px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--txt3);letter-spacing:.4px;border-top:1px solid var(--border);margin-top:8px">
+              Insumos MP
+            </div>
+            ${renderTabla(insumos, true)}` : ''}
           </div>`;
       }).join('');
   } catch(e) {
