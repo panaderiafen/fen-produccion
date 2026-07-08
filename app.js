@@ -168,9 +168,19 @@ function actualizarTopbarAdmin() {
 
 // ── GET FORZADO PARA OPERACIONES CRÍTICAS ────────────────────
 async function getSheet(accion, datos) {
-  // Apps Script solo acepta POST no-cors desde GitHub Pages
-  // No podemos confirmar la respuesta, pero sí llega al Sheet
-  return await escribirEnSheet(accion, datos);
+  const body = JSON.stringify({ accion, ...datos });
+  // POST no-cors — no retorna respuesta pero sí llega al Sheet
+  try {
+    await fetch(FEN.WEBAPP_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body
+    });
+    return { ok: true, msg: 'Enviado' };
+  } catch(e) {
+    return { ok: false, msg: e.message };
+  }
 }
 
 // ── SISTEMA DE AVISOS ────────────────────────────────────────
