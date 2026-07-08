@@ -168,10 +168,20 @@ function actualizarTopbarAdmin() {
 
 // ── GET FORZADO PARA OPERACIONES CRÍTICAS ────────────────────
 async function getSheet(accion, datos) {
+  // Usa el mismo patrón que escribirEnSheet pero siempre retorna respuesta
   const body = JSON.stringify({ accion, ...datos });
-  const payload = encodeURIComponent(body);
-  const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
-  return await res.json();
+  try {
+    // POST retorna respuesta desde Apps Script
+    const res = await fetch(FEN.WEBAPP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body
+    });
+    return await res.json();
+  } catch(e) {
+    console.warn('[fën] getSheet error:', e.message);
+    return { ok: false, msg: e.message };
+  }
 }
 
 // ── SISTEMA DE AVISOS ────────────────────────────────────────
