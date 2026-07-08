@@ -1616,36 +1616,63 @@ function abrirModalModificador(recetaId, diaIdx) {
   try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
 
   const mod = getModificador(recetaId, diaIdx) || {};
-  const pesoHarina = parseFloat(r.peso_harina_total_g) || 0;
+  const pesoHarinaOriginal = parseFloat(r.peso_harina_total_g) || 0;
+  const pesoHarinaMod = mod._harina_base || pesoHarinaOriginal;
   const diasNombres = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
 
-  // Solo mostrar ingredientes con % panadero (los relevantes para ajustar)
   const ingsPct = ingredientes.filter(ing => parseFloat(ing.pct) > 0);
 
   const modal = document.getElementById('modal-modificador');
   document.getElementById('mod-titulo').textContent = `${r.nombre} — ${diasNombres[diaIdx]}`;
   document.getElementById('mod-receta-id').value = recetaId;
   document.getElementById('mod-dia-idx').value = diaIdx;
+  document.getElementById('mod-harina-original').value = pesoHarinaOriginal;
 
   document.getElementById('mod-body').innerHTML = `
     <p style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.5">
-      Ajusta los % para este día. La receta original no se modifica.
+      Ajusta la harina base y/o los % para este día. La receta original no se modifica.
       ${Object.keys(mod).length ? '<span style="color:#F57C00;font-weight:500">· Tiene ajustes activos</span>' : ''}
     </p>
+
+    <!-- Campo harina base -->
+    <div style="background:#FFF8E1;border:1.5px solid #FFD54F;border-radius:var(--r-md);padding:10px 14px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:#F57C00;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">
+        Harina base (100%)
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:13px;flex:1">Harina base</span>
+        <span style="font-size:11px;color:var(--txt3)">Original: ${pesoHarinaOriginal}g</span>
+        <input type="number" id="mod-harina-base" min="1" step="1"
+          value="${pesoHarinaMod}"
+          data-original="${pesoHarinaOriginal}"
+          style="width:90px;padding:5px 8px;border:1.5px solid ${pesoHarinaMod !== pesoHarinaOriginal ? '#F57C00' : 'var(--border)'};border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace;text-align:right;color:${pesoHarinaMod !== pesoHarinaOriginal ? '#F57C00' : 'var(--txt)'}"
+          oninput="actualizarGramosDesdeHarina(this)">
+        <span style="font-size:12px;color:var(--txt3)">g</span>
+      </div>
+    </div>
+
+    <!-- Ingredientes con % -->
+    <div style="font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">
+      Ingredientes (% sobre harina base)
+    </div>
     ${ingsPct.map(ing => {
       const pctActual = (parseFloat(ing.pct) * 100).toFixed(2);
       const pctMod = mod[ing.id]?.pct_nuevo !== undefined ? mod[ing.id].pct_nuevo : pctActual;
+      const grMod = (pesoHarinaMod * parseFloat(pctMod) / 100).toFixed(0);
+      const modificado = parseFloat(pctMod) !== parseFloat(pctActual) || pesoHarinaMod !== pesoHarinaOriginal;
       return `
-        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
           <span style="flex:1;font-size:13px">${ing.nombre}</span>
-          <span style="font-size:11px;color:var(--txt3);min-width:50px">Original: ${pctActual}%</span>
-          <input type="number" step="0.01" min="0" max="200"
+          <span style="font-size:10px;color:var(--txt3)">Orig: ${pctActual}%</span>
+          <input type="number" step="0.01" min="0" max="300"
             value="${pctMod}"
             data-ingid="${ing.id}"
             data-original="${pctActual}"
-            style="width:80px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace;text-align:right"
-            oninput="this.style.color=parseFloat(this.value)!==parseFloat(this.dataset.original)?'#F57C00':'var(--txt)'">
+            class="mod-pct-input"
+            style="width:72px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace;text-align:right;color:${modificado?'#F57C00':'var(--txt)'}"
+            oninput="actualizarGrDesdePorc(this)">
           <span style="font-size:12px;color:var(--txt3)">%</span>
+          <span style="font-size:12px;color:${modificado?'#F57C00':'var(--txt3)'};font-family:'DM Mono',monospace;min-width:52px;text-align:right" id="gr-display-${ing.id}">${grMod}g</span>
         </div>`;
     }).join('')}
     ${ingsPct.length === 0 ? '<p style="font-size:13px;color:var(--txt3);text-align:center;padding:12px">Esta receta no tiene ingredientes con % panadero.</p>' : ''}
@@ -1654,13 +1681,50 @@ function abrirModalModificador(recetaId, diaIdx) {
   modal.classList.remove('hidden');
 }
 
+function actualizarGramosDesdeHarina(inputHarina) {
+  const harinaBase = parseFloat(inputHarina.value) || 0;
+  const original   = parseFloat(inputHarina.dataset.original) || 1;
+  inputHarina.style.color  = harinaBase !== original ? '#F57C00' : 'var(--txt)';
+  inputHarina.style.borderColor = harinaBase !== original ? '#F57C00' : 'var(--border)';
+
+  // Recalcular gramos de cada ingrediente
+  document.querySelectorAll('.mod-pct-input').forEach(inp => {
+    const pct = parseFloat(inp.value) || 0;
+    const gr  = (harinaBase * pct / 100).toFixed(0);
+    const display = document.getElementById('gr-display-' + inp.dataset.ingid);
+    if (display) display.textContent = gr + 'g';
+  });
+}
+
+function actualizarGrDesdePorc(inputPct) {
+  const harinaBase = parseFloat(document.getElementById('mod-harina-base')?.value) || 0;
+  const pct        = parseFloat(inputPct.value) || 0;
+  const original   = parseFloat(inputPct.dataset.original);
+  const modificado = Math.abs(pct - original) > 0.001;
+  inputPct.style.color = modificado ? '#F57C00' : 'var(--txt)';
+  const gr = (harinaBase * pct / 100).toFixed(0);
+  const display = document.getElementById('gr-display-' + inputPct.dataset.ingid);
+  if (display) {
+    display.textContent = gr + 'g';
+    display.style.color = modificado ? '#F57C00' : 'var(--txt3)';
+  }
+}
+
 function guardarModificador() {
-  const recetaId = document.getElementById('mod-receta-id').value;
-  const diaIdx   = parseInt(document.getElementById('mod-dia-idx').value);
-  const inputs   = document.querySelectorAll('#mod-body input[data-ingid]');
+  const recetaId       = document.getElementById('mod-receta-id').value;
+  const diaIdx         = parseInt(document.getElementById('mod-dia-idx').value);
+  const inputs         = document.querySelectorAll('#mod-body input[data-ingid]');
+  const harinaBase     = parseFloat(document.getElementById('mod-harina-base')?.value) || 0;
+  const harinaOriginal = parseFloat(document.getElementById('mod-harina-original')?.value) || 0;
 
   const mod = {};
   let tieneModificaciones = false;
+
+  // Guardar harina base si cambió
+  if (harinaBase > 0 && Math.abs(harinaBase - harinaOriginal) > 0.1) {
+    mod._harina_base = harinaBase;
+    tieneModificaciones = true;
+  }
 
   inputs.forEach(inp => {
     const original = parseFloat(inp.dataset.original);
@@ -1673,8 +1737,6 @@ function guardarModificador() {
 
   setModificador(recetaId, diaIdx, tieneModificaciones ? mod : null);
   document.getElementById('modal-modificador').classList.add('hidden');
-
-  // Re-renderizar recetas del día
   renderDia(diaIdx);
   toast(tieneModificaciones ? 'Ajustes guardados para este día' : 'Ajustes eliminados');
 }
@@ -1776,15 +1838,23 @@ async function renderDia(diaIdx) {
     // Aplicar modificadores si existen
     const mod = getModificador(rid, idx);
     const pesoHarinaBase = parseFloat(r.peso_harina_total_g) || 0;
-    if (mod && pesoHarinaBase > 0) {
-      ingredientes = ingredientes.map(ing => {
-        if (mod[ing.id]) {
-          const pctNuevo = mod[ing.id].pct_nuevo / 100;
-          const gramosNuevos = pesoHarinaBase * pctNuevo * factor;
-          return { ...ing, gramos: pesoHarinaBase * pctNuevo, _modificado: true, _gramosOriginales: ing.gramos };
-        }
-        return ing;
-      });
+    if (mod) {
+      const harinaEfectiva = mod._harina_base || pesoHarinaBase;
+      if (harinaEfectiva > 0) {
+        ingredientes = ingredientes.map(ing => {
+          const tieneModPct = mod[ing.id];
+          const harinaCambio = mod._harina_base && Math.abs(mod._harina_base - pesoHarinaBase) > 0.1;
+          if (tieneModPct) {
+            const pctNuevo = mod[ing.id].pct_nuevo / 100;
+            return { ...ing, gramos: harinaEfectiva * pctNuevo, _modificado: true };
+          } else if (harinaCambio && parseFloat(ing.pct) > 0) {
+            // Solo recalcular si tiene % panadero
+            const pctOriginal = parseFloat(ing.pct);
+            return { ...ing, gramos: harinaEfectiva * pctOriginal, _modificado: true };
+          }
+          return ing;
+        });
+      }
     }
 
     return `
