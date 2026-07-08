@@ -2570,14 +2570,19 @@ async function confirmarAsignarMP() {
 
   if (!mpExistId) { toast('Selecciona una MP existente'); return; }
 
-  // 1. Marcar solicitud como reemplazada
+  // 1. Marcar solicitud como reemplazada (nuevo estado)
   await escribirEnSheet('editar_mp', { ID_MP: mpSolicitudId, campo: 'estado', valor: 'reemplazada' });
 
-  // 2. Habilitar el área en la MP existente si no la tiene
+  // 2. Habilitar el área en la MP existente
   const mpExist = App.materiasPrimas.find(m => m.ID_MP === mpExistId);
-  if (mpExist && areaCode && !(mpExist.areas_habilitadas||'').includes(areaCode)) {
-    const nuevasAreas = ((mpExist.areas_habilitadas||'') + ',' + areaCode).replace(/^,/, '');
-    await escribirEnSheet('editar_mp', { ID_MP: mpExistId, campo: 'areas_habilitadas', valor: nuevasAreas });
+  if (mpExist && areaCode) {
+    const areasActuales = (mpExist.areas_habilitadas || '').split(',').map(a => a.trim()).filter(Boolean);
+    if (!areasActuales.includes(areaCode)) {
+      areasActuales.push(areaCode);
+      await escribirEnSheet('editar_mp', { ID_MP: mpExistId, campo: 'areas_habilitadas', valor: areasActuales.join(',') });
+      // Actualizar local
+      mpExist.areas_habilitadas = areasActuales.join(',');
+    }
   }
 
   // 3. Reemplazar ingrediente en la receta automáticamente
@@ -2619,7 +2624,7 @@ async function confirmarAsignarMP() {
 // ── ADMIN: MATERIAS PRIMAS ────────────────────────────────────
 function renderVistaMP() {
   const mp = App.materiasPrimas;
-  const pendientes = mp.filter(m => m.estado === 'pendiente' || m.estado === 'recibida');
+  const pendientes = mp.filter(m => m.estado === 'pendiente' || m.estado === 'recibida').filter(m => m.tipo !== 'sub_receta');
   const vista = document.getElementById('vista-mp');
   vista.innerHTML = `
     <div class="vista-header">
