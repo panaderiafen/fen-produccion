@@ -2511,20 +2511,18 @@ async function notificarJefaMP(mpId, nombre) {
 
   // Crear aviso para la jefa del área via GET (payload pequeño)
   if (areaCode) {
-    try {
-      const payloadAviso = encodeURIComponent(JSON.stringify({
-        accion: 'crear_aviso',
-        area_codigo: areaCode,
-        tipo: 'mp_recibida',
-        mensaje: 'Tu solicitud fue recibida por administracion - esta siendo revisada.',
-        mp_id: mpId
-      }));
-      fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso);
-    } catch(e) { console.warn('aviso GET falló:', e); }
+    getSheet('crear_aviso', {
+      area_codigo: areaCode,
+      tipo: 'mp_recibida',
+      mensaje: 'Tu solicitud fue recibida por administracion - esta siendo revisada.',
+      mp_id: mpId
+    }).then(r => console.log('[fën] aviso recibida:', r));
   }
 
   if (mp) mp.estado = 'recibida';
   toast(`Notificado: "${nombre}" fue recibida`);
+  // Force reload MP from Sheet to avoid stale cache
+  App.materiasPrimas = App.materiasPrimas.map(m => m.ID_MP === mpId ? {...m, estado: 'recibida'} : m);
   Cache.invalidar('MP_maestro');
   renderVistaMP();
 }
@@ -2542,16 +2540,12 @@ async function aprobarMP(mpId) {
 
   const areaCode = mp.area_codigo || mp.areas_habilitadas?.split(',')?.[0] || '';
   if (areaCode) {
-    try {
-      const payloadAviso2 = encodeURIComponent(JSON.stringify({
-        accion: 'crear_aviso',
-        area_codigo: areaCode,
-        tipo: 'mp_aprobada',
-        mensaje: mp.nombre + ' fue aprobada y esta disponible - actualiza tu receta.',
-        mp_id: mpId
-      }));
-      fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso2);
-    } catch(e) { console.warn('aviso GET falló:', e); }
+    getSheet('crear_aviso', {
+      area_codigo: areaCode,
+      tipo: 'mp_aprobada',
+      mensaje: mp.nombre + ' fue aprobada y esta disponible - actualiza tu receta.',
+      mp_id: mpId
+    }).then(r => console.log('[fën] aviso aprobada:', r));
   }
 
   mp.estado = 'activa';
@@ -2623,17 +2617,15 @@ async function confirmarAsignarMP() {
   document.getElementById('modal-asignar-mp').classList.add('hidden');
   const mpSolObj = App.materiasPrimas.find(m => m.ID_MP === mpSolicitudId);
   const areaCode2 = mpSolObj?.area_codigo || areaCode || '';
+  // Update local state immediately
+  App.materiasPrimas = App.materiasPrimas.map(m => m.ID_MP === mpSolicitudId ? {...m, estado: 'reemplazada'} : m);
   if (areaCode2) {
-    try {
-      const payloadAviso3 = encodeURIComponent(JSON.stringify({
-        accion: 'crear_aviso',
-        area_codigo: areaCode2,
-        tipo: 'mp_asignada',
-        mensaje: 'Tu solicitud fue resuelta: usa ' + nombreExist + ' en lugar del ingrediente pendiente.',
-        mp_id: mpSolicitudId
-      }));
-      fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso3);
-    } catch(e) { console.warn('aviso GET falló:', e); }
+    getSheet('crear_aviso', {
+      area_codigo: areaCode2,
+      tipo: 'mp_asignada',
+      mensaje: 'Tu solicitud fue resuelta: usa ' + nombreExist + ' en lugar del ingrediente pendiente.',
+      mp_id: mpSolicitudId
+    }).then(r => console.log('[fën] aviso asignada:', r));
   }
 
   toast(`Asignado "${nombreExist}" — aviso enviado a la jefa`);
