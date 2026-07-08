@@ -33,9 +33,8 @@ const CONFIG_SUBRECETAS_DEFAULT = {
   },
   caf: {
     gramos_por_shot: 14,
-    tipos_leche: ['Entera', 'Descremada', 'Sin lactosa', 'Vegetal (avena)', 'Vegetal (almendra)'],
     baristas: ['Por definir'],
-    stock: {}, // { itemId: { nombre, unidad, cantidad } } -- café tolva, café bodega, leches
+    stock: {}, // { mpId: { ubicacion, unidad, stockActual, historico: [] } }
   },
   bol: {
     amasadora_max_por_tanda: 16,   // masas base por tanda
@@ -338,14 +337,70 @@ function calcularPieMM(diaIdxActual) {
     return total;
   }
 
-  // Calcular totales
-  const mmBlancaCubiertos = diasCubiertos.reduce((s, d) => s + mmNecesariaDia(d, idsMMBlanca), 0);
-  const mmBlancaSiguiente = diasSiguientePeriodo.reduce((s, d) => s + mmNecesariaDia(d, idsMMBlanca), 0);
+  // Detectar sub receta "Pie de MM" para calcular solo esa porción
+  const idsPieMM = App.materiasPrimas
+    .filter(m => (m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR')) &&
+      m.nombre?.toLowerCase().includes('pie de mm'))
+    .map(m => m.ID_MP);
+
+  // Función para obtener gramos de Pie de MM dentro de la MM Blanca/Integral
+  function pieDentroDeMMDia(diaIdx, idsMMSet) {
+    let totalPie = 0;
+    Object.entries(App.planSemana).forEach(([rid, cant]) => {
+      const unidades = cant[diaIdx] || 0;
+      if (!unidades) return;
+      const receta = App.recetas.find(r => r.ID_receta === rid);
+      if (!receta) return;
+      let ingredientes = [];
+      try { ingredientes = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
+      const porciones = parseInt(receta.porciones_base) || 1;
+      const factor = unidades / porciones;
+      // Para cada ingrediente que sea MM Blanca/Integral
+      ingredientes.forEach(ing => {
+        if (!idsMMSet.includes(ing.id)) return;
+        const grMM = (parseFloat(ing.gramos) || 0) * factor;
+        // Buscar receta de MM y dentro de ella el Pie de MM
+        const recetaMM = App.recetas.find(r => r.nombre === ing.nombre || r.ID_receta === ing.id);
+        if (recetaMM) {
+          let ingsMM = [];
+          try { ingsMM = JSON.parse(recetaMM.ingredientes_JSON || '[]'); } catch(e) {}
+          const pesoBaseMM = ingsMM.reduce((s, i) => s + (parseFloat(i.gramos) || 0), 0);
+          if (pesoBaseMM > 0) {
+            ingsMM.forEach(imgMM => {
+              if (idsPieMM.includes(imgMM.id) || imgMM.nombre?.toLowerCase().includes('pie de mm')) {
+                const proporcion = (parseFloat(imgMM.gramos) || 0) / pesoBaseMM;
+                totalPie += grMM * proporcion;
+              }
+            });
+          }
+        } else {
+          // Fallback: usar desglose de config si no hay receta
+          totalPie += grMM * ((pieCfg.mm_madura_pct || 20) / (100 + (pieCfg.mm_madura_pct || 20) + (pieCfg.agua_pct || 90)));
+        }
+      });
+    });
+    return totalPie;
+  }
+
+  // Si hay sub receta Pie de MM definida, usar cálculo por ingrediente
+  // Si no, usar cálculo anterior (gramos totales de MM)
+  const usarPieSR = idsPieMM.length > 0;
+
+  const mmBlancaCubiertos = usarPieSR
+    ? diasCubiertos.reduce((s, d) => s + pieDentroDeMMDia(d, idsMMBlanca), 0)
+    : diasCubiertos.reduce((s, d) => s + mmNecesariaDia(d, idsMMBlanca), 0);
+  const mmBlancaSiguiente = usarPieSR
+    ? diasSiguientePeriodo.reduce((s, d) => s + pieDentroDeMMDia(d, idsMMBlanca), 0)
+    : diasSiguientePeriodo.reduce((s, d) => s + mmNecesariaDia(d, idsMMBlanca), 0);
   const reservaBlanca = mmBlancaSiguiente * (pieCfg.reserva_pct / 100);
   const pieBlancaTotal = mmBlancaCubiertos + reservaBlanca;
 
-  const mmIntegralCubiertos = diasCubiertos.reduce((s, d) => s + mmNecesariaDia(d, idsMMIntegral), 0);
-  const mmIntegralSiguiente = diasSiguientePeriodo.reduce((s, d) => s + mmNecesariaDia(d, idsMMIntegral), 0);
+  const mmIntegralCubiertos = usarPieSR
+    ? diasCubiertos.reduce((s, d) => s + pieDentroDeMMDia(d, idsMMIntegral), 0)
+    : diasCubiertos.reduce((s, d) => s + mmNecesariaDia(d, idsMMIntegral), 0);
+  const mmIntegralSiguiente = usarPieSR
+    ? diasSiguientePeriodo.reduce((s, d) => s + pieDentroDeMMDia(d, idsMMIntegral), 0)
+    : diasSiguientePeriodo.reduce((s, d) => s + mmNecesariaDia(d, idsMMIntegral), 0);
   const reservaIntegral = mmIntegralSiguiente * (pieCfg.reserva_pct / 100);
   const pieIntegralTotal = mmIntegralCubiertos + reservaIntegral;
 
