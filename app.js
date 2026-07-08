@@ -344,7 +344,7 @@ function navegarA(vistaId) {
   switch(vistaId) {
     case 'nueva-receta':    renderVistaFormReceta(null, 'receta'); break;
     case 'mis-recetas':     renderVistaMisRecetas(); cargarAvisos(); break;
-    case 'planificacion':   renderVistaPlanificacion(); break;
+    case 'planificacion':   cargarPlanSemana().then(() => renderVistaPlanificacion()); break;
     case 'recetas-del-dia': renderVistaRecetasDelDia(); cargarAvisos(); break;
     case 'maestro':         renderVistaMaestro(); break;
     case 'aprobaciones':    renderVistaAprobaciones(); break;
@@ -391,9 +391,10 @@ async function cargarPlanSemana() {
   const semana  = obtenerSemanaActual();
   const claveLS = `fen_plan_${App.areaCodigo}_${semana}`;
 
-  // Fuente principal: Sheet (compartido entre todos los dispositivos)
+  // Fuente principal: Sheet (siempre fresco, no usar caché)
   try {
     const hoja     = FEN.AREAS[App.areaCodigo].hoja_plan;
+    Cache.invalidar(hoja); // Forzar recarga desde Sheet
     const datos    = await leerHoja(hoja);
     const diasCols = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo'];
     const planSheet = {};
@@ -2946,10 +2947,16 @@ function generarId(areaCodigo) {
 }
 
 function obtenerSemanaActual() {
-  const now   = new Date();
-  const start = new Date(now.getFullYear(), 0, 1);
-  const week  = Math.ceil(((now - start) / 86400000 + start.getDay() + 1) / 7);
-  return `${now.getFullYear()}-W${String(week).padStart(2,'0')}`;
+  // ISO 8601 week number — robusto con zona horaria
+  // Usa fecha local del dispositivo (no UTC) para evitar cambios de semana a medianoche
+  const now = new Date();
+  // Ajustar al jueves de la misma semana ISO (semana empieza en lunes)
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dayNum = d.getDay() || 7; // 1=Lun, 7=Dom
+  d.setDate(d.getDate() + 4 - dayNum); // jueves de esta semana
+  const yearStart = new Date(d.getFullYear(), 0, 1);
+  const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+  return `${d.getFullYear()}-W${String(weekNo).padStart(2,'0')}`;
 }
 
 function mostrarLoading(msg = 'Cargando...') {
