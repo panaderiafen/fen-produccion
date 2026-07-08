@@ -2302,7 +2302,7 @@ async function guardarConsolidadoAhora(btn) {
   bloquearBtn(btn, 'Guardando...');
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'guardar_consolidado' }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
     const data = await res.json();
     if (data.ok) {
       toast('Consolidado guardado');
@@ -2311,7 +2311,18 @@ async function guardarConsolidadoAhora(btn) {
       toast('Error: ' + data.msg);
     }
   } catch(e) {
-    toast('Error de conexión');
+    // Fallback POST
+    try {
+      await fetch(FEN.WEBAPP_URL, {
+        method: 'POST', mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ accion: 'guardar_consolidado' })
+      });
+      toast('Consolidado guardado');
+      setTimeout(() => cargarConsolidado(), 2000);
+    } catch(e2) {
+      toast('Error de conexión');
+    }
   }
   desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar semana actual', true);
 }
