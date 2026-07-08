@@ -166,6 +166,14 @@ function actualizarTopbarAdmin() {
   `;
 }
 
+// ── GET FORZADO PARA OPERACIONES CRÍTICAS ────────────────────
+async function getSheet(accion, datos) {
+  const body = JSON.stringify({ accion, ...datos });
+  const payload = encodeURIComponent(body);
+  const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
+  return await res.json();
+}
+
 // ── SISTEMA DE AVISOS ────────────────────────────────────────
 let _avisosCache = [];
 let _avisosLeidos = new Set(JSON.parse(localStorage.getItem('fen_avisos_leidos') || '[]'));
@@ -2570,8 +2578,9 @@ async function confirmarAsignarMP() {
 
   if (!mpExistId) { toast('Selecciona una MP existente'); return; }
 
-  // 1. Marcar solicitud como reemplazada (nuevo estado)
-  await escribirEnSheet('editar_mp', { ID_MP: mpSolicitudId, campo: 'estado', valor: 'reemplazada' });
+  // 1. Marcar solicitud como reemplazada
+  const r1 = await getSheet('editar_mp', { ID_MP: mpSolicitudId, campo: 'estado', valor: 'reemplazada' });
+  console.log('[fën] marcar reemplazada:', r1);
 
   // 2. Habilitar el área en la MP existente
   const mpExist = App.materiasPrimas.find(m => m.ID_MP === mpExistId);
@@ -2579,9 +2588,10 @@ async function confirmarAsignarMP() {
     const areasActuales = (mpExist.areas_habilitadas || '').split(',').map(a => a.trim()).filter(Boolean);
     if (!areasActuales.includes(areaCode)) {
       areasActuales.push(areaCode);
-      await escribirEnSheet('editar_mp', { ID_MP: mpExistId, campo: 'areas_habilitadas', valor: areasActuales.join(',') });
-      // Actualizar local
-      mpExist.areas_habilitadas = areasActuales.join(',');
+      const nuevasAreas = areasActuales.join(',');
+      const r2 = await getSheet('editar_mp', { ID_MP: mpExistId, campo: 'areas_habilitadas', valor: nuevasAreas });
+      console.log('[fën] habilitar area:', r2);
+      mpExist.areas_habilitadas = nuevasAreas;
     }
   }
 
