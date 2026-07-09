@@ -2737,7 +2737,7 @@ function renderPreElabDia(diaIdx) {
                 <summary style="font-size:10px;color:var(--txt3);cursor:pointer;list-style:none">
                   <i class="ti ti-chevron-down" style="font-size:10px"></i> Ver ingredientes
                 </summary>
-                <div style="padding:4px 0 0 8px">
+                <div id="ing-tanda-${id}-${i}" style="padding:4px 0 0 8px">
                   ${ings.map(ing => `<div style="font-size:11px;color:var(--txt2);padding:2px 0">
                     ${ing.nombre}: <strong>${Math.round((parseFloat(ing.gramos)||0)*n)}g</strong>
                   </div>`).join('')}
@@ -2806,22 +2806,24 @@ function renderPreElabDia(diaIdx) {
         <div style="display:flex;gap:16px;flex-wrap:wrap">
           <div>
             <div style="font-size:11px;color:var(--txt3);margin-bottom:4px">Porcionados</div>
-            <div style="display:flex;align-items:center;gap:8px">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <input type="number" min="0" value="${empPorcionados}" id="emp-porcionados"
                 style="width:64px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:14px;font-family:'DM Mono',monospace;text-align:center"
                 oninput="actualizarEmpastes(${diaIdx})">
               <span style="font-size:11px">/ ${totalEmpastes}</span>
               <span style="font-size:11px;font-weight:600;color:${estadoColor(empPorEstado)}" id="emp-por-estado">${estadoLabel(empPorEstado)}</span>
+              ${empPorcionados > totalEmpastes ? `<span style="font-size:11px;color:#2E7D32;font-weight:600">+${empPorcionados - totalEmpastes} para otro día</span>` : ''}
             </div>
           </div>
           <div>
             <div style="font-size:11px;color:var(--txt3);margin-bottom:4px">Estirados</div>
-            <div style="display:flex;align-items:center;gap:8px">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <input type="number" min="0" value="${empEstirados}" id="emp-estirados"
                 style="width:64px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:14px;font-family:'DM Mono',monospace;text-align:center"
                 oninput="actualizarEmpastes(${diaIdx})">
               <span style="font-size:11px">/ ${totalEmpastes}</span>
               <span style="font-size:11px;font-weight:600;color:${estadoColor(empEstEstado)}" id="emp-est-estado">${estadoLabel(empEstEstado)}</span>
+              ${empEstirados > totalEmpastes ? `<span style="font-size:11px;color:#2E7D32;font-weight:600">+${empEstirados - totalEmpastes} para otro día</span>` : ''}
             </div>
           </div>
         </div>
@@ -2876,6 +2878,11 @@ function actualizarEmpastes(diaIdx) {
   const spEst = document.getElementById('emp-est-estado');
   if (spPor) { spPor.textContent = lbl(por); spPor.style.color = col(por); }
   if (spEst) { spEst.textContent = lbl(est); spEst.style.color = col(est); }
+  // Show extras
+  const spPorExtra = document.getElementById('emp-por-extra');
+  const spEstExtra = document.getElementById('emp-est-extra');
+  if (spPorExtra) { spPorExtra.textContent = por > total ? `+${por-total} para otro día` : ''; }
+  if (spEstExtra) { spEstExtra.textContent = est > total ? `+${est-total} para otro día` : ''; }
 }
 
 function agregarTandaPreElab(id, diaIdx) {
@@ -2902,26 +2909,24 @@ function actualizarTandaPreElab(id, diaIdx, idx, valor) {
   if (!tandas) return;
   tandas[idx] = parseInt(valor) || 0;
   localStorage.setItem(clave, JSON.stringify(tandas));
-  // Actualizar ingredientes de esta tanda en tiempo real
+
+  // Actualizar ingredientes usando id de elemento directo (sin selectores con caracteres especiales)
+  const elId = `ing-tanda-${id}-${idx}`;
+  const ingDiv = document.getElementById(elId);
+  if (!ingDiv) return;
+
   const mpId = id.replace('_poolish','').replace('_masa','');
-  const receta = App.recetas.find(r => {
-    const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
-    return mp && r.nombre === mp.nombre && r.estado === 'consolidada';
-  });
+  const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
+  if (!mp) return;
+  const receta = App.recetas.find(r => r.nombre === mp.nombre && r.estado === 'consolidada');
   if (!receta) return;
   let ings = []; try { ings = JSON.parse(receta.ingredientes_JSON||'[]'); } catch(e) {}
   const n = parseInt(valor) || 0;
-  const detailDiv = document.querySelector(`#pre-tarea-${id}_tanda_${idx} details`);
-  if (detailDiv) {
-    const content2 = detailDiv.querySelector('div');
-    if (content2) {
-      content2.innerHTML = ings.map(ing =>
-        `<div style="font-size:11px;color:var(--txt2);padding:2px 0">
-          ${ing.nombre}: <strong>${Math.round((parseFloat(ing.gramos)||0)*n)}g</strong>
-        </div>`
-      ).join('');
-    }
-  }
+  ingDiv.innerHTML = ings.map(ing =>
+    `<div style="font-size:11px;color:var(--txt2);padding:2px 0">
+      ${ing.nombre}: <strong>${Math.round((parseFloat(ing.gramos)||0)*n)}g</strong>
+    </div>`
+  ).join('');
 }
 
 function togglePreTarea(id, diaIdx, checked) {
@@ -3058,6 +3063,8 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
               <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">A descongelar</th>
               <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">A formar hoy</th>
               <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">B2B</th>
+              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">B2C BA</th>
+              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">B2C Ain</th>
               <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">A hornear</th>
             </tr>
           </thead>
@@ -3087,6 +3094,16 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
                 </td>
                 <td style="text-align:center;padding:8px">
                   <input type="number" min="0" value="${b2bVal}" data-prod="${p.id}" data-tipo="b2b"
+                    style="width:60px;text-align:center;padding:4px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace"
+                    oninput="actualizarStockCirculante(this,${diaIdx})">
+                </td>
+                <td style="text-align:center;padding:8px">
+                  <input type="number" min="0" value="${parseInt(localStorage.getItem(`fen_bol_b2c_ba_${obtenerSemanaActual()}_${diaIdx}_${p.id}`))||0}" data-prod="${p.id}" data-tipo="b2c_ba"
+                    style="width:60px;text-align:center;padding:4px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace"
+                    oninput="actualizarStockCirculante(this,${diaIdx})">
+                </td>
+                <td style="text-align:center;padding:8px">
+                  <input type="number" min="0" value="${parseInt(localStorage.getItem(`fen_bol_b2c_ain_${obtenerSemanaActual()}_${diaIdx}_${p.id}`))||0}" data-prod="${p.id}" data-tipo="b2c_ain"
                     style="width:60px;text-align:center;padding:4px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace"
                     oninput="actualizarStockCirculante(this,${diaIdx})">
                 </td>
@@ -3154,8 +3171,10 @@ function actualizarStockCirculante(input, diaIdx) {
   const semana = obtenerSemanaActual();
 
   // Guardar en localStorage
-  if (tipo === 'stock') localStorage.setItem(`fen_bol_stock_${semana}_${diaIdx}_${prodId}`, val);
-  if (tipo === 'b2b')   localStorage.setItem(`fen_bol_b2b_${semana}_${diaIdx}_${prodId}`, val);
+  if (tipo === 'stock')  localStorage.setItem(`fen_bol_stock_${semana}_${diaIdx}_${prodId}`, val);
+  if (tipo === 'b2b')    localStorage.setItem(`fen_bol_b2b_${semana}_${diaIdx}_${prodId}`, val);
+  if (tipo === 'b2c_ba') localStorage.setItem(`fen_bol_b2c_ba_${semana}_${diaIdx}_${prodId}`, val);
+  if (tipo === 'b2c_ain')localStorage.setItem(`fen_bol_b2c_ain_${semana}_${diaIdx}_${prodId}`, val);
 
   // Recalcular fila
   const row = input.closest('tr');
