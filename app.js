@@ -287,6 +287,9 @@ function renderSidebar() {
       items.push({ id: 'resumen-semanal',     icon: 'ti-chart-grid-dots', label: 'Resumen semanal' });
       items.push({ id: 'consolidado-mensual', icon: 'ti-calendar-stats',  label: 'Consolidado mensual' });
     }
+    if (App.areaCodigo === 'BOL') {
+      items.push({ id: 'pre-elaboraciones', icon: 'ti-clock-play', label: 'Pre-elaboraciones' });
+    }
     if (App.areaCodigo === 'CAF') {
       items.push({ id: 'stock-caf', icon: 'ti-package', label: 'Stock materias primas' });
     }
@@ -355,6 +358,7 @@ function navegarA(vistaId) {
     case 'resumen-semanal':     renderVistaResumenSemanal(); break;
     case 'consolidado-mensual': renderVistaConsolidado();    break;
     case 'stock-caf':           renderVistaStockCAF();        break;
+    case 'pre-elaboraciones':   renderVistaPreElaboraciones(); break;
     default: mostrarVista('empty');
   }
 }
@@ -2605,6 +2609,214 @@ async function guardarPlanMasasBOL(btn) {
   desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan masas', true);
 }
 
+// ── BOL: PRE-ELABORACIONES ───────────────────────────────────
+async function renderVistaPreElaboraciones() {
+  const vista = document.getElementById('vista-pre-elaboraciones');
+  if (!vista) return;
+  mostrarVista('pre-elaboraciones');
+
+  const diasNombres = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+  const hoy = new Date().getDay();
+  const diaIdx = hoy === 0 ? 6 : hoy - 1;
+
+  vista.innerHTML = `
+    <div class="avisos-container" style="margin-bottom:12px"></div>
+    <div class="vista-header">
+      <div>
+        <div class="vista-eyebrow">Bollería</div>
+        <h1 class="vista-titulo">Pre-elaboraciones</h1>
+      </div>
+    </div>
+    <div class="dia-selector-wrap">
+      ${diasNombres.map((d,i) => `
+        <button class="dia-btn ${i===diaIdx?'dia-btn-activo':''}"
+          onclick="cambiarDiaPreElab(${i},this)">
+          ${d}
+        </button>`).join('')}
+    </div>
+    <div id="contenedor-pre-elab"></div>
+  `;
+
+  renderPreElabDia(diaIdx);
+}
+
+function cambiarDiaPreElab(diaIdx, btn) {
+  document.querySelectorAll('.dia-btn').forEach(b => b.classList.remove('dia-btn-activo'));
+  btn.classList.add('dia-btn-activo');
+  renderPreElabDia(diaIdx);
+}
+
+function renderPreElabDia(diaIdx) {
+  const contenedor = document.getElementById('contenedor-pre-elab');
+  if (!contenedor) return;
+
+  const diasNombres = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+  const diaSiguiente = (diaIdx + 1) % 7;
+  const cfg = cargarConfigSubrecetas();
+  const semana = obtenerSemanaActual();
+
+  // Masas planificadas para el día SIGUIENTE
+  const masasBase = App.materiasPrimas.filter(m => {
+    const esSR = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
+    const nombre = (m.nombre || '').toLowerCase();
+    return esSR && nombre.includes('masa') && !nombre.includes('madre') &&
+           !nombre.includes('poolish') &&
+           (!m.areas_habilitadas || m.areas_habilitadas.includes('BOL'));
+  });
+
+  const poolishMPs = App.materiasPrimas.filter(m => {
+    const esSR = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
+    return esSR && (m.nombre||'').toLowerCase().includes('poolish') &&
+           (!m.areas_habilitadas || m.areas_habilitadas.includes('BOL'));
+  });
+
+  const masasSiguiente = masasBase.map(m => ({
+    mp: m,
+    cantidad: (_planMasasBOL[m.ID_MP] || [])[diaSiguiente] || 0,
+    receta: App.recetas.find(r => r.nombre === m.nombre && r.estado === 'consolidada')
+  })).filter(x => x.cantidad > 0);
+
+  const poolishSiguiente = poolishMPs.map(m => ({
+    mp: m,
+    cantidad: (_planMasasBOL[masasBase[0]?.ID_MP] || [])[diaSiguiente] || 0,
+    receta: App.recetas.find(r => r.nombre === m.nombre && r.estado === 'consolidada')
+  })).filter(x => x.cantidad > 0);
+
+  // Productos del día siguiente para calcular empastes
+  const productosSiguiente = Object.entries(App.planSemana)
+    .filter(([_, cant]) => (cant[diaSiguiente] || 0) > 0)
+    .map(([rid, cant]) => ({
+      receta: App.recetas.find(r => r.ID_receta === rid),
+      unidades: cant[diaSiguiente]
+    }))
+    .filter(x => x.receta && x.receta.tipo_receta !== 'sub_receta');
+
+  const mantPorEmpaste = cfg.bol?.mantequilla_por_empaste || 250;
+  let totalEmpastes = 0;
+  productosSiguiente.forEach(({ receta: r, unidades }) => {
+    let ings = [];
+    try { ings = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+    const porciones = parseInt(r.porciones_base) || 1;
+    ings.forEach(ing => {
+      if ((ing.nombre||'').toLowerCase().includes('empaste')) {
+        totalEmpastes += Math.ceil((parseFloat(ing.unidades)||1) / porciones * unidades);
+      }
+    });
+  });
+
+  const getTareaCheck = (id) => {
+    try { return localStorage.getItem(`fen_bol_pre_${semana}_${diaIdx}_${id}`) === '1'; } catch(e) { return false; }
+  };
+  const setTareaCheck = (id, v) => {
+    try { localStorage.setItem(`fen_bol_pre_${semana}_${diaIdx}_${id}`, v?'1':'0'); } catch(e) {}
+  };
+
+  const renderPreTarea = (id, hora, icono, titulo, detalle, subtareas=[]) => {
+    const done = getTareaCheck(id);
+    return `
+      <div class="bol-tarea ${done?'bol-tarea-done':''}" id="pre-tarea-${id}">
+        <label class="rdc-check-wrap">
+          <input type="checkbox" ${done?'checked':''}
+            onchange="togglePreTarea('${id}',${diaIdx},this.checked)">
+          <span class="rdc-check-box"></span>
+        </label>
+        <input type="time" value="${hora}"
+          style="border:none;background:none;font-family:'DM Mono',monospace;font-size:12px;color:var(--txt3);width:70px;cursor:pointer;padding:0;min-width:70px">
+        <span style="font-size:16px;flex-shrink:0">${icono}</span>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:600;${done?'text-decoration:line-through;color:var(--txt3)':''}">${titulo}</div>
+          <div style="font-size:11px;color:var(--txt3)">${detalle}</div>
+          ${subtareas.length ? subtareas.map((st,i) => {
+            const stDone = getTareaCheck(id+'_sub_'+i);
+            return `<div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding:4px 0;border-top:1px solid var(--border)">
+              <label class="rdc-check-wrap" style="transform:scale(.85)">
+                <input type="checkbox" ${stDone?'checked':''}
+                  onchange="togglePreTarea('${id}_sub_${i}',${diaIdx},this.checked)">
+                <span class="rdc-check-box"></span>
+              </label>
+              <span style="font-size:12px;${stDone?'text-decoration:line-through;color:var(--txt3)':''}">${st}</span>
+            </div>`;
+          }).join('') : ''}
+        </div>
+      </div>`;
+  };
+
+  const noPlanSiguiente = masasSiguiente.length === 0 && productosSiguiente.length === 0;
+
+  contenedor.innerHTML = `
+    ${noPlanSiguiente ? `
+      <div class="empty-state" style="height:200px">
+        <i class="ti ti-moon"></i>
+        <h2>Sin plan para ${diasNombres[diaSiguiente]}</h2>
+        <p>No hay productos ni masas planificadas para mañana.</p>
+      </div>` : `
+
+    <!-- AM: Poolish -->
+    ${poolishSiguiente.length ? `
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-head" style="background:#F3E5F5;color:#4A148C">
+        <i class="ti ti-droplet"></i> ${diasNombres[diaIdx]} AM — Poolish (12h antes)
+      </div>
+      <div style="padding:8px 0">
+        ${poolishSiguiente.map(({ mp, cantidad, receta }) => {
+          let ings = [];
+          if (receta) try { ings = JSON.parse(receta.ingredientes_JSON||'[]'); } catch(e) {}
+          const detalle = ings.length
+            ? ings.map(i => `${i.nombre}: ${formatearGramos((parseFloat(i.gramos)||0)*cantidad,true)}`).join(' · ')
+            : `${cantidad} tanda${cantidad>1?'s':''}`;
+          return renderPreTarea(`poolish_${mp.ID_MP}`, '08:00', '💧', `${mp.nombre} — ${cantidad} tanda${cantidad>1?'s':''}`, detalle);
+        }).join('')}
+      </div>
+    </div>` : ''}
+
+    <!-- PM: Elaboraciones previas -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-head" style="background:#E8F5E9;color:#1B5E20">
+        <i class="ti ti-sun-low"></i> ${diasNombres[diaIdx]} PM — Para ${diasNombres[diaSiguiente]}
+      </div>
+      <div style="padding:8px 0">
+
+        ${totalEmpastes > 0 ? `
+        ${renderPreTarea('porcionar_empaste', '14:00', '🧈',
+          `Porcionar empastes — ${totalEmpastes} empaste${totalEmpastes>1?'s':''}`,
+          `${totalEmpastes * mantPorEmpaste}g mantequilla total`)}
+        ${renderPreTarea('estirar_empaste', '14:30', '📏',
+          `Estirar empastes — ${totalEmpastes} empaste${totalEmpastes>1?'s':''}`,
+          'Laminar mantequilla en masa', ['Porcionado', 'Estirado'])}` : ''}
+
+        ${masasSiguiente.map(({ mp, cantidad, receta }) => {
+          let ings = [];
+          if (receta) try { ings = JSON.parse(receta.ingredientes_JSON||'[]'); } catch(e) {}
+          const detalle = ings.length
+            ? ings.map(i => `${i.nombre}: ${formatearGramos((parseFloat(i.gramos)||0)*cantidad,true)}`).join(' · ')
+            : `${cantidad} masa${cantidad>1?'s':''}`;
+          return renderPreTarea(`amasijo_${mp.ID_MP}`, '15:00', '🌀',
+            `Elaborar ${mp.nombre} — ${cantidad} masa${cantidad>1?'s':''}`, detalle);
+        }).join('')}
+
+        ${renderPreTarea('agregar_tarea_manual_pre', '16:00', '📝',
+          'Agregar tarea manual', '')}
+
+      </div>
+      <div style="padding:10px 16px;border-top:1px solid var(--border)">
+        <button class="btn-secundario" style="font-size:12px;width:100%"
+          onclick="abrirModalTareaManualBOL(${diaIdx}, 'pre')">
+          <i class="ti ti-plus"></i> Agregar tarea manual
+        </button>
+      </div>
+    </div>
+  `}`;
+
+  renderAvisos();
+}
+
+function togglePreTarea(id, diaIdx, checked) {
+  const semana = obtenerSemanaActual();
+  localStorage.setItem(`fen_bol_pre_${semana}_${diaIdx}_${id}`, checked?'1':'0');
+  const card = document.getElementById('pre-tarea-' + id);
+  if (card) card.classList.toggle('bol-tarea-done', checked);
+}
+
 // ── BOL: PRODUCCIÓN DEL DÍA ──────────────────────────────────
 async function renderProduccionBOL(diaIdx, recetasHoy) {
   const contenedor = document.getElementById('contenedor-dia');
@@ -2667,14 +2879,7 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
     { id: 'revisar_b2b', hora: '06:30', turno: 'am', icono: '📋', titulo: 'Revisar pedidos B2B', detalle: 'Actualizar cantidades a hornear' },
     { id: 'estirar_paston', hora: '08:00', turno: 'am', icono: '🧈', titulo: 'Estirar pastón', detalle: 'Laminar y estirar masas descongeladas' },
     { id: 'formar_productos', hora: '09:00', turno: 'am', icono: '✂️', titulo: 'Formar productos', detalle: 'Cortar, formar y preparar para hornear o congelar' },
-    ...Array.from({length: tandasNecesarias}, (_, i) => ({
-      id: `hornear_tanda_${i}`,
-      hora: `${10 + i}:00`,
-      turno: 'am',
-      icono: '🔥',
-      titulo: `Hornear — Tanda ${i+1}`,
-      detalle: `Hasta ${Math.min(capacidadHorno, totalHornear - i*capacidadHorno)} uni · ${capacidadHorno} cap/tanda`
-    }))
+    // Tarea de horneado se agrega manualmente según disponibilidad real del horno
   ];
 
   // Cargar tareas manuales del localStorage
@@ -2706,7 +2911,7 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
           <span class="rdc-check-box"></span>
         </label>
         <input type="time" value="${t.hora}"
-          style="border:none;background:none;font-family:'DM Mono',monospace;font-size:12px;color:var(--txt3);width:52px;cursor:pointer;padding:0"
+          style="border:none;background:none;font-family:'DM Mono',monospace;font-size:12px;color:var(--txt3);width:70px;cursor:pointer;padding:0;min-width:70px"
           onchange="actualizarHoraTarea('${t.id}',this.value,'${t.turno==='anterior_pm'?'anterior_pm':'am'}')">
         <span style="font-size:16px;flex-shrink:0">${t.icono}</span>
         <div style="flex:1">
