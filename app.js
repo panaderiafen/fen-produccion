@@ -282,14 +282,16 @@ function renderSidebar() {
       { id: 'maestro',           icon: 'ti-book',           label: 'Maestro de recetas' },
     ];
     if (App.areaCodigo === 'CAF') items.splice(2, 2);
-    // Secciones extra de gestión avanzada
+    // Pre-elaboraciones BOL — va antes de recetas del día en el push
+    if (App.areaCodigo === 'BOL') {
+      // Insert pre-elaboraciones after plan semanal (index 2), before recetas del dia (index 3)
+      items.splice(3, 0, { id: 'pre-elaboraciones', icon: 'ti-clock-play', label: 'Pre-elaboraciones' });
+    }
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL') {
       items.push({ id: 'resumen-semanal',     icon: 'ti-chart-grid-dots', label: 'Resumen semanal' });
       items.push({ id: 'consolidado-mensual', icon: 'ti-calendar-stats',  label: 'Consolidado mensual' });
     }
-    if (App.areaCodigo === 'BOL') {
-      items.push({ id: 'pre-elaboraciones', icon: 'ti-clock-play', label: 'Pre-elaboraciones' });
-    }
+
     if (App.areaCodigo === 'CAF') {
       items.push({ id: 'stock-caf', icon: 'ti-package', label: 'Stock materias primas' });
     }
@@ -2654,14 +2656,13 @@ function renderPreElabDia(diaIdx) {
   const diaSiguiente = (diaIdx + 1) % 7;
   const cfg = cargarConfigSubrecetas();
   const semana = obtenerSemanaActual();
+  const maxPorTanda = cfg.bol?.amasadora_max_por_tanda || 16;
 
-  // Masas planificadas para el día SIGUIENTE
   const masasBase = App.materiasPrimas.filter(m => {
     const esSR = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
     const nombre = (m.nombre || '').toLowerCase();
     return esSR && nombre.includes('masa') && !nombre.includes('madre') &&
-           !nombre.includes('poolish') &&
-           (!m.areas_habilitadas || m.areas_habilitadas.includes('BOL'));
+           !nombre.includes('poolish') && (!m.areas_habilitadas || m.areas_habilitadas.includes('BOL'));
   });
 
   const poolishMPs = App.materiasPrimas.filter(m => {
@@ -2671,32 +2672,25 @@ function renderPreElabDia(diaIdx) {
   });
 
   const masasSiguiente = masasBase.map(m => ({
-    mp: m,
-    cantidad: (_planMasasBOL[m.ID_MP] || [])[diaSiguiente] || 0,
+    mp: m, cantidad: (_planMasasBOL[m.ID_MP] || [])[diaSiguiente] || 0,
     receta: App.recetas.find(r => r.nombre === m.nombre && r.estado === 'consolidada')
   })).filter(x => x.cantidad > 0);
 
   const poolishSiguiente = poolishMPs.map(m => ({
-    mp: m,
-    cantidad: (_planMasasBOL[masasBase[0]?.ID_MP] || [])[diaSiguiente] || 0,
+    mp: m, cantidad: (_planMasasBOL[masasBase[0]?.ID_MP] || [])[diaSiguiente] || 0,
     receta: App.recetas.find(r => r.nombre === m.nombre && r.estado === 'consolidada')
   })).filter(x => x.cantidad > 0);
 
-  // Productos del día siguiente para calcular empastes
-  const productosSiguiente = Object.entries(App.planSemana)
-    .filter(([_, cant]) => (cant[diaSiguiente] || 0) > 0)
-    .map(([rid, cant]) => ({
-      receta: App.recetas.find(r => r.ID_receta === rid),
-      unidades: cant[diaSiguiente]
-    }))
-    .filter(x => x.receta && x.receta.tipo_receta !== 'sub_receta');
-
-  const mantPorEmpaste = cfg.bol?.mantequilla_por_empaste || 250;
+  // Calcular empastes desde plan de producción del día siguiente
   let totalEmpastes = 0;
-  productosSiguiente.forEach(({ receta: r, unidades }) => {
+  Object.entries(App.planSemana).forEach(([rid, cant]) => {
+    const unidades = cant[diaSiguiente] || 0;
+    if (!unidades) return;
+    const receta = App.recetas.find(r => r.ID_receta === rid);
+    if (!receta) return;
     let ings = [];
-    try { ings = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
-    const porciones = parseInt(r.porciones_base) || 1;
+    try { ings = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
+    const porciones = parseInt(receta.porciones_base) || 1;
     ings.forEach(ing => {
       if ((ing.nombre||'').toLowerCase().includes('empaste')) {
         totalEmpastes += Math.ceil((parseFloat(ing.unidades)||1) / porciones * unidades);
@@ -2704,110 +2698,210 @@ function renderPreElabDia(diaIdx) {
     });
   });
 
-  const getTareaCheck = (id) => {
-    try { return localStorage.getItem(`fen_bol_pre_${semana}_${diaIdx}_${id}`) === '1'; } catch(e) { return false; }
-  };
-  const setTareaCheck = (id, v) => {
-    try { localStorage.setItem(`fen_bol_pre_${semana}_${diaIdx}_${id}`, v?'1':'0'); } catch(e) {}
-  };
+  const mantPorEmpaste = cfg.bol?.mantequilla_por_empaste || 250;
 
-  const renderPreTarea = (id, hora, icono, titulo, detalle, subtareas=[]) => {
-    const done = getTareaCheck(id);
+  // Helper: get/set check state
+  const getCheck = id => { try { return localStorage.getItem(`fen_bol_pre_${semana}_${diaIdx}_${id}`) === '1'; } catch(e) { return false; } };
+  const claveEmpPor = `fen_bol_emp_por_${semana}_${diaIdx}`;
+  const claveEmpEst = `fen_bol_emp_est_${semana}_${diaIdx}`;
+  const empPorcionados = parseInt(localStorage.getItem(claveEmpPor)) || 0;
+  const empEstirados   = parseInt(localStorage.getItem(claveEmpEst)) || 0;
+
+  // Helper: render tanda blocks for masa/poolish
+  const renderTandas = (id, cantidad, receta, prefix) => {
+    const claveTandas = `fen_bol_pre_tandas_${semana}_${diaIdx}_${id}`;
+    let tandas = (() => { try { return JSON.parse(localStorage.getItem(claveTandas)||'null'); } catch(e) { return null; } })();
+    if (!tandas) {
+      // Default: split evenly
+      tandas = [];
+      let resto = cantidad;
+      while (resto > 0) { const n = Math.min(resto, maxPorTanda); tandas.push(n); resto -= n; }
+    }
+
+    let ings = [];
+    if (receta) try { ings = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
+
     return `
-      <div class="bol-tarea ${done?'bol-tarea-done':''}" id="pre-tarea-${id}">
-        <label class="rdc-check-wrap">
-          <input type="checkbox" ${done?'checked':''}
-            onchange="togglePreTarea('${id}',${diaIdx},this.checked)">
-          <span class="rdc-check-box"></span>
-        </label>
-        <input type="time" value="${hora}"
-          style="border:none;background:none;font-family:'DM Mono',monospace;font-size:12px;color:var(--txt3);width:70px;cursor:pointer;padding:0;min-width:70px">
-        <span style="font-size:16px;flex-shrink:0">${icono}</span>
-        <div style="flex:1">
-          <div style="font-size:13px;font-weight:600;${done?'text-decoration:line-through;color:var(--txt3)':''}">${titulo}</div>
-          <div style="font-size:11px;color:var(--txt3)">${detalle}</div>
-          ${subtareas.length ? subtareas.map((st,i) => {
-            const stDone = getTareaCheck(id+'_sub_'+i);
-            return `<div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding:4px 0;border-top:1px solid var(--border)">
-              <label class="rdc-check-wrap" style="transform:scale(.85)">
-                <input type="checkbox" ${stDone?'checked':''}
-                  onchange="togglePreTarea('${id}_sub_${i}',${diaIdx},this.checked)">
-                <span class="rdc-check-box"></span>
-              </label>
-              <span style="font-size:12px;${stDone?'text-decoration:line-through;color:var(--txt3)':''}">${st}</span>
-            </div>`;
-          }).join('') : ''}
+      <div style="padding:4px 16px 8px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:11px;color:var(--txt3)">Dividir en tandas (máx ${maxPorTanda} por tanda):</span>
+          <button onclick="agregarTandaPreElab('${id}',${diaIdx})" class="btn-secundario" style="font-size:11px;padding:2px 8px">
+            <i class="ti ti-plus"></i> Tanda
+          </button>
+        </div>
+        <div id="tandas-pre-${id}">
+          ${tandas.map((n, i) => {
+            const done = getCheck(`${id}_tanda_${i}`);
+            const ingHtml = ings.length ? `
+              <details style="margin-top:4px">
+                <summary style="font-size:10px;color:var(--txt3);cursor:pointer;list-style:none">
+                  <i class="ti ti-chevron-down" style="font-size:10px"></i> Ver ingredientes
+                </summary>
+                <div style="padding:4px 0 0 8px">
+                  ${ings.map(ing => `<div style="font-size:11px;color:var(--txt2);padding:2px 0">
+                    ${ing.nombre}: <strong>${Math.round((parseFloat(ing.gramos)||0)*n)}g</strong>
+                  </div>`).join('')}
+                </div>
+              </details>` : '';
+            return `
+              <div class="bol-tarea ${done?'bol-tarea-done':''}" id="pre-tarea-${id}_tanda_${i}" style="padding:8px 0;border-bottom:1px solid var(--border)">
+                <label class="rdc-check-wrap">
+                  <input type="checkbox" ${done?'checked':''}
+                    onchange="togglePreTarea('${id}_tanda_${i}',${diaIdx},this.checked)">
+                  <span class="rdc-check-box"></span>
+                </label>
+                <div style="flex:1">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="font-size:13px;font-weight:600">Tanda ${i+1}</span>
+                    <input type="number" min="1" max="${maxPorTanda}" value="${n}"
+                      style="width:54px;padding:3px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace;text-align:center"
+                      oninput="actualizarTandaPreElab('${id}',${diaIdx},${i},this.value)">
+                    <span style="font-size:11px;color:var(--txt3)">masas</span>
+                    ${tandas.length > 1 ? `<button onclick="eliminarTandaPreElab('${id}',${diaIdx},${i})" style="background:none;border:none;color:var(--txt3);cursor:pointer;margin-left:auto"><i class="ti ti-x"></i></button>` : ''}
+                  </div>
+                  ${ingHtml}
+                </div>
+              </div>`;
+          }).join('')}
         </div>
       </div>`;
   };
 
-  const noPlanSiguiente = masasSiguiente.length === 0 && productosSiguiente.length === 0;
+  // Estado empastes
+  const empPorEstado = totalEmpastes === 0 ? '' : empPorcionados >= totalEmpastes ? 'completado' : empPorcionados > 0 ? 'parcial' : '';
+  const empEstEstado = totalEmpastes === 0 ? '' : empEstirados >= totalEmpastes ? 'completado' : empEstirados > 0 ? 'parcial' : '';
+  const estadoColor = e => e === 'completado' ? '#2E7D32' : e === 'parcial' ? '#F57C00' : 'var(--txt3)';
+  const estadoLabel = e => e === 'completado' ? '✓ Completado' : e === 'parcial' ? '◑ Parcial' : '';
 
-  contenedor.innerHTML = `
-    ${noPlanSiguiente ? `
-      <div class="empty-state" style="height:200px">
-        <i class="ti ti-moon"></i>
-        <h2>Sin plan para ${diasNombres[diaSiguiente]}</h2>
-        <p>No hay productos ni masas planificadas para mañana.</p>
-      </div>` : `
+  const noPlan = masasSiguiente.length === 0 && poolishSiguiente.length === 0 && totalEmpastes === 0;
 
-    <!-- AM: Poolish -->
+  contenedor.innerHTML = noPlan ? `
+    <div class="empty-state" style="height:200px">
+      <i class="ti ti-moon"></i>
+      <h2>Sin plan para ${diasNombres[diaSiguiente]}</h2>
+      <p>No hay productos ni masas planificadas para mañana.</p>
+    </div>` : `
+
     ${poolishSiguiente.length ? `
     <div class="card" style="margin-bottom:14px">
       <div class="card-head" style="background:#F3E5F5;color:#4A148C">
-        <i class="ti ti-droplet"></i> ${diasNombres[diaIdx]} AM — Poolish (12h antes)
+        <i class="ti ti-droplet"></i> ${diasNombres[diaIdx]} AM — Poolish (elaborar 12h antes)
+        <span style="margin-left:auto;font-size:11px;font-weight:400">${poolishSiguiente[0].cantidad} masas para ${diasNombres[diaSiguiente]}</span>
       </div>
-      <div style="padding:8px 0">
-        ${poolishSiguiente.map(({ mp, cantidad, receta }) => {
-          let ings = [];
-          if (receta) try { ings = JSON.parse(receta.ingredientes_JSON||'[]'); } catch(e) {}
-          const detalle = ings.length
-            ? ings.map(i => `${i.nombre}: ${formatearGramos((parseFloat(i.gramos)||0)*cantidad,true)}`).join(' · ')
-            : `${cantidad} tanda${cantidad>1?'s':''}`;
-          return renderPreTarea(`poolish_${mp.ID_MP}`, '08:00', '💧', `${mp.nombre} — ${cantidad} tanda${cantidad>1?'s':''}`, detalle);
-        }).join('')}
-      </div>
+      ${poolishSiguiente.map(({ mp, cantidad, receta }) =>
+        renderTandas(mp.ID_MP + '_poolish', cantidad, receta, 'poolish')
+      ).join('')}
     </div>` : ''}
 
-    <!-- PM: Elaboraciones previas -->
     <div class="card" style="margin-bottom:14px">
       <div class="card-head" style="background:#E8F5E9;color:#1B5E20">
         <i class="ti ti-sun-low"></i> ${diasNombres[diaIdx]} PM — Para ${diasNombres[diaSiguiente]}
       </div>
-      <div style="padding:8px 0">
 
-        ${totalEmpastes > 0 ? `
-        ${renderPreTarea('porcionar_empaste', '14:00', '🧈',
-          `Porcionar empastes — ${totalEmpastes} empaste${totalEmpastes>1?'s':''}`,
-          `${totalEmpastes * mantPorEmpaste}g mantequilla total`)}
-        ${renderPreTarea('estirar_empaste', '14:30', '📏',
-          `Estirar empastes — ${totalEmpastes} empaste${totalEmpastes>1?'s':''}`,
-          'Laminar mantequilla en masa', ['Porcionado', 'Estirado'])}` : ''}
+      ${totalEmpastes > 0 ? `
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">
+          🧈 Empastes — ${totalEmpastes} total (${totalEmpastes * mantPorEmpaste}g mantequilla)
+        </div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap">
+          <div>
+            <div style="font-size:11px;color:var(--txt3);margin-bottom:4px">Porcionados</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="number" min="0" value="${empPorcionados}" id="emp-porcionados"
+                style="width:64px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:14px;font-family:'DM Mono',monospace;text-align:center"
+                oninput="actualizarEmpastes(${diaIdx})">
+              <span style="font-size:11px">/ ${totalEmpastes}</span>
+              <span style="font-size:11px;font-weight:600;color:${estadoColor(empPorEstado)}" id="emp-por-estado">${estadoLabel(empPorEstado)}</span>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--txt3);margin-bottom:4px">Estirados</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="number" min="0" value="${empEstirados}" id="emp-estirados"
+                style="width:64px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:14px;font-family:'DM Mono',monospace;text-align:center"
+                oninput="actualizarEmpastes(${diaIdx})">
+              <span style="font-size:11px">/ ${totalEmpastes}</span>
+              <span style="font-size:11px;font-weight:600;color:${estadoColor(empEstEstado)}" id="emp-est-estado">${estadoLabel(empEstEstado)}</span>
+            </div>
+          </div>
+        </div>
+      </div>` : ''}
 
-        ${masasSiguiente.map(({ mp, cantidad, receta }) => {
-          let ings = [];
-          if (receta) try { ings = JSON.parse(receta.ingredientes_JSON||'[]'); } catch(e) {}
-          const detalle = ings.length
-            ? ings.map(i => `${i.nombre}: ${formatearGramos((parseFloat(i.gramos)||0)*cantidad,true)}`).join(' · ')
-            : `${cantidad} masa${cantidad>1?'s':''}`;
-          return renderPreTarea(`amasijo_${mp.ID_MP}`, '15:00', '🌀',
-            `Elaborar ${mp.nombre} — ${cantidad} masa${cantidad>1?'s':''}`, detalle);
-        }).join('')}
+      ${masasSiguiente.map(({ mp, cantidad, receta }) => `
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+        <div style="font-size:13px;font-weight:600;margin-bottom:6px">
+          🌀 Elaborar ${mp.nombre} — ${cantidad} masas
+        </div>
+        ${renderTandas(mp.ID_MP + '_masa', cantidad, receta, 'masa')}
+      </div>`).join('')}
 
-        ${renderPreTarea('agregar_tarea_manual_pre', '16:00', '📝',
-          'Agregar tarea manual', '')}
-
-      </div>
-      <div style="padding:10px 16px;border-top:1px solid var(--border)">
+      <div style="padding:10px 16px">
         <button class="btn-secundario" style="font-size:12px;width:100%"
-          onclick="abrirModalTareaManualBOL(${diaIdx}, 'pre')">
+          onclick="abrirModalTareaManualBOL(${diaIdx},'pre')">
           <i class="ti ti-plus"></i> Agregar tarea manual
         </button>
       </div>
     </div>
-  `}`;
+  `;
 
   renderAvisos();
+}
+
+function actualizarEmpastes(diaIdx) {
+  const semana = obtenerSemanaActual();
+  const por = parseInt(document.getElementById('emp-porcionados')?.value) || 0;
+  const est = parseInt(document.getElementById('emp-estirados')?.value) || 0;
+  localStorage.setItem(`fen_bol_emp_por_${semana}_${diaIdx}`, por);
+  localStorage.setItem(`fen_bol_emp_est_${semana}_${diaIdx}`, est);
+
+  // Calcular total empastes
+  let total = 0;
+  Object.entries(App.planSemana).forEach(([rid, cant]) => {
+    const diaSig = (diaIdx + 1) % 7;
+    const unidades = cant[diaSig] || 0;
+    if (!unidades) return;
+    const receta = App.recetas.find(r => r.ID_receta === rid);
+    if (!receta) return;
+    let ings = []; try { ings = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
+    const porciones = parseInt(receta.porciones_base) || 1;
+    ings.forEach(ing => {
+      if ((ing.nombre||'').toLowerCase().includes('empaste'))
+        total += Math.ceil((parseFloat(ing.unidades)||1) / porciones * unidades);
+    });
+  });
+
+  const col = v => v >= total ? '#2E7D32' : v > 0 ? '#F57C00' : 'var(--txt3)';
+  const lbl = v => v >= total ? '✓ Completado' : v > 0 ? '◑ Parcial' : '';
+  const spPor = document.getElementById('emp-por-estado');
+  const spEst = document.getElementById('emp-est-estado');
+  if (spPor) { spPor.textContent = lbl(por); spPor.style.color = col(por); }
+  if (spEst) { spEst.textContent = lbl(est); spEst.style.color = col(est); }
+}
+
+function agregarTandaPreElab(id, diaIdx) {
+  const clave = `fen_bol_pre_tandas_${obtenerSemanaActual()}_${diaIdx}_${id}`;
+  let tandas = (() => { try { return JSON.parse(localStorage.getItem(clave)||'null'); } catch(e) { return null; } })();
+  if (!tandas) tandas = [1];
+  else tandas.push(1);
+  localStorage.setItem(clave, JSON.stringify(tandas));
+  renderPreElabDia(diaIdx);
+}
+
+function eliminarTandaPreElab(id, diaIdx, idx) {
+  const clave = `fen_bol_pre_tandas_${obtenerSemanaActual()}_${diaIdx}_${id}`;
+  let tandas = (() => { try { return JSON.parse(localStorage.getItem(clave)||'null'); } catch(e) { return null; } })();
+  if (!tandas || tandas.length <= 1) return;
+  tandas.splice(idx, 1);
+  localStorage.setItem(clave, JSON.stringify(tandas));
+  renderPreElabDia(diaIdx);
+}
+
+function actualizarTandaPreElab(id, diaIdx, idx, valor) {
+  const clave = `fen_bol_pre_tandas_${obtenerSemanaActual()}_${diaIdx}_${id}`;
+  let tandas = (() => { try { return JSON.parse(localStorage.getItem(clave)||'null'); } catch(e) { return null; } })();
+  if (!tandas) return;
+  tandas[idx] = parseInt(valor) || 0;
+  localStorage.setItem(clave, JSON.stringify(tandas));
 }
 
 function togglePreTarea(id, diaIdx, checked) {
@@ -2816,6 +2910,7 @@ function togglePreTarea(id, diaIdx, checked) {
   const card = document.getElementById('pre-tarea-' + id);
   if (card) card.classList.toggle('bol-tarea-done', checked);
 }
+
 
 // ── BOL: PRODUCCIÓN DEL DÍA ──────────────────────────────────
 async function renderProduccionBOL(diaIdx, recetasHoy) {
