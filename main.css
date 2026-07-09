@@ -1368,3 +1368,18 @@ input, select, textarea { font-family: inherit; }
   margin-bottom: 8px;
 }
 .avisos-container:empty { display: none; }
+
+/* ── BOL TAREAS ──────────────────────────────────────────── */
+.bol-tarea {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  transition: opacity .2s, background .2s;
+}
+.bol-tarea:last-child { border-bottom: none; }
+.bol-tarea-done {
+  opacity: .5;
+  background: var(--bg);
+}
