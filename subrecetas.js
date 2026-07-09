@@ -132,7 +132,7 @@ function calcularElaboracionesDia(diaIdx) {
   // Para BOL: agregar ingredientes de masas a elaborar y empastes
   if (App.areaCodigo === 'BOL') {
     const cfg = cargarConfigSubrecetas();
-    const planMasas = cfg.bol?.plan_masas || {};
+    const planMasas = (typeof _planMasasBOL !== 'undefined' && Object.keys(_planMasasBOL).length) ? _planMasasBOL : (cfg.bol?.plan_masas || {});
     const mantPorEmpaste = cfg.bol?.mantequilla_por_empaste || 250;
     const masasBase = App.materiasPrimas.filter(m => {
       const esSubReceta = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
@@ -720,7 +720,7 @@ function calcularResumenSemanal() {
 
 function renderResumenSemanalBOL() {
   const cfg = cargarConfigSubrecetas();
-  const planMasas = cfg.bol?.plan_masas || {};
+  const planMasas = (typeof _planMasasBOL !== 'undefined' && Object.keys(_planMasasBOL).length) ? _planMasasBOL : (cfg.bol?.plan_masas || {});
   const mantPorEmpaste = cfg.bol?.mantequilla_por_empaste || 250;
   const diasNombres = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 
@@ -2081,7 +2081,7 @@ function guardarDescongData(clave, id, checked, cantidad) {
 function renderMasasElaborarBOL(diaIdx) {
   if (App.areaCodigo !== 'BOL') return '';
   const cfg = cargarConfigSubrecetas();
-  const planMasas = cfg.bol?.plan_masas || {};
+  const planMasas = (typeof _planMasasBOL !== 'undefined' && Object.keys(_planMasasBOL).length) ? _planMasasBOL : (cfg.bol?.plan_masas || {});
   const maxPorTanda = cfg.bol?.amasadora_max_por_tanda || 16;
   const masasBase = getMasasBase();
   const semana = obtenerSemanaActual();
