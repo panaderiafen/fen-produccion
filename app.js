@@ -2712,7 +2712,6 @@ function renderPreElabDia(diaIdx) {
     const claveTandas = `fen_bol_pre_tandas_${semana}_${diaIdx}_${id}`;
     let tandas = (() => { try { return JSON.parse(localStorage.getItem(claveTandas)||'null'); } catch(e) { return null; } })();
     if (!tandas) {
-      // Default: split evenly
       tandas = [];
       let resto = cantidad;
       while (resto > 0) { const n = Math.min(resto, maxPorTanda); tandas.push(n); resto -= n; }
@@ -2724,46 +2723,56 @@ function renderPreElabDia(diaIdx) {
     return `
       <div style="padding:4px 16px 8px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-          <span style="font-size:11px;color:var(--txt3)">Dividir en tandas (máx ${maxPorTanda} por tanda):</span>
-          <button onclick="agregarTandaPreElab('${id}',${diaIdx})" class="btn-secundario" style="font-size:11px;padding:2px 8px">
+          <span style="font-size:11px;color:var(--txt3)">Máx ${maxPorTanda} por tanda</span>
+          <button onclick="agregarTandaPreElab('${id}',${diaIdx})" class="btn-secundario" style="font-size:11px;padding:2px 8px;margin-left:auto">
             <i class="ti ti-plus"></i> Tanda
           </button>
         </div>
-        <div id="tandas-pre-${id}">
-          ${tandas.map((n, i) => {
-            const done = getCheck(`${id}_tanda_${i}`);
-            const ingHtml = ings.length ? `
-              <details style="margin-top:4px">
-                <summary style="font-size:10px;color:var(--txt3);cursor:pointer;list-style:none">
-                  <i class="ti ti-chevron-down" style="font-size:10px"></i> Ver ingredientes
-                </summary>
-                <div id="ing-tanda-${id}-${i}" style="padding:4px 0 0 8px">
-                  ${ings.map(ing => `<div style="font-size:11px;color:var(--txt2);padding:2px 0">
-                    ${ing.nombre}: <strong>${Math.round((parseFloat(ing.gramos)||0)*n)}g</strong>
-                  </div>`).join('')}
-                </div>
-              </details>` : '';
-            return `
-              <div class="bol-tarea ${done?'bol-tarea-done':''}" id="pre-tarea-${id}_tanda_${i}" style="padding:8px 0;border-bottom:1px solid var(--border)">
+        ${tandas.map((n, i) => {
+          const done = getCheck(`${id}_tanda_${i}`);
+          const ingRows = ings.map(ing => `
+            <div style="display:flex;justify-content:space-between;padding:2px 0;font-size:11px;color:var(--txt2)">
+              <span>${ing.nombre}</span>
+              <strong id="ing-${id}-${i}-${ing.id}">${Math.round((parseFloat(ing.gramos)||0)*n)}g</strong>
+            </div>`).join('');
+          return `
+            <div class="bol-tarea ${done?'bol-tarea-done':''}" style="flex-direction:column;align-items:stretch;padding:10px 0;border-bottom:1px solid var(--border)">
+              <div style="display:flex;align-items:center;gap:8px">
                 <label class="rdc-check-wrap">
                   <input type="checkbox" ${done?'checked':''}
                     onchange="togglePreTarea('${id}_tanda_${i}',${diaIdx},this.checked)">
                   <span class="rdc-check-box"></span>
                 </label>
-                <div style="flex:1">
-                  <div style="display:flex;align-items:center;gap:8px">
-                    <span style="font-size:13px;font-weight:600">Tanda ${i+1}</span>
-                    <input type="number" min="1" max="${maxPorTanda}" value="${n}"
-                      style="width:54px;padding:3px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace;text-align:center"
-                      oninput="actualizarTandaPreElab('${id}',${diaIdx},${i},this.value)">
-                    <span style="font-size:11px;color:var(--txt3)">masas</span>
-                    ${tandas.length > 1 ? `<button onclick="eliminarTandaPreElab('${id}',${diaIdx},${i})" style="background:none;border:none;color:var(--txt3);cursor:pointer;margin-left:auto"><i class="ti ti-x"></i></button>` : ''}
-                  </div>
-                  ${ingHtml}
+                <span style="font-size:13px;font-weight:600;min-width:60px">Tanda ${i+1}</span>
+                <div style="display:flex;align-items:center;gap:6px" id="tanda-display-${id}-${i}">
+                  <span style="font-family:'DM Mono',monospace;font-size:14px;font-weight:700;color:var(--area-color)">${n}</span>
+                  <span style="font-size:11px;color:var(--txt3)">masas</span>
+                  <button onclick="editarTandaPreElab('${id}',${diaIdx},${i})"
+                    style="background:none;border:none;color:var(--txt3);cursor:pointer;padding:2px 4px;font-size:12px"
+                    title="Editar cantidad">
+                    <i class="ti ti-pencil"></i>
+                  </button>
                 </div>
-              </div>`;
-          }).join('')}
-        </div>
+                <div style="display:none;align-items:center;gap:6px" id="tanda-edit-${id}-${i}">
+                  <input type="number" min="1" max="${maxPorTanda}" value="${n}" id="tanda-input-${id}-${i}"
+                    style="width:54px;padding:3px 6px;border:1.5px solid var(--area-color);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace;text-align:center">
+                  <button onclick="confirmarTandaPreElab('${id}',${diaIdx},${i})"
+                    style="background:var(--area-color);border:none;color:#fff;cursor:pointer;padding:3px 8px;border-radius:var(--r-sm);font-size:12px">
+                    <i class="ti ti-check"></i>
+                  </button>
+                  <button onclick="cancelarTandaPreElab('${id}',${diaIdx},${i})"
+                    style="background:none;border:1px solid var(--border);cursor:pointer;padding:3px 6px;border-radius:var(--r-sm);font-size:12px;color:var(--txt3)">
+                    <i class="ti ti-x"></i>
+                  </button>
+                </div>
+                ${tandas.length > 1 ? `<button onclick="eliminarTandaPreElab('${id}',${diaIdx},${i})" style="background:none;border:none;color:var(--txt3);cursor:pointer;margin-left:auto"><i class="ti ti-trash" style="font-size:13px"></i></button>` : ''}
+              </div>
+              ${ings.length ? `
+              <div style="margin-top:6px;padding:6px 10px;background:var(--bg);border-radius:var(--r-sm);margin-left:32px" id="ings-tanda-${id}-${i}">
+                ${ingRows}
+              </div>` : ''}
+            </div>`;
+        }).join('')}
       </div>`;
   };
 
@@ -2883,6 +2892,50 @@ function actualizarEmpastes(diaIdx) {
   const spEstExtra = document.getElementById('emp-est-extra');
   if (spPorExtra) { spPorExtra.textContent = por > total ? `+${por-total} para otro día` : ''; }
   if (spEstExtra) { spEstExtra.textContent = est > total ? `+${est-total} para otro día` : ''; }
+}
+
+function editarTandaPreElab(id, diaIdx, idx) {
+  document.getElementById(`tanda-display-${id}-${idx}`).style.display = 'none';
+  const editDiv = document.getElementById(`tanda-edit-${id}-${idx}`);
+  editDiv.style.display = 'flex';
+  document.getElementById(`tanda-input-${id}-${idx}`)?.focus();
+}
+
+function cancelarTandaPreElab(id, diaIdx, idx) {
+  document.getElementById(`tanda-display-${id}-${idx}`).style.display = 'flex';
+  document.getElementById(`tanda-edit-${id}-${idx}`).style.display = 'none';
+}
+
+function confirmarTandaPreElab(id, diaIdx, idx) {
+  const input = document.getElementById(`tanda-input-${id}-${idx}`);
+  const valor = parseInt(input?.value) || 0;
+
+  // Save to localStorage
+  const clave = `fen_bol_pre_tandas_${obtenerSemanaActual()}_${diaIdx}_${id}`;
+  let tandas = (() => { try { return JSON.parse(localStorage.getItem(clave)||'null'); } catch(e) { return null; } })();
+  if (tandas) { tandas[idx] = valor; localStorage.setItem(clave, JSON.stringify(tandas)); }
+
+  // Update display
+  const displayDiv = document.getElementById(`tanda-display-${id}-${idx}`);
+  if (displayDiv) {
+    const span = displayDiv.querySelector('span:first-child');
+    if (span) span.textContent = valor;
+  }
+  document.getElementById(`tanda-display-${id}-${idx}`).style.display = 'flex';
+  document.getElementById(`tanda-edit-${id}-${idx}`).style.display = 'none';
+
+  // Update ingredients
+  const mpId = id.replace('_poolish','').replace('_masa','');
+  const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
+  if (!mp) return;
+  const receta = App.recetas.find(r => r.nombre === mp.nombre && r.estado === 'consolidada');
+  if (!receta) return;
+  let ings = []; try { ings = JSON.parse(receta.ingredientes_JSON||'[]'); } catch(e) {}
+
+  ings.forEach(ing => {
+    const el = document.getElementById(`ing-${id}-${idx}-${ing.id}`);
+    if (el) el.textContent = Math.round((parseFloat(ing.gramos)||0) * valor) + 'g';
+  });
 }
 
 function agregarTandaPreElab(id, diaIdx) {
