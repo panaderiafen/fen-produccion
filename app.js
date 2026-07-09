@@ -1357,7 +1357,7 @@ function renderVistaPlanificacion() {
       <i class="ti ti-info-circle"></i>
       El plan se guarda por semana. Puedes modificarlo en cualquier momento — los cambios se reflejan en "Recetas del día".
     </p>
-    ${App.areaCodigo === 'BOL' ? renderPlanMasasBOL() : ''}
+
     ${!recetasConsolidadas.length ? `
       <div class="empty-state">
         <i class="ti ti-calendar-off"></i>
