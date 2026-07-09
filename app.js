@@ -1824,10 +1824,11 @@ async function renderDia(diaIdx) {
   // Bloque elaboraciones previas (sub recetas + insumos)
   // Para BOL: cargar tareas desde Sheet primero (async)
   let htmlElaboraciones = '';
-  if (App.areaCodigo === 'BOL' && typeof renderElaboracionesPreviasBOL === 'function') {
-    // Mostrar spinner mientras carga
-    contenedor.innerHTML = '<div style="padding:20px;text-align:center;color:var(--txt3)"><div class="spinner"></div> Cargando tareas...</div>';
-    htmlElaboraciones = await renderElaboracionesPreviasBOL(idx);
+  if (App.areaCodigo === 'BOL') {
+    contenedor.innerHTML = '<div style="padding:20px;text-align:center;color:var(--txt3)"><div class="spinner"></div> Cargando...</div>';
+    App._recetasHoyBOL = recetasHoy;
+    await renderProduccionBOL(idx, recetasHoy);
+    return;
   } else if (typeof renderElaboracionesPrevias === 'function') {
     htmlElaboraciones = renderElaboracionesPrevias(idx);
   }
@@ -2602,6 +2603,263 @@ async function guardarPlanMasasBOL(btn) {
   await escribirEnSheet('guardar_plan_masas_bol', { filas });
   toast('Plan de masas guardado');
   desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan masas', true);
+}
+
+// ── BOL: PRODUCCIÓN DEL DÍA ──────────────────────────────────
+async function renderProduccionBOL(diaIdx, recetasHoy) {
+  const contenedor = document.getElementById('contenedor-dia');
+  const diasNombres = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+  const diaAnterior = (diaIdx + 6) % 7; // día anterior para descongelados
+  const cfg = cargarConfigSubrecetas();
+  const capacidadHorno = (cfg.bol?.capacidad_horno || 90);
+
+  // Calcular plan de horneado desde plan semanal
+  const planHorneado = recetasHoy.map(({ receta: r, unidades }) => ({
+    id: r.ID_receta,
+    nombre: r.nombre,
+    unidades: parseInt(unidades) || 0,
+    b2b: 0,    // se ingresa manualmente
+    a_hornear: parseInt(unidades) || 0
+  }));
+
+  const totalHornear = planHorneado.reduce((s,p) => s + p.a_hornear, 0);
+  const tandasNecesarias = Math.ceil(totalHornear / capacidadHorno);
+
+  // Cargar tareas guardadas
+  const clavePrefix = `fen_bol_tarea_${obtenerSemanaActual()}_${diaIdx}`;
+
+  // Tareas del día anterior (descongelados PM)
+  const masasBase = App.materiasPrimas.filter(m => {
+    const esSR = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
+    const nombre = (m.nombre || '').toLowerCase();
+    return esSR && nombre.includes('masa') && !nombre.includes('madre') &&
+           !nombre.includes('poolish') &&
+           (!m.areas_habilitadas || m.areas_habilitadas.includes('BOL'));
+  });
+
+  const masasPlanAnterior = masasBase.map(m => ({
+    nombre: m.nombre,
+    cantidad: (_planMasasBOL[m.ID_MP] || [])[diaIdx] || 0
+  })).filter(m => m.cantidad > 0);
+
+  const productosFormados = planHorneado.filter(p => p.a_hornear > 0);
+
+  // Generar tareas automáticas
+  const tareasAutomaticas = [
+    // Día anterior PM — descongelados
+    ...masasPlanAnterior.map(m => ({
+      id: `desc_masa_${m.nombre.replace(/\s/g,'_')}`,
+      hora: '15:00',
+      turno: 'anterior_pm',
+      icono: '❄️',
+      titulo: `Descongelar masa base: ${m.nombre}`,
+      detalle: `${m.cantidad} masa${m.cantidad>1?'s':''} en frío para mañana`
+    })),
+    ...productosFormados.map(p => ({
+      id: `desc_prod_${p.id}`,
+      hora: '15:30',
+      turno: 'anterior_pm',
+      icono: '🧊',
+      titulo: `Descongelar productos: ${p.nombre}`,
+      detalle: `${p.a_hornear} uni para hornear mañana`
+    })),
+    // Día actual AM
+    { id: 'revisar_b2b', hora: '06:30', turno: 'am', icono: '📋', titulo: 'Revisar pedidos B2B', detalle: 'Actualizar cantidades a hornear' },
+    { id: 'estirar_paston', hora: '08:00', turno: 'am', icono: '🧈', titulo: 'Estirar pastón', detalle: 'Laminar y estirar masas descongeladas' },
+    { id: 'formar_productos', hora: '09:00', turno: 'am', icono: '✂️', titulo: 'Formar productos', detalle: 'Cortar, formar y preparar para hornear o congelar' },
+    ...Array.from({length: tandasNecesarias}, (_, i) => ({
+      id: `hornear_tanda_${i}`,
+      hora: `${10 + i}:00`,
+      turno: 'am',
+      icono: '🔥',
+      titulo: `Hornear — Tanda ${i+1}`,
+      detalle: `Hasta ${Math.min(capacidadHorno, totalHornear - i*capacidadHorno)} uni · ${capacidadHorno} cap/tanda`
+    }))
+  ];
+
+  // Cargar tareas manuales del localStorage
+  const tareasManualKey = `fen_bol_tareas_manuales_${obtenerSemanaActual()}_${diaIdx}`;
+  const tareasManual = (() => { try { return JSON.parse(localStorage.getItem(tareasManualKey)||'[]'); } catch(e) { return []; } })();
+
+  const todasTareas = [...tareasAutomaticas, ...tareasManual]
+    .sort((a,b) => a.hora.localeCompare(b.hora));
+
+  // Estado de tareas
+  function getTareaEstado(id) {
+    try { return localStorage.getItem(`fen_bol_check_${obtenerSemanaActual()}_${diaIdx}_${id}`) === '1'; } catch(e) { return false; }
+  }
+  function setTareaEstado(id, v) {
+    try { localStorage.setItem(`fen_bol_check_${obtenerSemanaActual()}_${diaIdx}_${id}`, v?'1':'0'); } catch(e) {}
+  }
+
+  // Render
+  const tareasAnterioresPM = todasTareas.filter(t => t.turno === 'anterior_pm');
+  const tareasAM = todasTareas.filter(t => t.turno === 'am');
+
+  const renderTarea = (t) => {
+    const done = getTareaEstado(t.id);
+    return `
+      <div class="bol-tarea ${done?'bol-tarea-done':''}" id="tarea-${t.id}">
+        <label class="rdc-check-wrap" onclick="event.stopPropagation()">
+          <input type="checkbox" ${done?'checked':''}
+            onchange="toggleTareaBOLProduccion('${t.id}',this.checked)">
+          <span class="rdc-check-box"></span>
+        </label>
+        <input type="time" value="${t.hora}"
+          style="border:none;background:none;font-family:'DM Mono',monospace;font-size:12px;color:var(--txt3);width:52px;cursor:pointer;padding:0"
+          onchange="actualizarHoraTarea('${t.id}',this.value,'${t.turno==='anterior_pm'?'anterior_pm':'am'}')">
+        <span style="font-size:16px;flex-shrink:0">${t.icono}</span>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:600;${done?'text-decoration:line-through;color:var(--txt3)':''}">${t.titulo}</div>
+          <div style="font-size:11px;color:var(--txt3)">${t.detalle}</div>
+        </div>
+        ${t.manual ? `<button onclick="eliminarTareaManualBOL('${t.id}',${diaIdx})" style="background:none;border:none;color:var(--txt3);cursor:pointer;font-size:14px"><i class="ti ti-x"></i></button>` : ''}
+      </div>`;
+  };
+
+  contenedor.innerHTML = `
+    <div class="avisos-container" style="margin-bottom:12px"></div>
+
+    <!-- PLAN DE HORNEADO -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head" style="background:#FFF3E0;color:#E65100">
+        <i class="ti ti-flame"></i> Plan de horneado — ${diasNombres[diaIdx]}
+        <span style="margin-left:auto;font-size:11px;font-weight:400">
+          Cap. horno: ${capacidadHorno} uni/tanda · ${tandasNecesarias} tanda${tandasNecesarias>1?'s':''} necesaria${tandasNecesarias>1?'s':''}
+        </span>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:var(--bg)">
+              <th style="text-align:left;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Producto</th>
+              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Plan</th>
+              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">B2B confirm.</th>
+              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">A hornear</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${planHorneado.map(p => `
+              <tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:8px 16px;font-weight:500">${p.nombre}</td>
+                <td style="text-align:center;padding:8px;font-family:'DM Mono',monospace">${p.unidades}</td>
+                <td style="text-align:center;padding:8px">
+                  <input type="number" min="0" value="0" data-prod="${p.id}"
+                    style="width:60px;text-align:center;padding:4px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace"
+                    oninput="actualizarAHornear(this)">
+                </td>
+                <td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;font-weight:700;color:#E65100" id="a-hornear-${p.id}">
+                  ${p.a_hornear}
+                </td>
+              </tr>`).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background:var(--bg)">
+              <td colspan="3" style="padding:8px 16px;font-weight:700;font-size:12px">Total</td>
+              <td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;font-weight:700;color:#E65100;font-size:14px" id="total-hornear">
+                ${totalHornear}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAREAS DÍA ANTERIOR PM -->
+    ${tareasAnterioresPM.length ? `
+    <div class="card" style="margin-bottom:16px;border-color:#E3F2FD">
+      <div class="card-head" style="background:#E3F2FD;color:#1565C0">
+        <i class="ti ti-moon"></i> ${diasNombres[diaAnterior]} PM — Preparar para mañana
+      </div>
+      <div style="padding:8px 0">
+        ${tareasAnterioresPM.map(renderTarea).join('')}
+      </div>
+    </div>` : ''}
+
+    <!-- TAREAS DÍA ACTUAL AM -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head" style="background:#FFF8E1;color:#F57C00">
+        <i class="ti ti-sun"></i> ${diasNombres[diaIdx]} AM — Producción
+      </div>
+      <div style="padding:8px 0">
+        ${tareasAM.map(renderTarea).join('')}
+      </div>
+      <div style="padding:10px 16px;border-top:1px solid var(--border)">
+        <button class="btn-secundario" style="font-size:12px;width:100%"
+          onclick="abrirModalTareaManualBOL(${diaIdx})">
+          <i class="ti ti-plus"></i> Agregar tarea manual
+        </button>
+      </div>
+    </div>
+  `;
+
+  renderAvisos();
+}
+
+function toggleTareaBOLProduccion(id, checked) {
+  const semana = obtenerSemanaActual();
+  const diaIdx = App._diaActual || 0;
+  localStorage.setItem(`fen_bol_check_${semana}_${diaIdx}_${id}`, checked?'1':'0');
+  const card = document.getElementById('tarea-' + id);
+  if (card) card.classList.toggle('bol-tarea-done', checked);
+}
+
+function actualizarAHornear(input) {
+  const prodId = input.dataset.prod;
+  const b2b = parseInt(input.value) || 0;
+  // A hornear = max(plan, b2b) por ahora — la jefa puede ajustar
+  const planRow = Array.from(document.querySelectorAll(`input[data-prod="${prodId}"]`));
+  const planTd = input.closest('tr')?.querySelector('td:nth-child(2)');
+  const plan = parseInt(planTd?.textContent) || 0;
+  const aHornear = Math.max(plan, b2b);
+  const span = document.getElementById('a-hornear-' + prodId);
+  if (span) span.textContent = aHornear;
+  // Actualizar total
+  let total = 0;
+  document.querySelectorAll('[id^="a-hornear-"]').forEach(s => total += parseInt(s.textContent)||0);
+  const totalSpan = document.getElementById('total-hornear');
+  if (totalSpan) totalSpan.textContent = total;
+}
+
+function abrirModalTareaManualBOL(diaIdx) {
+  const modal = document.getElementById('modal-tarea-manual-bol');
+  if (modal) {
+    document.getElementById('tarea-manual-dia').value = diaIdx;
+    document.getElementById('tarea-manual-hora').value = '10:00';
+    document.getElementById('tarea-manual-titulo').value = '';
+    document.getElementById('tarea-manual-detalle').value = '';
+    modal.classList.remove('hidden');
+  }
+}
+
+function guardarTareaManualBOL() {
+  const diaIdx = parseInt(document.getElementById('tarea-manual-dia').value);
+  const hora   = document.getElementById('tarea-manual-hora').value;
+  const titulo = document.getElementById('tarea-manual-titulo').value.trim();
+  const detalle = document.getElementById('tarea-manual-detalle').value.trim();
+  if (!titulo) { toast('Escribe un título para la tarea'); return; }
+
+  const key = `fen_bol_tareas_manuales_${obtenerSemanaActual()}_${diaIdx}`;
+  const tareas = (() => { try { return JSON.parse(localStorage.getItem(key)||'[]'); } catch(e) { return []; } })();
+  tareas.push({ id: `manual_${Date.now()}`, hora, titulo, detalle, turno: 'am', icono: '📝', manual: true });
+  localStorage.setItem(key, JSON.stringify(tareas));
+  document.getElementById('modal-tarea-manual-bol').classList.add('hidden');
+  renderProduccionBOL(diaIdx, App._recetasHoyBOL || []);
+  toast('Tarea agregada');
+}
+
+function eliminarTareaManualBOL(id, diaIdx) {
+  const key = `fen_bol_tareas_manuales_${obtenerSemanaActual()}_${diaIdx}`;
+  let tareas = (() => { try { return JSON.parse(localStorage.getItem(key)||'[]'); } catch(e) { return []; } })();
+  tareas = tareas.filter(t => t.id !== id);
+  localStorage.setItem(key, JSON.stringify(tareas));
+  renderProduccionBOL(diaIdx, App._recetasHoyBOL || []);
+}
+
+function actualizarHoraTarea(id, hora, turno) {
+  // Guardar hora modificada en localStorage
+  const key = `fen_bol_hora_${obtenerSemanaActual()}_${App._diaActual||0}_${id}`;
+  localStorage.setItem(key, hora);
 }
 
 // ── ADMIN: APROBACIONES ───────────────────────────────────────
