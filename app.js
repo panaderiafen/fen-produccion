@@ -2902,6 +2902,26 @@ function actualizarTandaPreElab(id, diaIdx, idx, valor) {
   if (!tandas) return;
   tandas[idx] = parseInt(valor) || 0;
   localStorage.setItem(clave, JSON.stringify(tandas));
+  // Actualizar ingredientes de esta tanda en tiempo real
+  const mpId = id.replace('_poolish','').replace('_masa','');
+  const receta = App.recetas.find(r => {
+    const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
+    return mp && r.nombre === mp.nombre && r.estado === 'consolidada';
+  });
+  if (!receta) return;
+  let ings = []; try { ings = JSON.parse(receta.ingredientes_JSON||'[]'); } catch(e) {}
+  const n = parseInt(valor) || 0;
+  const detailDiv = document.querySelector(`#pre-tarea-${id}_tanda_${idx} details`);
+  if (detailDiv) {
+    const content2 = detailDiv.querySelector('div');
+    if (content2) {
+      content2.innerHTML = ings.map(ing =>
+        `<div style="font-size:11px;color:var(--txt2);padding:2px 0">
+          ${ing.nombre}: <strong>${Math.round((parseFloat(ing.gramos)||0)*n)}g</strong>
+        </div>`
+      ).join('');
+    }
+  }
 }
 
 function togglePreTarea(id, diaIdx, checked) {
@@ -3034,24 +3054,47 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
             <tr style="background:var(--bg)">
               <th style="text-align:left;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Producto</th>
               <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Plan</th>
-              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">B2B confirm.</th>
+              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Stock congelado</th>
+              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">A descongelar</th>
+              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">A formar hoy</th>
+              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">B2B</th>
               <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">A hornear</th>
             </tr>
           </thead>
           <tbody>
-            ${planHorneado.map(p => `
+            ${planHorneado.map(p => {
+              const claveStock = `fen_bol_stock_${obtenerSemanaActual()}_${diaIdx}_${p.id}`;
+              const stockCongelado = parseInt(localStorage.getItem(claveStock)) || 0;
+              const claveb2b = `fen_bol_b2b_${obtenerSemanaActual()}_${diaIdx}_${p.id}`;
+              const b2bVal = parseInt(localStorage.getItem(claveb2b)) || 0;
+              const aDescongelar = Math.min(p.unidades, stockCongelado);
+              const aFormarHoy = Math.max(0, Math.max(p.unidades, b2bVal) - aDescongelar);
+              const aHornear = Math.max(p.unidades, b2bVal);
+              return `
               <tr style="border-bottom:1px solid var(--border)">
                 <td style="padding:8px 16px;font-weight:500">${p.nombre}</td>
                 <td style="text-align:center;padding:8px;font-family:'DM Mono',monospace">${p.unidades}</td>
                 <td style="text-align:center;padding:8px">
-                  <input type="number" min="0" value="0" data-prod="${p.id}"
+                  <input type="number" min="0" value="${stockCongelado}" data-prod="${p.id}" data-tipo="stock"
                     style="width:60px;text-align:center;padding:4px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace"
-                    oninput="actualizarAHornear(this)">
+                    oninput="actualizarStockCirculante(this,${diaIdx})">
                 </td>
-                <td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;font-weight:700;color:#E65100" id="a-hornear-${p.id}">
-                  ${p.a_hornear}
+                <td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;color:#1565C0;font-weight:600" id="a-descongelar-${p.id}">
+                  ${aDescongelar}
                 </td>
-              </tr>`).join('')}
+                <td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;color:#E65100;font-weight:600" id="a-formar-${p.id}">
+                  ${aFormarHoy}
+                </td>
+                <td style="text-align:center;padding:8px">
+                  <input type="number" min="0" value="${b2bVal}" data-prod="${p.id}" data-tipo="b2b"
+                    style="width:60px;text-align:center;padding:4px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace"
+                    oninput="actualizarStockCirculante(this,${diaIdx})">
+                </td>
+                <td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;font-weight:700;color:#E65100;font-size:15px" id="a-hornear-${p.id}">
+                  ${aHornear}
+                </td>
+              </tr>`;
+            }).join('')}
           </tbody>
           <tfoot>
             <tr style="background:var(--bg)">
@@ -3104,17 +3147,36 @@ function toggleTareaBOLProduccion(id, checked) {
   if (card) card.classList.toggle('bol-tarea-done', checked);
 }
 
-function actualizarAHornear(input) {
+function actualizarStockCirculante(input, diaIdx) {
   const prodId = input.dataset.prod;
-  const b2b = parseInt(input.value) || 0;
-  // A hornear = max(plan, b2b) por ahora — la jefa puede ajustar
-  const planRow = Array.from(document.querySelectorAll(`input[data-prod="${prodId}"]`));
-  const planTd = input.closest('tr')?.querySelector('td:nth-child(2)');
-  const plan = parseInt(planTd?.textContent) || 0;
-  const aHornear = Math.max(plan, b2b);
-  const span = document.getElementById('a-hornear-' + prodId);
-  if (span) span.textContent = aHornear;
-  // Actualizar total
+  const tipo   = input.dataset.tipo;
+  const val    = parseInt(input.value) || 0;
+  const semana = obtenerSemanaActual();
+
+  // Guardar en localStorage
+  if (tipo === 'stock') localStorage.setItem(`fen_bol_stock_${semana}_${diaIdx}_${prodId}`, val);
+  if (tipo === 'b2b')   localStorage.setItem(`fen_bol_b2b_${semana}_${diaIdx}_${prodId}`, val);
+
+  // Recalcular fila
+  const row = input.closest('tr');
+  const plan = parseInt(row?.querySelector('td:nth-child(2)')?.textContent) || 0;
+  const stockInput = row?.querySelector('input[data-tipo="stock"]');
+  const b2bInput   = row?.querySelector('input[data-tipo="b2b"]');
+  const stock = parseInt(stockInput?.value) || 0;
+  const b2b   = parseInt(b2bInput?.value) || 0;
+
+  const aDescongelar = Math.min(plan, stock);
+  const aHornear     = Math.max(plan, b2b);
+  const aFormar      = Math.max(0, aHornear - aDescongelar);
+
+  const spDes = document.getElementById('a-descongelar-' + prodId);
+  const spFor = document.getElementById('a-formar-' + prodId);
+  const spHor = document.getElementById('a-hornear-' + prodId);
+  if (spDes) spDes.textContent = aDescongelar;
+  if (spFor) spFor.textContent = aFormar;
+  if (spHor) spHor.textContent = aHornear;
+
+  // Total
   let total = 0;
   document.querySelectorAll('[id^="a-hornear-"]').forEach(s => total += parseInt(s.textContent)||0);
   const totalSpan = document.getElementById('total-hornear');
