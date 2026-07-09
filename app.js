@@ -2731,9 +2731,8 @@ function renderPreElabDia(diaIdx) {
         ${tandas.map((n, i) => {
           const done = getCheck(`${id}_tanda_${i}`);
           const ingRows = ings.map(ing => `
-            <div style="display:flex;justify-content:space-between;padding:2px 0;font-size:11px;color:var(--txt2)">
-              <span>${ing.nombre}</span>
-              <strong id="ing-${id}-${i}-${ing.id}">${Math.round((parseFloat(ing.gramos)||0)*n)}g</strong>
+            <div style="padding:2px 0;font-size:11px;color:var(--txt2)">
+              ${ing.nombre}: <strong id="ing-${id}-${i}-${ing.id}">${Math.round((parseFloat(ing.gramos)||0)*n)}g</strong>
             </div>`).join('');
           return `
             <div class="bol-tarea ${done?'bol-tarea-done':''}" style="flex-direction:column;align-items:stretch;padding:10px 0;border-bottom:1px solid var(--border)">
