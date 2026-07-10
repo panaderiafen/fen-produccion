@@ -1383,3 +1383,15 @@ input, select, textarea { font-family: inherit; }
   opacity: .5;
   background: var(--bg);
 }
+
+/* ── BOL TAREA COMPLETADA (Opción D) ────────────────────────── */
+.bol-tarea-done {
+  background: #F1F8F1 !important;
+  border-left: 4px solid #2E7D32 !important;
+  opacity: 1 !important;
+}
+.bol-tarea-done .tarea-titulo,
+.bol-tarea-done > div > div:first-child {
+  color: var(--txt3) !important;
+}
+.bol-tarea { border-left: 4px solid transparent; }
