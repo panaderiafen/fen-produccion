@@ -1833,6 +1833,7 @@ async function renderDia(diaIdx) {
   if (App.areaCodigo === 'BOL') {
     contenedor.innerHTML = '<div style="padding:20px;text-align:center;color:var(--txt3)"><div class="spinner"></div> Cargando...</div>';
     App._recetasHoyBOL = recetasHoy;
+    await cargarEstadoTareasBOL(idx);
     await renderProduccionBOL(idx, recetasHoy);
     return;
   } else if (typeof renderElaboracionesPrevias === 'function') {
@@ -2611,6 +2612,52 @@ async function guardarPlanMasasBOL(btn) {
   desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan masas', true);
 }
 
+// ── BOL: ESTADO TAREAS ───────────────────────────────────────
+let _tareasEstadoBOL = {}; // { tipo_tarea: estado } cargado desde Sheet
+
+async function cargarEstadoTareasBOL(diaIdx) {
+  const semana = obtenerSemanaActual();
+  try {
+    const payload = encodeURIComponent(JSON.stringify({
+      accion: 'leer_tareas_bol',
+      semana_ID: semana,
+      dia: diaIdx
+    }));
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    if (data.ok && data.tareas) {
+      _tareasEstadoBOL = {};
+      data.tareas.forEach(t => {
+        _tareasEstadoBOL[t.tipo_tarea] = t.estado;
+        // También actualizar localStorage como cache
+        localStorage.setItem(`fen_bol_pre_${semana}_${diaIdx}_${t.subtarea}`, t.estado);
+        localStorage.setItem(`fen_bol_check_${semana}_${diaIdx}_${t.subtarea}`, t.estado);
+      });
+    }
+  } catch(e) {
+    console.warn('[fën] No se pudo cargar estado tareas BOL:', e.message);
+  }
+}
+
+function getTareaEstadoBOL(id, semana, diaIdx, prefijo) {
+  // Primero buscar en Sheet cache
+  const tipoTarea = `${prefijo}_${id}`;
+  if (_tareasEstadoBOL[tipoTarea] !== undefined) {
+    return _tareasEstadoBOL[tipoTarea] === '1';
+  }
+  // Fallback localStorage
+  const claveLS = prefijo === 'pre'
+    ? `fen_bol_pre_${semana}_${diaIdx}_${id}`
+    : `fen_bol_check_${semana}_${diaIdx}_${id}`;
+  try { return localStorage.getItem(claveLS) === '1'; } catch(e) { return false; }
+}
+
+function actualizarVisualTareaBOL(elementId, checked) {
+  const card = document.getElementById(elementId);
+  if (!card) return;
+  card.classList.toggle('bol-tarea-done', checked);
+}
+
 // ── BOL: PRE-ELABORACIONES ───────────────────────────────────
 async function renderVistaPreElaboraciones() {
   const vista = document.getElementById('vista-pre-elaboraciones');
@@ -2639,13 +2686,14 @@ async function renderVistaPreElaboraciones() {
     <div id="contenedor-pre-elab"></div>
   `;
 
+  await cargarEstadoTareasBOL(diaIdx);
   renderPreElabDia(diaIdx);
 }
 
 function cambiarDiaPreElab(diaIdx, btn) {
   document.querySelectorAll('.dia-btn').forEach(b => b.classList.remove('dia-btn-activo'));
   btn.classList.add('dia-btn-activo');
-  renderPreElabDia(diaIdx);
+  cargarEstadoTareasBOL(diaIdx).then(() => renderPreElabDia(diaIdx));
 }
 
 function renderPreElabDia(diaIdx) {
@@ -2701,7 +2749,7 @@ function renderPreElabDia(diaIdx) {
   const mantPorEmpaste = cfg.bol?.mantequilla_por_empaste || 250;
 
   // Helper: get/set check state
-  const getCheck = id => { try { return localStorage.getItem(`fen_bol_pre_${semana}_${diaIdx}_${id}`) === '1'; } catch(e) { return false; } };
+  const getCheck = id => getTareaEstadoBOL(id, semana, diaIdx, 'pre');
   const claveEmpPor = `fen_bol_emp_por_${semana}_${diaIdx}`;
   const claveEmpEst = `fen_bol_emp_est_${semana}_${diaIdx}`;
   const empPorcionados = parseInt(localStorage.getItem(claveEmpPor)) || 0;
@@ -2983,9 +3031,20 @@ function actualizarTandaPreElab(id, diaIdx, idx, valor) {
 
 function togglePreTarea(id, diaIdx, checked) {
   const semana = obtenerSemanaActual();
+  // Save to localStorage for immediate response
   localStorage.setItem(`fen_bol_pre_${semana}_${diaIdx}_${id}`, checked?'1':'0');
-  const card = document.getElementById('pre-tarea-' + id);
-  if (card) card.classList.toggle('bol-tarea-done', checked);
+  // Update visual
+  actualizarVisualTareaBOL(id, checked);
+  // Save to Sheet in background
+  escribirEnSheet('guardar_tarea_bol', {
+    semana_ID: semana,
+    dia: diaIdx,
+    tipo_tarea: `pre_${id}`,
+    subtarea: id,
+    cantidad: 0,
+    estado: checked ? '1' : '0',
+    dispositivo: navigator.userAgent.slice(0,50)
+  });
 }
 
 
@@ -3063,7 +3122,7 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
 
   // Estado de tareas
   function getTareaEstado(id) {
-    try { return localStorage.getItem(`fen_bol_check_${obtenerSemanaActual()}_${diaIdx}_${id}`) === '1'; } catch(e) { return false; }
+    return getTareaEstadoBOL(id, obtenerSemanaActual(), diaIdx, 'prod');
   }
   function setTareaEstado(id, v) {
     try { localStorage.setItem(`fen_bol_check_${obtenerSemanaActual()}_${diaIdx}_${id}`, v?'1':'0'); } catch(e) {}
@@ -3211,9 +3270,20 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
 function toggleTareaBOLProduccion(id, checked) {
   const semana = obtenerSemanaActual();
   const diaIdx = App._diaActual || 0;
+  // Save to localStorage for immediate response
   localStorage.setItem(`fen_bol_check_${semana}_${diaIdx}_${id}`, checked?'1':'0');
-  const card = document.getElementById('tarea-' + id);
-  if (card) card.classList.toggle('bol-tarea-done', checked);
+  // Update visual
+  actualizarVisualTareaBOL('tarea-' + id.replace(/[^a-zA-Z0-9_-]/g,'_'), checked);
+  // Save to Sheet in background
+  escribirEnSheet('guardar_tarea_bol', {
+    semana_ID: semana,
+    dia: diaIdx,
+    tipo_tarea: `prod_${id}`,
+    subtarea: id,
+    cantidad: 0,
+    estado: checked ? '1' : '0',
+    dispositivo: navigator.userAgent.slice(0,50)
+  });
 }
 
 function actualizarStockCirculante(input, diaIdx) {
