@@ -2612,6 +2612,18 @@ async function guardarPlanMasasBOL(btn) {
   desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan masas', true);
 }
 
+// ── FECHA REAL DE DÍA DE SEMANA ──────────────────────────────
+function fechaRealDiaSemana(diaIdx) {
+  // Retorna la fecha real (YYYY-MM-DD) del día diaIdx (0=Lun) en la semana actual
+  const hoy = new Date();
+  const diaSemanaHoy = hoy.getDay() === 0 ? 6 : hoy.getDay() - 1; // 0=Lun, 6=Dom
+  const diff = diaIdx - diaSemanaHoy;
+  const fecha = new Date(hoy);
+  fecha.setDate(hoy.getDate() + diff);
+  const off = fecha.getTimezoneOffset() * 60000;
+  return new Date(fecha - off).toISOString().slice(0,10);
+}
+
 // ── BOL: ESTADO TAREAS ───────────────────────────────────────
 let _tareasEstadoBOL = {}; // { tipo_tarea: estado } cargado desde Sheet
 
@@ -2628,10 +2640,19 @@ async function cargarEstadoTareasBOL(diaIdx) {
     if (data.ok && data.tareas) {
       _tareasEstadoBOL = {};
       data.tareas.forEach(t => {
-        _tareasEstadoBOL[t.tipo_tarea] = t.estado;
+        // For empastes store cantidad, for others store estado
+        const valor = (t.tipo_tarea === 'empaste_porcionados' || t.tipo_tarea === 'empaste_estirados')
+          ? String(t.cantidad) : t.estado;
+        _tareasEstadoBOL[t.tipo_tarea] = valor;
         // Solo actualizar localStorage si no hay valor local (otro dispositivo)
         const clavePreLS  = `fen_bol_pre_${semana}_${diaIdx}_${t.subtarea}`;
         const claveProdLS = `fen_bol_check_${semana}_${diaIdx}_${t.subtarea}`;
+        const claveEmpPor = `fen_bol_emp_por_${semana}_${diaIdx}`;
+        const claveEmpEst = `fen_bol_emp_est_${semana}_${diaIdx}`;
+        if (t.tipo_tarea === 'empaste_porcionados' && localStorage.getItem(claveEmpPor) === null)
+          localStorage.setItem(claveEmpPor, String(t.cantidad));
+        if (t.tipo_tarea === 'empaste_estirados' && localStorage.getItem(claveEmpEst) === null)
+          localStorage.setItem(claveEmpEst, String(t.cantidad));
         if (localStorage.getItem(clavePreLS) === null)  localStorage.setItem(clavePreLS, t.estado);
         if (localStorage.getItem(claveProdLS) === null) localStorage.setItem(claveProdLS, t.estado);
       });
@@ -2756,8 +2777,13 @@ function renderPreElabDia(diaIdx) {
   const getCheck = id => getTareaEstadoBOL(id, semana, diaIdx, 'pre');
   const claveEmpPor = `fen_bol_emp_por_${semana}_${diaIdx}`;
   const claveEmpEst = `fen_bol_emp_est_${semana}_${diaIdx}`;
-  const empPorcionados = parseInt(localStorage.getItem(claveEmpPor)) || 0;
-  const empEstirados   = parseInt(localStorage.getItem(claveEmpEst)) || 0;
+  // Load from Sheet cache if available (for cross-device sync)
+  const empPorSheet = _tareasEstadoBOL['empaste_porcionados'];
+  const empEstSheet = _tareasEstadoBOL['empaste_estirados'];
+  const empPorcionados = parseInt(localStorage.getItem(claveEmpPor)) || 
+                         (empPorSheet ? parseInt(empPorSheet) : 0);
+  const empEstirados   = parseInt(localStorage.getItem(claveEmpEst)) || 
+                         (empEstSheet ? parseInt(empEstSheet) : 0);
 
   // Helper: render tanda blocks for masa/poolish
   const renderTandas = (id, cantidad, receta, prefix) => {
@@ -2915,6 +2941,31 @@ function actualizarEmpastes(diaIdx) {
   const est = parseInt(document.getElementById('emp-estirados')?.value) || 0;
   localStorage.setItem(`fen_bol_emp_por_${semana}_${diaIdx}`, por);
   localStorage.setItem(`fen_bol_emp_est_${semana}_${diaIdx}`, est);
+  // Save to Sheet
+  const payload = encodeURIComponent(JSON.stringify({
+    accion: 'guardar_tarea_bol',
+    semana_ID: semana,
+    dia: diaIdx,
+    tipo_tarea: 'empaste_porcionados',
+    subtarea: 'empaste_porcionados',
+    cantidad: por,
+    estado: '1',
+    fecha_local: fechaRealDiaSemana(diaIdx),
+    dispositivo: navigator.userAgent.slice(0,50)
+  }));
+  fetch(FEN.WEBAPP_URL + '?payload=' + payload).catch(() => {});
+  const payload2 = encodeURIComponent(JSON.stringify({
+    accion: 'guardar_tarea_bol',
+    semana_ID: semana,
+    dia: diaIdx,
+    tipo_tarea: 'empaste_estirados',
+    subtarea: 'empaste_estirados',
+    cantidad: est,
+    estado: '1',
+    fecha_local: fechaRealDiaSemana(diaIdx),
+    dispositivo: navigator.userAgent.slice(0,50)
+  }));
+  fetch(FEN.WEBAPP_URL + '?payload=' + payload2).catch(() => {});
 
   // Calcular total empastes
   let total = 0;
@@ -3040,14 +3091,17 @@ function togglePreTarea(id, diaIdx, checked) {
   // Actualizar cache Sheet
   _tareasEstadoBOL[`pre_${id}`] = checked ? '1' : '0';
   // Update visual — el elemento puede ser pre-tarea-ID o pre-tarea-ID_tanda_N
-  const el = document.getElementById('pre-tarea-' + id);
-  if (el) {
-    el.classList.toggle('bol-tarea-done', checked);
-    const titulo = el.querySelector('div > div:first-child');
-    if (titulo) titulo.style.opacity = checked ? '0.5' : '1';
+  // Try exact id first, then look for tanda containers
+  const elDirect = document.getElementById('pre-tarea-' + id);
+  if (elDirect) {
+    elDirect.classList.toggle('bol-tarea-done', checked);
+  } else {
+    // It's a tanda checkbox — find the parent tanda div
+    document.querySelectorAll(`[id^="pre-tarea-${id}"]`).forEach(el => {
+      el.classList.toggle('bol-tarea-done', checked);
+    });
   }
   // Save to Sheet in background (best effort)
-  const hoy = new Date(); const off = hoy.getTimezoneOffset()*60000;
   const payloadTarea = encodeURIComponent(JSON.stringify({
     accion: 'guardar_tarea_bol',
     semana_ID: semana,
@@ -3056,7 +3110,7 @@ function togglePreTarea(id, diaIdx, checked) {
     subtarea: id,
     cantidad: 0,
     estado: checked ? '1' : '0',
-    fecha_local: new Date(hoy - off).toISOString().slice(0,10),
+    fecha_local: fechaRealDiaSemana(diaIdx),
     dispositivo: navigator.userAgent.slice(0,50)
   }));
   fetch(FEN.WEBAPP_URL + '?payload=' + payloadTarea).catch(() => {});
@@ -3291,7 +3345,6 @@ function toggleTareaBOLProduccion(id, checked) {
   const elProd = document.getElementById('tarea-' + id);
   if (elProd) elProd.classList.toggle('bol-tarea-done', checked);
   // Save to Sheet in background
-  const hoy2 = new Date(); const off2 = hoy2.getTimezoneOffset()*60000;
   const payloadTarea2 = encodeURIComponent(JSON.stringify({
     accion: 'guardar_tarea_bol',
     semana_ID: semana,
@@ -3300,7 +3353,7 @@ function toggleTareaBOLProduccion(id, checked) {
     subtarea: id,
     cantidad: 0,
     estado: checked ? '1' : '0',
-    fecha_local: new Date(hoy2 - off2).toISOString().slice(0,10),
+    fecha_local: fechaRealDiaSemana(diaIdx),
     dispositivo: navigator.userAgent.slice(0,50)
   }));
   fetch(FEN.WEBAPP_URL + '?payload=' + payloadTarea2).catch(() => {});
