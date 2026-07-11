@@ -2742,6 +2742,33 @@ function actualizarDescongelado(prodId, diaIdx, valor, planificado) {
 }
 
 // Load descongelado quantities from Sheet cache
+function actualizarDescongeladoMasa(masaId, diaIdx, valor, planificado) {
+  const semana = obtenerSemanaActual();
+  const cant = parseInt(valor) || 0;
+  const clave = `fen_bol_desc_masa_${semana}_${diaIdx}_${masaId}`;
+  localStorage.setItem(clave, cant);
+
+  const pct = planificado > 0 ? Math.round(cant/planificado*100) : 0;
+  const color = pct >= 100 ? '#2E7D32' : pct > 0 ? '#F57C00' : 'var(--txt3)';
+  const label = pct >= 100 ? '✓ Completo' : pct > 0 ? `◑ ${pct}%` : '';
+  const sp = document.getElementById(`desc-masa-estado-${masaId}`);
+  if (sp) { sp.textContent = label; sp.style.color = color; }
+
+  // Save to Sheet
+  const payload = encodeURIComponent(JSON.stringify({
+    accion: 'guardar_tarea_bol',
+    semana_ID: semana,
+    dia: diaIdx,
+    tipo_tarea: `desc_masa_cant_${masaId}`,
+    subtarea: masaId,
+    cantidad: cant,
+    estado: pct >= 100 ? '1' : '0',
+    fecha_local: fechaRealDiaSemana(diaIdx),
+    dispositivo: navigator.userAgent.slice(0,50)
+  }));
+  fetch(FEN.WEBAPP_URL + '?payload=' + payload).catch(() => {});
+}
+
 function cargarDescongeladoDesdeSheet(diaIdx) {
   const semana = obtenerSemanaActual();
   Object.entries(_tareasEstadoBOL).forEach(([tipo, val]) => {
@@ -3237,10 +3264,30 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
            (!m.areas_habilitadas || m.areas_habilitadas.includes('BOL'));
   });
 
-  const masasPlanAnterior = masasBase.map(m => ({
-    nombre: m.nombre,
-    cantidad: (_planMasasBOL[m.ID_MP] || [])[diaIdx] || 0
-  })).filter(m => m.cantidad > 0);
+  // Masas a descongelar = empastes necesarios para producción de hoy
+  // (empaste 1:1 con masa base, calculado desde plan de hoy)
+  let totalEmpastesHoy = 0;
+  const desglosEmpastesHoy = {};
+  Object.entries(App.planSemana).forEach(([rid, cant]) => {
+    const unidades = cant[diaIdx] || 0;
+    if (!unidades) return;
+    const receta = App.recetas.find(r => r.ID_receta === rid);
+    if (!receta) return;
+    let ings = []; try { ings = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
+    const porciones = parseInt(receta.porciones_base) || 1;
+    ings.forEach(ing => {
+      if ((ing.nombre||'').toLowerCase().includes('empaste')) {
+        totalEmpastesHoy += Math.ceil((parseFloat(ing.unidades)||1) / porciones * unidades);
+      }
+    });
+  });
+
+  const masasPlanAnterior = masasBase
+    .filter(m => totalEmpastesHoy > 0 || (_planMasasBOL[m.ID_MP] || [])[diaIdx] > 0)
+    .map(m => ({
+      nombre: m.nombre,
+      cantidad: totalEmpastesHoy || (_planMasasBOL[m.ID_MP] || [])[diaIdx] || 0
+    })).filter(m => m.cantidad > 0);
 
   const productosFormados = planHorneado.filter(p => p.a_hornear > 0);
 
@@ -3295,8 +3342,25 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
     const done = getTareaEstado(t.id);
     const semana = obtenerSemanaActual();
 
-    // For descongelar productos — show editable quantity
+    // For descongelar masas base — show editable quantity
     let descongeladoExtra = '';
+    if (t.masaId) {
+      const claveMasa = `fen_bol_desc_masa_${semana}_${diaIdx}_${t.masaId}`;
+      const cantMasa = localStorage.getItem(claveMasa) ?? t.planificadoMasas;
+      const pctM = t.planificadoMasas > 0 ? Math.round(parseInt(cantMasa)/t.planificadoMasas*100) : 0;
+      const colorM = pctM >= 100 ? '#2E7D32' : pctM > 0 ? '#F57C00' : 'var(--txt3)';
+      const labelM = pctM >= 100 ? '✓ Completo' : pctM > 0 ? `◑ ${pctM}%` : '';
+      descongeladoExtra = `
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:6px 10px;background:var(--bg);border-radius:var(--r-sm)">
+          <span style="font-size:11px;color:var(--txt3)">Descongeladas:</span>
+          <input type="number" min="0" value="${cantMasa}"
+            style="width:60px;padding:3px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace;text-align:center"
+            oninput="actualizarDescongeladoMasa('${t.masaId}',${diaIdx},this.value,${t.planificadoMasas})">
+          <span style="font-size:11px">/ ${t.planificadoMasas} masas</span>
+          <span style="font-size:11px;font-weight:600;color:${colorM}" id="desc-masa-estado-${t.masaId}">${labelM}</span>
+        </div>`;
+    }
+    // For descongelar productos — show editable quantity
     if (t.prodId) {
       const claveDesc = `fen_bol_desc_${semana}_${diaIdx}_${t.prodId}`;
       const cantDesc = localStorage.getItem(claveDesc) ?? t.planificado;
@@ -3313,6 +3377,7 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
           <span style="font-size:11px;font-weight:600;color:${color}" id="desc-estado-${t.prodId}">${label}</span>
         </div>`;
     }
+    if (!t.masaId && !t.prodId) descongeladoExtra = '';
 
     return `
       <div class="bol-tarea ${done?'bol-tarea-done':''}" id="tarea-${t.id}" style="${t.prodId?'flex-direction:column;align-items:stretch':''}">
