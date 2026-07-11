@@ -1849,6 +1849,7 @@ async function renderDia(diaIdx) {
   if (App.areaCodigo === 'BOL') {
     contenedor.innerHTML = '<div style="padding:20px;text-align:center;color:var(--txt3)"><div class="spinner"></div> Cargando...</div>';
     App._recetasHoyBOL = recetasHoy;
+    _tareasEstadoBOL = {};
     await cargarEstadoTareasBOL(idx);
     await renderProduccionBOL(idx, recetasHoy);
     return;
@@ -2724,9 +2725,13 @@ async function renderVistaPreElaboraciones() {
           ${d}
         </button>`).join('')}
     </div>
-    <div id="contenedor-pre-elab"></div>
+    <div id="contenedor-pre-elab">
+      <div style="padding:20px;text-align:center;color:var(--txt3)"><div class="spinner"></div></div>
+    </div>
   `;
 
+  // Always reload from Sheet to get latest state from all devices
+  _tareasEstadoBOL = {};
   await cargarEstadoTareasBOL(diaIdx);
   renderPreElabDia(diaIdx);
 }
@@ -2734,6 +2739,9 @@ async function renderVistaPreElaboraciones() {
 function cambiarDiaPreElab(diaIdx, btn) {
   document.querySelectorAll('.dia-btn').forEach(b => b.classList.remove('dia-btn-activo'));
   btn.classList.add('dia-btn-activo');
+  const contenedor = document.getElementById('contenedor-pre-elab');
+  if (contenedor) contenedor.innerHTML = '<div style="padding:20px;text-align:center;color:var(--txt3)"><div class="spinner"></div></div>';
+  _tareasEstadoBOL = {};
   cargarEstadoTareasBOL(diaIdx).then(() => renderPreElabDia(diaIdx));
 }
 
