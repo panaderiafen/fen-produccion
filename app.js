@@ -3345,19 +3345,11 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
     // For descongelar masas base — show editable quantity
     let descongeladoExtra = '';
     if (t.masaId) {
-      const claveMasa = `fen_bol_desc_masa_${semana}_${diaIdx}_${t.masaId}`;
-      const cantMasa = localStorage.getItem(claveMasa) ?? t.planificadoMasas;
-      const pctM = t.planificadoMasas > 0 ? Math.round(parseInt(cantMasa)/t.planificadoMasas*100) : 0;
-      const colorM = pctM >= 100 ? '#2E7D32' : pctM > 0 ? '#F57C00' : 'var(--txt3)';
-      const labelM = pctM >= 100 ? '✓ Completo' : pctM > 0 ? `◑ ${pctM}%` : '';
+      // Simple confirmation — no quantity field needed for masas base
+      // The checkbox itself is the confirmation
       descongeladoExtra = `
-        <div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:6px 10px;background:var(--bg);border-radius:var(--r-sm)">
-          <span style="font-size:11px;color:var(--txt3)">Descongeladas:</span>
-          <input type="number" min="0" value="${cantMasa}"
-            style="width:60px;padding:3px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace;text-align:center"
-            oninput="actualizarDescongeladoMasa('${t.masaId}',${diaIdx},this.value,${t.planificadoMasas})">
-          <span style="font-size:11px">/ ${t.planificadoMasas} masas</span>
-          <span style="font-size:11px;font-weight:600;color:${colorM}" id="desc-masa-estado-${t.masaId}">${labelM}</span>
+        <div style="margin-top:4px;margin-left:32px;font-size:11px;color:var(--txt3)">
+          ${t.planificadoMasas} masa${t.planificadoMasas>1?'s':''} · confirmar con el checkbox
         </div>`;
     }
     // For descongelar productos — show editable quantity
