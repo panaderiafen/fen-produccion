@@ -2700,6 +2700,64 @@ function actualizarVisualTareaBOL(elementId, checked) {
   card.classList.toggle('bol-tarea-done', checked);
 }
 
+// ── BOL: DESCONGELADO → PLAN HORNEADO ────────────────────────
+function actualizarDescongelado(prodId, diaIdx, valor, planificado) {
+  const semana = obtenerSemanaActual();
+  const cant = parseInt(valor) || 0;
+  const claveDesc = `fen_bol_desc_${semana}_${diaIdx}_${prodId}`;
+  localStorage.setItem(claveDesc, cant);
+
+  // Update estado label
+  const pct = planificado > 0 ? Math.round(cant/planificado*100) : 0;
+  const color = pct >= 100 ? '#2E7D32' : pct > 0 ? '#F57C00' : 'var(--txt3)';
+  const label = pct >= 100 ? '✓ Completo' : pct > 0 ? `◑ ${pct}%` : '';
+  const sp = document.getElementById(`desc-estado-${prodId}`);
+  if (sp) { sp.textContent = label; sp.style.color = color; }
+
+  // Save to Sheet
+  const payload = encodeURIComponent(JSON.stringify({
+    accion: 'guardar_tarea_bol',
+    semana_ID: semana,
+    dia: diaIdx,
+    tipo_tarea: `desc_cant_${prodId}`,
+    subtarea: prodId,
+    cantidad: cant,
+    estado: pct >= 100 ? '1' : '0',
+    fecha_local: fechaRealDiaSemana(diaIdx),
+    dispositivo: navigator.userAgent.slice(0,50)
+  }));
+  fetch(FEN.WEBAPP_URL + '?payload=' + payload).catch(() => {});
+
+  // Update stock congelado in plan de horneado (next day)
+  const sigDiaIdx = (diaIdx + 1) % 7;
+  const claveStock = `fen_bol_stock_${semana}_${sigDiaIdx}_${prodId}`;
+  localStorage.setItem(claveStock, cant);
+
+  // If Plan de horneado is currently visible for next day, update the field
+  const stockInput = document.querySelector(`input[data-prod="${prodId}"][data-tipo="stock"]`);
+  if (stockInput) {
+    stockInput.value = cant;
+    actualizarStockCirculante(stockInput, sigDiaIdx);
+  }
+}
+
+// Load descongelado quantities from Sheet cache
+function cargarDescongeladoDesdeSheet(diaIdx) {
+  const semana = obtenerSemanaActual();
+  Object.entries(_tareasEstadoBOL).forEach(([tipo, val]) => {
+    if (!tipo.startsWith('desc_cant_')) return;
+    const prodId = tipo.replace('desc_cant_', '');
+    const claveDesc = `fen_bol_desc_${semana}_${diaIdx}_${prodId}`;
+    if (localStorage.getItem(claveDesc) === null) {
+      localStorage.setItem(claveDesc, val);
+      // Also update stock for next day
+      const sigDiaIdx = (diaIdx + 1) % 7;
+      const claveStock = `fen_bol_stock_${semana}_${sigDiaIdx}_${prodId}`;
+      if (localStorage.getItem(claveStock) === null) localStorage.setItem(claveStock, val);
+    }
+  });
+}
+
 // ── BOL: PRE-ELABORACIONES ───────────────────────────────────
 async function renderVistaPreElaboraciones() {
   const vista = document.getElementById('vista-pre-elaboraciones');
@@ -3198,12 +3256,14 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
       detalle: `${m.cantidad} masa${m.cantidad>1?'s':''} en frío para mañana`
     })),
     ...productosFormados.map(p => ({
-      id: `desc_prod_${p.id}`,
+      id: `desc_prod_${p.id.replace(/[^a-zA-Z0-9]/g,'_')}`,
       hora: '15:30',
       turno: 'anterior_pm',
       icono: '🧊',
       titulo: `Descongelar productos: ${p.nombre}`,
-      detalle: `${p.a_hornear} uni para hornear mañana`
+      detalle: `${p.a_hornear} uni planificadas`,
+      prodId: p.id,
+      planificado: p.a_hornear
     })),
     // Día actual AM
     { id: 'revisar_b2b', hora: '06:30', turno: 'am', icono: '📋', titulo: 'Revisar pedidos B2B', detalle: 'Actualizar cantidades a hornear' },
@@ -3233,22 +3293,46 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
 
   const renderTarea = (t) => {
     const done = getTareaEstado(t.id);
+    const semana = obtenerSemanaActual();
+
+    // For descongelar productos — show editable quantity
+    let descongeladoExtra = '';
+    if (t.prodId) {
+      const claveDesc = `fen_bol_desc_${semana}_${diaIdx}_${t.prodId}`;
+      const cantDesc = localStorage.getItem(claveDesc) ?? t.planificado;
+      const pct = t.planificado > 0 ? Math.round(parseInt(cantDesc)/t.planificado*100) : 0;
+      const color = pct >= 100 ? '#2E7D32' : pct > 0 ? '#F57C00' : 'var(--txt3)';
+      const label = pct >= 100 ? '✓ Completo' : pct > 0 ? `◑ ${pct}%` : '';
+      descongeladoExtra = `
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:6px 10px;background:var(--bg);border-radius:var(--r-sm)">
+          <span style="font-size:11px;color:var(--txt3)">Descongelado:</span>
+          <input type="number" min="0" value="${cantDesc}"
+            style="width:60px;padding:3px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace;text-align:center"
+            oninput="actualizarDescongelado('${t.prodId}',${diaIdx},this.value,${t.planificado})">
+          <span style="font-size:11px">/ ${t.planificado} uni</span>
+          <span style="font-size:11px;font-weight:600;color:${color}" id="desc-estado-${t.prodId}">${label}</span>
+        </div>`;
+    }
+
     return `
-      <div class="bol-tarea ${done?'bol-tarea-done':''}" id="tarea-${t.id}">
-        <label class="rdc-check-wrap" onclick="event.stopPropagation()">
-          <input type="checkbox" ${done?'checked':''}
-            onchange="toggleTareaBOLProduccion('${t.id}',this.checked)">
-          <span class="rdc-check-box"></span>
-        </label>
-        <input type="time" value="${t.hora}"
-          style="border:none;background:none;font-family:'DM Mono',monospace;font-size:12px;color:var(--txt3);width:70px;cursor:pointer;padding:0;min-width:70px"
-          onchange="actualizarHoraTarea('${t.id}',this.value,'${t.turno==='anterior_pm'?'anterior_pm':'am'}')">
-        <span style="font-size:16px;flex-shrink:0">${t.icono}</span>
-        <div style="flex:1">
-          <div style="font-size:13px;font-weight:600;${done?'text-decoration:line-through;color:var(--txt3)':''}">${t.titulo}</div>
-          <div style="font-size:11px;color:var(--txt3)">${t.detalle}</div>
+      <div class="bol-tarea ${done?'bol-tarea-done':''}" id="tarea-${t.id}" style="${t.prodId?'flex-direction:column;align-items:stretch':''}">
+        <div style="display:flex;align-items:center;gap:8px">
+          <label class="rdc-check-wrap" onclick="event.stopPropagation()">
+            <input type="checkbox" ${done?'checked':''}
+              onchange="toggleTareaBOLProduccion('${t.id}',this.checked)">
+            <span class="rdc-check-box"></span>
+          </label>
+          <input type="time" value="${t.hora}"
+            style="border:none;background:none;font-family:'DM Mono',monospace;font-size:12px;color:var(--txt3);width:70px;cursor:pointer;padding:0;min-width:70px"
+            onchange="actualizarHoraTarea('${t.id}',this.value,'${t.turno==='anterior_pm'?'anterior_pm':'am'}')">
+          <span style="font-size:16px;flex-shrink:0">${t.icono}</span>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;${done?'color:var(--txt3)':''}">${t.titulo}</div>
+            <div style="font-size:11px;color:var(--txt3)">${t.detalle}</div>
+          </div>
+          ${t.manual ? `<button onclick="eliminarTareaManualBOL('${t.id}',${diaIdx})" style="background:none;border:none;color:var(--txt3);cursor:pointer;font-size:14px"><i class="ti ti-x"></i></button>` : ''}
         </div>
-        ${t.manual ? `<button onclick="eliminarTareaManualBOL('${t.id}',${diaIdx})" style="background:none;border:none;color:var(--txt3);cursor:pointer;font-size:14px"><i class="ti ti-x"></i></button>` : ''}
+        ${descongeladoExtra}
       </div>`;
   };
 
