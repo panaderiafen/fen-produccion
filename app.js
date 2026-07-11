@@ -2722,6 +2722,7 @@ function actualizarDescongelado(prodId, diaIdx, valor, planificado) {
     tipo_tarea: `desc_cant_${prodId}`,
     subtarea: prodId,
     cantidad: cant,
+    cantidad_real: cant,
     estado: pct >= 100 ? '1' : '0',
     fecha_local: fechaRealDiaSemana(diaIdx),
     dispositivo: navigator.userAgent.slice(0,50)
@@ -2771,17 +2772,22 @@ function actualizarDescongeladoMasa(masaId, diaIdx, valor, planificado) {
 
 function cargarDescongeladoDesdeSheet(diaIdx) {
   const semana = obtenerSemanaActual();
+  const sigDiaIdx = (diaIdx + 1) % 7;
+  // Look for desc_cant tasks in loaded tareas
   Object.entries(_tareasEstadoBOL).forEach(([tipo, val]) => {
     if (!tipo.startsWith('desc_cant_')) return;
     const prodId = tipo.replace('desc_cant_', '');
     const claveDesc = `fen_bol_desc_${semana}_${diaIdx}_${prodId}`;
-    if (localStorage.getItem(claveDesc) === null) {
-      localStorage.setItem(claveDesc, val);
-      // Also update stock for next day
-      const sigDiaIdx = (diaIdx + 1) % 7;
-      const claveStock = `fen_bol_stock_${semana}_${sigDiaIdx}_${prodId}`;
-      if (localStorage.getItem(claveStock) === null) localStorage.setItem(claveStock, val);
-    }
+    const claveStock = `fen_bol_stock_${semana}_${sigDiaIdx}_${prodId}`;
+    // Always update from Sheet (Sheet is source of truth)
+    localStorage.setItem(claveDesc, val);
+    localStorage.setItem(claveStock, val);
+  });
+  // Also check prod_ tasks for descongelar with cantidad_real
+  Object.entries(_tareasEstadoBOL).forEach(([tipo, val]) => {
+    if (!tipo.startsWith('prod_desc_prod_')) return;
+    // val here is estado, but we need cantidad_real — stored separately in Sheet
+    // This is handled via desc_cant_ entries above
   });
 }
 
@@ -3355,7 +3361,14 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
     // For descongelar productos — show editable quantity
     if (t.prodId) {
       const claveDesc = `fen_bol_desc_${semana}_${diaIdx}_${t.prodId}`;
-      const cantDesc = localStorage.getItem(claveDesc) ?? t.planificado;
+      // Default to planificado if no value set
+      const cantDesc = localStorage.getItem(claveDesc) !== null 
+        ? localStorage.getItem(claveDesc) 
+        : t.planificado;
+      // Pre-populate localStorage with planificado so it's saved on first check
+      if (localStorage.getItem(claveDesc) === null) {
+        localStorage.setItem(claveDesc, t.planificado);
+      }
       const pct = t.planificado > 0 ? Math.round(parseInt(cantDesc)/t.planificado*100) : 0;
       const color = pct >= 100 ? '#2E7D32' : pct > 0 ? '#F57C00' : 'var(--txt3)';
       const label = pct >= 100 ? '✓ Completo' : pct > 0 ? `◑ ${pct}%` : '';
@@ -3525,13 +3538,26 @@ function toggleTareaBOLProduccion(id, checked) {
   const elProd = document.getElementById('tarea-' + id);
   if (elProd) elProd.classList.toggle('bol-tarea-done', checked);
   // Save to Sheet in background
+  // If it's a descongelar task and being checked, save current cantidad field value as cantidad_real
+  let cantReal = 0;
+  if (id.startsWith('desc_prod_')) {
+    const prodId = id.replace('desc_prod_', '');
+    const claveDesc = `fen_bol_desc_${semana}_${diaIdx}_${prodId}`;
+    cantReal = parseInt(localStorage.getItem(claveDesc)) || 0;
+    // If no value set yet and checking, use the field value
+    if (cantReal === 0 && checked) {
+      const input = document.querySelector(`#tarea-${id} input[type=number]`);
+      if (input) cantReal = parseInt(input.value) || 0;
+    }
+  }
   const payloadTarea2 = encodeURIComponent(JSON.stringify({
     accion: 'guardar_tarea_bol',
     semana_ID: semana,
     dia: diaIdx,
     tipo_tarea: 'prod_' + id,
     subtarea: id,
-    cantidad: 0,
+    cantidad: cantReal,
+    cantidad_real: cantReal,
     estado: checked ? '1' : '0',
     fecha_local: fechaRealDiaSemana(diaIdx),
     dispositivo: navigator.userAgent.slice(0,50)
