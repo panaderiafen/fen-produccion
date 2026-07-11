@@ -2643,13 +2643,24 @@ function fechaRealDiaSemana(diaIdx) {
 }
 
 // ── BOL: ESTIMACIÓN DEMANDA ──────────────────────────────────
-// Promedios B2B históricos por producto por día (calculados de 7 meses de datos)
+// Promedios B2B históricos (dic 2025 – jul 2026, 7 meses)
 const BOL_ESTIMACION_B2B = {
   'Croissant clásico': { Lun:71.6, Mar:104.7, Mié:86.6, Jue:66.2, Vie:76.4, Sáb:58.1, Dom:0 },
   'Croissant mini':    { Lun:10.7, Mar:6.5,   Mié:12.9, Jue:2.6,  Vie:12.0, Sáb:0,    Dom:0 },
   'Pan de chocolate':  { Lun:0.9,  Mar:2.4,   Mié:1.6,  Jue:1.1,  Vie:0.6,  Sáb:1.6,  Dom:0 },
   'Pañuelo':           { Lun:0,    Mar:2.4,   Mié:0,    Jue:0,    Vie:3.3,  Sáb:0,    Dom:0 },
   'Palmeritas':        { Lun:0.7,  Mar:1.1,   Mié:1.3,  Jue:0,    Vie:0.6,  Sáb:0,    Dom:0 },
+};
+
+// Promedios B2C históricos (jun 2025 – jun 2026, 1 año de datos reales)
+const BOL_ESTIMACION_B2C = {
+  'Croissant clásico': { Lun:6.4,  Mar:7.1,  Mié:5.7,  Jue:5.9,  Vie:8.1,  Sáb:6.4,  Dom:3.0 },
+  'Pan de chocolate':  { Lun:4.8,  Mar:3.6,  Mié:3.6,  Jue:5.1,  Vie:5.2,  Sáb:3.7,  Dom:1.9 },
+  'Croissant relleno': { Lun:0.9,  Mar:1.8,  Mié:1.8,  Jue:3.0,  Vie:2.1,  Sáb:1.4,  Dom:0.4 },
+  'Pañuelo':           { Lun:1.3,  Mar:1.8,  Mié:1.9,  Jue:2.0,  Vie:1.9,  Sáb:1.3,  Dom:0.6 },
+  'Palmeritas':        { Lun:1.9,  Mar:2.6,  Mié:2.0,  Jue:2.4,  Vie:3.5,  Sáb:2.1,  Dom:0.6 },
+  'Cachito':           { Lun:0.7,  Mar:0.9,  Mié:0.7,  Jue:1.1,  Vie:0.9,  Sáb:0.6,  Dom:0.1 },
+  'Roll hojaldre':     { Lun:0.2,  Mar:0.2,  Mié:0.2,  Jue:0.4,  Vie:0.3,  Sáb:0.3,  Dom:0.1 },
 };
 
 const BOL_DIAS_NOMBRES = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
@@ -2665,7 +2676,7 @@ function renderVistaEstimacionBOL() {
   const b2cEst = (() => { try { return JSON.parse(localStorage.getItem(claveB2C)||'{}'); } catch(e) { return {}; } })();
   const b2bReal = (() => { try { return JSON.parse(localStorage.getItem(claveB2B)||'{}'); } catch(e) { return {}; } })();
 
-  const productos = Object.keys(BOL_ESTIMACION_B2B);
+  const productos = [...new Set([...Object.keys(BOL_ESTIMACION_B2B), ...Object.keys(BOL_ESTIMACION_B2C)])];
 
   vista.innerHTML = `
     <div class="vista-header">
@@ -2675,8 +2686,8 @@ function renderVistaEstimacionBOL() {
       </div>
     </div>
     <p style="font-size:13px;color:var(--txt2);margin-bottom:16px;line-height:1.6">
-      Los promedios B2B son históricos (dic 2025 – jul 2026). 
-      Ajusta B2B real si tienes pedidos confirmados y agrega tu estimación B2C por día.
+      Promedios basados en datos reales: B2B (dic 2025 – jul 2026) · B2C (jun 2025 – jun 2026).
+      Ajusta según pedidos confirmados y tu meta de crecimiento.
     </p>
 
     <div style="overflow-x:auto">
@@ -2728,10 +2739,11 @@ function renderVistaEstimacionBOL() {
                   </tr>
                   <tr style="border-bottom:2px solid var(--border)">
                     ${BOL_DIAS_NOMBRES.map(d => {
-                      const val = b2cEst[prod]?.[d] ?? '';
+                      const b2cHist = BOL_ESTIMACION_B2C[prod]?.[d] || 0;
+                      const val = b2cEst[prod]?.[d] !== undefined ? b2cEst[prod][d] : b2cHist;
                       return `<td style="text-align:center;padding:3px 4px;border-left:1px solid var(--border)">
-                        <div style="font-size:9px;color:var(--txt3);margin-bottom:2px">B2C est.</div>
-                        <input type="number" min="0" placeholder="0" value="${val}"
+                        <div style="font-size:9px;color:var(--txt3);margin-bottom:2px">B2C (hist: ${b2cHist})</div>
+                        <input type="number" min="0" value="${val}"
                           style="width:52px;text-align:center;padding:2px 4px;border:1px solid var(--border);border-radius:4px;font-size:12px;font-family:'DM Mono',monospace;background:var(--surface)"
                           oninput="actualizarEstimacionBOL('b2c','${prod}','${d}',this.value,'${semana}')">
                       </td>`;
