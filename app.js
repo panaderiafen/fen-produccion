@@ -2629,9 +2629,11 @@ async function cargarEstadoTareasBOL(diaIdx) {
       _tareasEstadoBOL = {};
       data.tareas.forEach(t => {
         _tareasEstadoBOL[t.tipo_tarea] = t.estado;
-        // También actualizar localStorage como cache
-        localStorage.setItem(`fen_bol_pre_${semana}_${diaIdx}_${t.subtarea}`, t.estado);
-        localStorage.setItem(`fen_bol_check_${semana}_${diaIdx}_${t.subtarea}`, t.estado);
+        // Solo actualizar localStorage si no hay valor local (otro dispositivo)
+        const clavePreLS  = `fen_bol_pre_${semana}_${diaIdx}_${t.subtarea}`;
+        const claveProdLS = `fen_bol_check_${semana}_${diaIdx}_${t.subtarea}`;
+        if (localStorage.getItem(clavePreLS) === null)  localStorage.setItem(clavePreLS, t.estado);
+        if (localStorage.getItem(claveProdLS) === null) localStorage.setItem(claveProdLS, t.estado);
       });
     }
   } catch(e) {
@@ -2640,16 +2642,18 @@ async function cargarEstadoTareasBOL(diaIdx) {
 }
 
 function getTareaEstadoBOL(id, semana, diaIdx, prefijo) {
-  // Primero buscar en Sheet cache
+  // localStorage es la fuente de verdad (más reciente)
+  const claveLS = prefijo === 'pre'
+    ? `fen_bol_pre_${semana}_${diaIdx}_${id}`
+    : `fen_bol_check_${semana}_${diaIdx}_${id}`;
+  const localVal = localStorage.getItem(claveLS);
+  if (localVal !== null) return localVal === '1';
+  // Fallback Sheet cache (para otro dispositivo)
   const tipoTarea = `${prefijo}_${id}`;
   if (_tareasEstadoBOL[tipoTarea] !== undefined) {
     return _tareasEstadoBOL[tipoTarea] === '1';
   }
-  // Fallback localStorage
-  const claveLS = prefijo === 'pre'
-    ? `fen_bol_pre_${semana}_${diaIdx}_${id}`
-    : `fen_bol_check_${semana}_${diaIdx}_${id}`;
-  try { return localStorage.getItem(claveLS) === '1'; } catch(e) { return false; }
+  return false;
 }
 
 function actualizarVisualTareaBOL(elementId, checked) {
@@ -3031,11 +3035,19 @@ function actualizarTandaPreElab(id, diaIdx, idx, valor) {
 
 function togglePreTarea(id, diaIdx, checked) {
   const semana = obtenerSemanaActual();
-  // Save to localStorage for immediate response
+  // localStorage es la fuente de verdad local
   localStorage.setItem(`fen_bol_pre_${semana}_${diaIdx}_${id}`, checked?'1':'0');
-  // Update visual
-  actualizarVisualTareaBOL(id, checked);
-  // Save to Sheet in background
+  // Actualizar cache Sheet
+  _tareasEstadoBOL[`pre_${id}`] = checked ? '1' : '0';
+  // Update visual — el elemento puede ser pre-tarea-ID o pre-tarea-ID_tanda_N
+  const el = document.getElementById('pre-tarea-' + id);
+  if (el) {
+    el.classList.toggle('bol-tarea-done', checked);
+    const titulo = el.querySelector('div > div:first-child');
+    if (titulo) titulo.style.opacity = checked ? '0.5' : '1';
+  }
+  // Save to Sheet in background (best effort)
+  const hoy = new Date(); const off = hoy.getTimezoneOffset()*60000;
   escribirEnSheet('guardar_tarea_bol', {
     semana_ID: semana,
     dia: diaIdx,
@@ -3043,6 +3055,7 @@ function togglePreTarea(id, diaIdx, checked) {
     subtarea: id,
     cantidad: 0,
     estado: checked ? '1' : '0',
+    fecha_local: new Date(hoy - off).toISOString().slice(0,10),
     dispositivo: navigator.userAgent.slice(0,50)
   });
 }
@@ -3273,8 +3286,10 @@ function toggleTareaBOLProduccion(id, checked) {
   // Save to localStorage for immediate response
   localStorage.setItem(`fen_bol_check_${semana}_${diaIdx}_${id}`, checked?'1':'0');
   // Update visual
-  actualizarVisualTareaBOL('tarea-' + id.replace(/[^a-zA-Z0-9_-]/g,'_'), checked);
+  const elProd = document.getElementById('tarea-' + id);
+  if (elProd) elProd.classList.toggle('bol-tarea-done', checked);
   // Save to Sheet in background
+  const hoy2 = new Date(); const off2 = hoy2.getTimezoneOffset()*60000;
   escribirEnSheet('guardar_tarea_bol', {
     semana_ID: semana,
     dia: diaIdx,
@@ -3282,6 +3297,7 @@ function toggleTareaBOLProduccion(id, checked) {
     subtarea: id,
     cantidad: 0,
     estado: checked ? '1' : '0',
+    fecha_local: new Date(hoy2 - off2).toISOString().slice(0,10),
     dispositivo: navigator.userAgent.slice(0,50)
   });
 }
