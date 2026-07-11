@@ -3421,8 +3421,17 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
           </thead>
           <tbody>
             ${planHorneado.map(p => {
-              const claveStock = `fen_bol_stock_${obtenerSemanaActual()}_${diaIdx}_${p.id}`;
-              const stockCongelado = parseInt(localStorage.getItem(claveStock)) || 0;
+              const semanaHoy = obtenerSemanaActual();
+              const claveStock = `fen_bol_stock_${semanaHoy}_${diaIdx}_${p.id}`;
+              // Also check if previous day registered descongelado for this product
+              const claveDescAnt = `fen_bol_desc_${semanaHoy}_${diaIdx > 0 ? diaIdx-1 : 6}_${p.id}`;
+              const descAnt = localStorage.getItem(claveDescAnt);
+              const stockCongelado = parseInt(localStorage.getItem(claveStock)) || 
+                                     (descAnt !== null ? parseInt(descAnt) : 0);
+              // Update localStorage with best value
+              if (descAnt !== null && !localStorage.getItem(claveStock)) {
+                localStorage.setItem(claveStock, descAnt);
+              }
               const claveb2b = `fen_bol_b2b_${obtenerSemanaActual()}_${diaIdx}_${p.id}`;
               const b2bVal = parseInt(localStorage.getItem(claveb2b)) || 0;
               const aDescongelar = Math.min(p.unidades, stockCongelado);
