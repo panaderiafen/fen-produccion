@@ -301,7 +301,6 @@ function renderSidebar() {
     // Pre-elaboraciones BOL — va antes de recetas del día en el push
     if (App.areaCodigo === 'BOL') {
       items.splice(3, 0, { id: 'pre-elaboraciones', icon: 'ti-clock-play', label: 'Pre-elaboraciones' });
-      items.splice(3, 0, { id: 'estimacion-bol',    icon: 'ti-chart-arrows-vertical', label: 'Estimación demanda' });
     }
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL') {
       items.push({ id: 'resumen-semanal',     icon: 'ti-chart-grid-dots', label: 'Resumen semanal' });
@@ -317,10 +316,11 @@ function renderSidebar() {
     items.forEach(item => nav.appendChild(crearNavItem(item)));
   } else {
     [
-      { id: 'aprobaciones',   icon: 'ti-check-circle', label: 'Aprobaciones'         },
-      { id: 'materias-primas',icon: 'ti-list',          label: 'Materias primas'     },
-      { id: 'maestro-admin',  icon: 'ti-book',          label: 'Maestro de recetas'  },
-      { id: 'costos',         icon: 'ti-chart-bar',     label: 'Estructuras de costo'},
+      { id: 'aprobaciones',   icon: 'ti-check-circle',         label: 'Aprobaciones'         },
+      { id: 'materias-primas',icon: 'ti-list',                  label: 'Materias primas'     },
+      { id: 'maestro-admin',  icon: 'ti-book',                  label: 'Maestro de recetas'  },
+      { id: 'costos',         icon: 'ti-chart-bar',             label: 'Estructuras de costo'},
+      { id: 'estimacion-bol', icon: 'ti-chart-arrows-vertical', label: 'Estimación BOL'      },
     ].forEach(item => nav.appendChild(crearNavItem(item)));
 
     // Area shortcuts for admin
@@ -2751,41 +2751,113 @@ function renderVistaEstimacionBOL() {
           <i class="ti ti-stack-2"></i> Masas a elaborar esta semana (estimado)
         </div>
         <div id="masas-estimadas-body" style="padding:12px 16px">
-          ${renderMasasEstimadas(b2cEst, b2bReal)}
+          ${(() => {
+            const claveMeta = `fen_bol_meta_${semana}`;
+            const meta = (() => { try { return JSON.parse(localStorage.getItem(claveMeta)||'{}'); } catch(e) { return {}; } })();
+            return renderMasasEstimadas(b2cEst, b2bReal, meta);
+          })()}
         </div>
       </div>
     </div>
   `;
 }
 
-function renderMasasEstimadas(b2cEst, b2bReal) {
-  // Croissant clásico: 10 por masa, Mini: 48 por masa (configurable)
+function renderMasasEstimadas(b2cEst, b2bReal, metaData) {
+  const cfg = cargarConfigSubrecetas();
+  const maxMasas = (cfg.bol?.amasadora_tandas_dia || 2) * (cfg.bol?.amasadora_max_por_tanda || 16);
+  const capHorno = cfg.bol?.capacidad_horno || 90;
   const rendimiento = { 'Croissant clásico': 10, 'Croissant mini': 10, 'Pan de chocolate': 10 };
   const dias = BOL_DIAS_NOMBRES;
   const productos = Object.keys(BOL_ESTIMACION_B2B);
 
-  return dias.map(d => {
-    let totalMasas = 0;
-    const detalle = productos.map(prod => {
-      const b2b = BOL_ESTIMACION_B2B[prod];
-      const b2bV = parseFloat(b2bReal[prod]?.[d] ?? b2b[d]) || 0;
-      const b2cV = parseFloat(b2cEst[prod]?.[d]) || 0;
-      const total = b2bV + b2cV;
-      const rend = rendimiento[prod] || 10;
-      const masas = Math.ceil(total / rend);
-      totalMasas += masas;
-      return total > 0 ? `${prod}: ${Math.round(total)} uni → ${masas} masa${masas>1?'s':''}` : null;
-    }).filter(Boolean);
+  return `
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:500px">
+        <thead>
+          <tr style="background:var(--bg)">
+            <th style="text-align:left;padding:6px 12px;font-size:10px;color:var(--txt3);border-bottom:1px solid var(--border)">Métrica</th>
+            ${dias.map(d=>`<th style="text-align:center;padding:6px 8px;font-size:10px;color:var(--txt3);border-bottom:1px solid var(--border)">${d}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:8px 12px;font-size:12px;color:var(--txt2)">Demanda estimada (uni)</td>
+            ${dias.map(d => {
+              let totalUni = 0;
+              productos.forEach(prod => {
+                const b2b = BOL_ESTIMACION_B2B[prod];
+                totalUni += parseFloat(b2bReal[prod]?.[d] ?? b2b[d]) || 0;
+                totalUni += parseFloat(b2cEst[prod]?.[d]) || 0;
+              });
+              return `<td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;font-weight:600">${Math.round(totalUni)}</td>`;
+            }).join('')}
+          </tr>
+          <tr style="border-bottom:1px solid var(--border);background:var(--bg)">
+            <td style="padding:8px 12px;font-size:12px;color:#E65100;font-weight:600">Meta producción (uni)</td>
+            ${dias.map(d => {
+              const val = metaData?.[d] || '';
+              return `<td style="text-align:center;padding:4px">
+                <input type="number" min="0" placeholder="—" value="${val}"
+                  style="width:56px;text-align:center;padding:3px 4px;border:1.5px solid #E65100;border-radius:4px;font-size:13px;font-family:'DM Mono',monospace;font-weight:600;color:#E65100"
+                  oninput="actualizarMetaBOL('${d}',this.value)">
+              </td>`;
+            }).join('')}
+          </tr>
+          <tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:8px 12px;font-size:12px;color:var(--txt2)">Masas necesarias</td>
+            ${dias.map(d => {
+              let totalUni = metaData?.[d] || 0;
+              if (!totalUni) {
+                productos.forEach(prod => {
+                  const b2b = BOL_ESTIMACION_B2B[prod];
+                  totalUni += parseFloat(b2bReal[prod]?.[d] ?? b2b[d]) || 0;
+                  totalUni += parseFloat(b2cEst[prod]?.[d]) || 0;
+                });
+              }
+              const masas = Math.ceil(totalUni / 10);
+              const color = masas > maxMasas ? '#C62828' : masas > maxMasas*0.8 ? '#F57C00' : '#2E7D32';
+              return `<td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;font-weight:700;color:${color}">
+                ${masas}
+                ${masas > maxMasas ? `<div style="font-size:9px;color:#C62828">⚠ +${masas-maxMasas} cap</div>` : ''}
+              </td>`;
+            }).join('')}
+          </tr>
+          <tr>
+            <td style="padding:8px 12px;font-size:12px;color:var(--txt2)">Tandas horneado</td>
+            ${dias.map(d => {
+              let totalUni = metaData?.[d] || 0;
+              if (!totalUni) {
+                productos.forEach(prod => {
+                  const b2b = BOL_ESTIMACION_B2B[prod];
+                  totalUni += parseFloat(b2bReal[prod]?.[d] ?? b2b[d]) || 0;
+                  totalUni += parseFloat(b2cEst[prod]?.[d]) || 0;
+                });
+              }
+              const tandas = Math.ceil(totalUni / capHorno);
+              return `<td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;color:var(--txt2)">${tandas}</td>`;
+            }).join('')}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--txt3)">
+      Cap. elaboración: ${maxMasas} masas/día · Cap. horneado: ${capHorno} uni/tanda
+      <span style="margin-left:12px;color:#C62828">⚠ Rojo = supera capacidad actual</span>
+      <span style="margin-left:12px;color:#F57C00">⚠ Naranja = sobre 80% capacidad</span>
+    </div>`;
+}
 
-    return `
-      <div style="display:flex;align-items:flex-start;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)">
-        <div style="min-width:40px;font-weight:700;font-size:13px;color:var(--area-color)">${d}</div>
-        <div style="flex:1;font-size:11px;color:var(--txt2);line-height:1.7">${detalle.join(' · ') || 'Sin demanda'}</div>
-        <div style="font-family:'DM Mono',monospace;font-weight:700;font-size:15px;color:var(--area-color);min-width:50px;text-align:right">
-          ${totalMasas} <span style="font-size:10px;font-weight:400;color:var(--txt3)">masas</span>
-        </div>
-      </div>`;
-  }).join('');
+function actualizarMetaBOL(dia, valor) {
+  const semana = obtenerSemanaActual();
+  const clave = `fen_bol_meta_${semana}`;
+  const meta = (() => { try { return JSON.parse(localStorage.getItem(clave)||'{}'); } catch(e) { return {}; } })();
+  meta[dia] = parseFloat(valor) || 0;
+  localStorage.setItem(clave, JSON.stringify(meta));
+  // Re-render capacity section
+  const b2cEst = (() => { try { return JSON.parse(localStorage.getItem(`fen_bol_b2c_est_${semana}`)||'{}'); } catch(e) { return {}; } })();
+  const b2bReal = (() => { try { return JSON.parse(localStorage.getItem(`fen_bol_b2b_real_${semana}`)||'{}'); } catch(e) { return {}; } })();
+  const body = document.getElementById('masas-estimadas-body');
+  if (body) body.innerHTML = renderMasasEstimadas(b2cEst, b2bReal, meta);
 }
 
 function actualizarEstimacionBOL(tipo, prod, dia, valor, semana) {
@@ -2800,8 +2872,10 @@ function actualizarEstimacionBOL(tipo, prod, dia, valor, semana) {
   // Re-render masas estimadas
   const b2cEst = (() => { try { return JSON.parse(localStorage.getItem(claveB2C)||'{}'); } catch(e) { return {}; } })();
   const b2bReal = (() => { try { return JSON.parse(localStorage.getItem(claveB2B)||'{}'); } catch(e) { return {}; } })();
+  const claveMeta = `fen_bol_meta_${semana}`;
+  const meta = (() => { try { return JSON.parse(localStorage.getItem(claveMeta)||'{}'); } catch(e) { return {}; } })();
   const body = document.getElementById('masas-estimadas-body');
-  if (body) body.innerHTML = renderMasasEstimadas(b2cEst, b2bReal);
+  if (body) body.innerHTML = renderMasasEstimadas(b2cEst, b2bReal, meta);
 }
 
 // ── BOL: ESTADO TAREAS ───────────────────────────────────────
