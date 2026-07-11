@@ -103,8 +103,19 @@ async function entrar(areaCodigo, rol, desdeAdmin = false) {
   renderSidebar();
   mostrarLoading('Cargando datos...');
   await cargarMP();
-  await cargarRecetas(true); // forzar recarga completa
+  await cargarRecetas(true);
   await cargarPlanSemana();
+
+  // BOL: cargar plan masas y estado tareas del día actual en background
+  if (areaCodigo === 'BOL') {
+    const hoy = new Date().getDay();
+    const diaIdx = hoy === 0 ? 6 : hoy - 1;
+    cargarPlanMasasBOL(); // no await — carga en background
+    cargarEstadoTareasBOL(diaIdx); // no await — carga en background
+  }
+
+  cargarAvisos(); // no await — carga en background
+
   ocultarLoading();
   verificarAlertas();
 
@@ -254,6 +265,11 @@ async function sincronizarTodo(btn) {
   await cargarMP();
   await cargarRecetas();
   await cargarPlanSemana();
+  if (App.areaCodigo === 'BOL') {
+    await cargarPlanMasasBOL();
+    const hoy = new Date().getDay();
+    await cargarEstadoTareasBOL(hoy === 0 ? 6 : hoy - 1);
+  }
   verificarAlertas();
   // Re-renderizar vista actual
   if (App.vistaActual) navegarA(App.vistaActual);
