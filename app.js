@@ -2883,7 +2883,7 @@ function renderPreElabDia(diaIdx) {
   const estadoColor = e => e === 'completado' ? '#2E7D32' : e === 'parcial' ? '#F57C00' : 'var(--txt3)';
   const estadoLabel = e => e === 'completado' ? '✓ Completado' : e === 'parcial' ? '◑ Parcial' : '';
 
-  const noPlan = masasSiguiente.length === 0 && poolishSiguiente.length === 0 && totalEmpastes === 0;
+  const noPlan = masasSiguiente.length === 0 && poolishSiguiente.length === 0 && totalEmpastes === 0 && (_planMasasBOL[masasBase[0]?.ID_MP] || [])[diaIdx] === 0;
 
   contenedor.innerHTML = noPlan ? `
     <div class="empty-state" style="height:200px">
@@ -2905,7 +2905,7 @@ function renderPreElabDia(diaIdx) {
 
     <div class="card" style="margin-bottom:14px">
       <div class="card-head" style="background:#E8F5E9;color:#1B5E20">
-        <i class="ti ti-sun-low"></i> ${diasNombres[diaIdx]} PM — Para ${diasNombres[diaSiguiente]}
+        <i class="ti ti-sun-low"></i> ${diasNombres[diaIdx]} PM — Elaboraciones
       </div>
 
       ${totalEmpastes > 0 ? `
@@ -2942,7 +2942,7 @@ function renderPreElabDia(diaIdx) {
       ${masasSiguiente.map(({ mp, cantidad, receta }) => `
       <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
         <div style="font-size:13px;font-weight:600;margin-bottom:6px">
-          🌀 Elaborar ${mp.nombre} — ${cantidad} masas
+          🌀 Elaborar ${mp.nombre} — ${cantidad} masas (reponer stock)
         </div>
         ${renderTandas(mp.ID_MP + '_masa', cantidad, receta, 'masa')}
       </div>`).join('')}
