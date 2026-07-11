@@ -2770,6 +2770,36 @@ function actualizarDescongeladoMasa(masaId, diaIdx, valor, planificado) {
   fetch(FEN.WEBAPP_URL + '?payload=' + payload).catch(() => {});
 }
 
+async function cargarDescongeladoAntDesdeSheet(diaAnt, diaHoy) {
+  // Load previous day tareas to get desc_cant values without overwriting current day cache
+  const semana = obtenerSemanaActual();
+  try {
+    const payload = encodeURIComponent(JSON.stringify({
+      accion: 'leer_tareas_bol',
+      semana_ID: semana,
+      dia: diaAnt
+    }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    if (data.ok && data.tareas) {
+      data.tareas.forEach(t => {
+        if (!t.tipo_tarea.startsWith('desc_cant_') && !t.tipo_tarea.startsWith('prod_desc_prod_')) return;
+        const prodId = t.tipo_tarea.replace('desc_cant_','').replace('prod_desc_prod_','');
+        const cantReal = t.cantidad_real !== undefined ? parseInt(t.cantidad_real) : parseInt(t.cantidad) || 0;
+        if (cantReal === 0) return;
+        // Save as stock for today (diaHoy)
+        const claveStock = `fen_bol_stock_${semana}_${diaHoy}_${prodId}`;
+        localStorage.setItem(claveStock, cantReal);
+        // Also save desc for reference
+        const claveDesc = `fen_bol_desc_${semana}_${diaAnt}_${prodId}`;
+        localStorage.setItem(claveDesc, cantReal);
+      });
+    }
+  } catch(e) {
+    console.warn('[fën] No se pudo cargar descongelado anterior:', e.message);
+  }
+}
+
 function cargarDescongeladoDesdeSheet(diaIdx) {
   const semana = obtenerSemanaActual();
   const sigDiaIdx = (diaIdx + 1) % 7;
