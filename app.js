@@ -3048,16 +3048,18 @@ function togglePreTarea(id, diaIdx, checked) {
   }
   // Save to Sheet in background (best effort)
   const hoy = new Date(); const off = hoy.getTimezoneOffset()*60000;
-  escribirEnSheet('guardar_tarea_bol', {
+  const payloadTarea = encodeURIComponent(JSON.stringify({
+    accion: 'guardar_tarea_bol',
     semana_ID: semana,
     dia: diaIdx,
-    tipo_tarea: `pre_${id}`,
+    tipo_tarea: 'pre_' + id,
     subtarea: id,
     cantidad: 0,
     estado: checked ? '1' : '0',
     fecha_local: new Date(hoy - off).toISOString().slice(0,10),
     dispositivo: navigator.userAgent.slice(0,50)
-  });
+  }));
+  fetch(FEN.WEBAPP_URL + '?payload=' + payloadTarea).catch(() => {});
 }
 
 
@@ -3290,16 +3292,18 @@ function toggleTareaBOLProduccion(id, checked) {
   if (elProd) elProd.classList.toggle('bol-tarea-done', checked);
   // Save to Sheet in background
   const hoy2 = new Date(); const off2 = hoy2.getTimezoneOffset()*60000;
-  escribirEnSheet('guardar_tarea_bol', {
+  const payloadTarea2 = encodeURIComponent(JSON.stringify({
+    accion: 'guardar_tarea_bol',
     semana_ID: semana,
     dia: diaIdx,
-    tipo_tarea: `prod_${id}`,
+    tipo_tarea: 'prod_' + id,
     subtarea: id,
     cantidad: 0,
     estado: checked ? '1' : '0',
     fecha_local: new Date(hoy2 - off2).toISOString().slice(0,10),
     dispositivo: navigator.userAgent.slice(0,50)
-  });
+  }));
+  fetch(FEN.WEBAPP_URL + '?payload=' + payloadTarea2).catch(() => {});
 }
 
 function actualizarStockCirculante(input, diaIdx) {
