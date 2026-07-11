@@ -300,8 +300,8 @@ function renderSidebar() {
     if (App.areaCodigo === 'CAF') items.splice(2, 2);
     // Pre-elaboraciones BOL — va antes de recetas del día en el push
     if (App.areaCodigo === 'BOL') {
-      // Insert pre-elaboraciones after plan semanal (index 2), before recetas del dia (index 3)
       items.splice(3, 0, { id: 'pre-elaboraciones', icon: 'ti-clock-play', label: 'Pre-elaboraciones' });
+      items.splice(3, 0, { id: 'estimacion-bol',    icon: 'ti-chart-arrows-vertical', label: 'Estimación demanda' });
     }
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL') {
       items.push({ id: 'resumen-semanal',     icon: 'ti-chart-grid-dots', label: 'Resumen semanal' });
@@ -377,6 +377,7 @@ function navegarA(vistaId) {
     case 'consolidado-mensual': renderVistaConsolidado();    break;
     case 'stock-caf':           renderVistaStockCAF();        break;
     case 'pre-elaboraciones':   renderVistaPreElaboraciones(); break;
+    case 'estimacion-bol':      renderVistaEstimacionBOL();  break;
     default: mostrarVista('empty');
   }
 }
@@ -2639,6 +2640,168 @@ function fechaRealDiaSemana(diaIdx) {
   fecha.setDate(hoy.getDate() + diff);
   const off = fecha.getTimezoneOffset() * 60000;
   return new Date(fecha - off).toISOString().slice(0,10);
+}
+
+// ── BOL: ESTIMACIÓN DEMANDA ──────────────────────────────────
+// Promedios B2B históricos por producto por día (calculados de 7 meses de datos)
+const BOL_ESTIMACION_B2B = {
+  'Croissant clásico': { Lun:71.6, Mar:104.7, Mié:86.6, Jue:66.2, Vie:76.4, Sáb:58.1, Dom:0 },
+  'Croissant mini':    { Lun:10.7, Mar:6.5,   Mié:12.9, Jue:2.6,  Vie:12.0, Sáb:0,    Dom:0 },
+  'Pan de chocolate':  { Lun:0.9,  Mar:2.4,   Mié:1.6,  Jue:1.1,  Vie:0.6,  Sáb:1.6,  Dom:0 },
+  'Pañuelo':           { Lun:0,    Mar:2.4,   Mié:0,    Jue:0,    Vie:3.3,  Sáb:0,    Dom:0 },
+  'Palmeritas':        { Lun:0.7,  Mar:1.1,   Mié:1.3,  Jue:0,    Vie:0.6,  Sáb:0,    Dom:0 },
+};
+
+const BOL_DIAS_NOMBRES = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+
+function renderVistaEstimacionBOL() {
+  const vista = document.getElementById('vista-estimacion-bol');
+  if (!vista) return;
+  mostrarVista('estimacion-bol');
+
+  const semana = obtenerSemanaActual();
+  const claveB2C = `fen_bol_b2c_est_${semana}`;
+  const claveB2B = `fen_bol_b2b_real_${semana}`;
+  const b2cEst = (() => { try { return JSON.parse(localStorage.getItem(claveB2C)||'{}'); } catch(e) { return {}; } })();
+  const b2bReal = (() => { try { return JSON.parse(localStorage.getItem(claveB2B)||'{}'); } catch(e) { return {}; } })();
+
+  const productos = Object.keys(BOL_ESTIMACION_B2B);
+
+  vista.innerHTML = `
+    <div class="vista-header">
+      <div>
+        <div class="vista-eyebrow">Bollería</div>
+        <h1 class="vista-titulo">Estimación de demanda</h1>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--txt2);margin-bottom:16px;line-height:1.6">
+      Los promedios B2B son históricos (dic 2025 – jul 2026). 
+      Ajusta B2B real si tienes pedidos confirmados y agrega tu estimación B2C por día.
+    </p>
+
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:600px">
+        <thead>
+          <tr style="background:var(--bg)">
+            <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--border)">Producto</th>
+            ${BOL_DIAS_NOMBRES.map(d => `
+              <th style="text-align:center;padding:8px 6px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--border)">${d}</th>
+            `).join('')}
+            <th style="text-align:right;padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--border)">Sem</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${productos.map(prod => {
+            const b2b = BOL_ESTIMACION_B2B[prod];
+            const semTotal = BOL_DIAS_NOMBRES.reduce((s,d) => {
+              const b2bV = parseFloat((b2bReal[prod]?.[d] ?? b2b[d]) || 0);
+              const b2cV = parseFloat(b2cEst[prod]?.[d] || 0);
+              return s + b2bV + b2cV;
+            }, 0);
+            return `
+            <tr>
+              <td colspan="${BOL_DIAS_NOMBRES.length + 2}" style="padding:0">
+                <table style="width:100%;border-collapse:collapse">
+                  <tr style="border-bottom:1px solid var(--border)">
+                    <td rowspan="3" style="padding:8px 14px;font-weight:600;font-size:13px;min-width:160px;vertical-align:middle">${prod}</td>
+                    ${BOL_DIAS_NOMBRES.map(d => {
+                      const b2bV = b2bReal[prod]?.[d] ?? b2b[d];
+                      return `<td style="text-align:center;padding:4px 6px;font-size:11px;color:var(--txt3);border-left:1px solid var(--border)">
+                        <div style="font-size:9px;color:var(--txt3);margin-bottom:2px">B2B hist.</div>
+                        <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--txt2)">${b2b[d]}</div>
+                      </td>`;
+                    }).join('')}
+                    <td rowspan="3" style="text-align:right;padding:8px 14px;font-family:'DM Mono',monospace;font-weight:700;font-size:15px;color:var(--area-color);border-left:1px solid var(--border);vertical-align:middle">
+                      ${Math.round(semTotal)}
+                    </td>
+                  </tr>
+                  <tr style="border-bottom:1px solid var(--border);background:var(--bg)">
+                    ${BOL_DIAS_NOMBRES.map(d => {
+                      const val = b2bReal[prod]?.[d] ?? '';
+                      return `<td style="text-align:center;padding:3px 4px;border-left:1px solid var(--border)">
+                        <div style="font-size:9px;color:var(--txt3);margin-bottom:2px">B2B real</div>
+                        <input type="number" min="0" placeholder="${b2b[d]}" value="${val}"
+                          style="width:52px;text-align:center;padding:2px 4px;border:1px solid var(--border);border-radius:4px;font-size:12px;font-family:'DM Mono',monospace;background:var(--surface)"
+                          oninput="actualizarEstimacionBOL('b2b','${prod}','${d}',this.value,'${semana}')">
+                      </td>`;
+                    }).join('')}
+                  </tr>
+                  <tr style="border-bottom:2px solid var(--border)">
+                    ${BOL_DIAS_NOMBRES.map(d => {
+                      const val = b2cEst[prod]?.[d] ?? '';
+                      return `<td style="text-align:center;padding:3px 4px;border-left:1px solid var(--border)">
+                        <div style="font-size:9px;color:var(--txt3);margin-bottom:2px">B2C est.</div>
+                        <input type="number" min="0" placeholder="0" value="${val}"
+                          style="width:52px;text-align:center;padding:2px 4px;border:1px solid var(--border);border-radius:4px;font-size:12px;font-family:'DM Mono',monospace;background:var(--surface)"
+                          oninput="actualizarEstimacionBOL('b2c','${prod}','${d}',this.value,'${semana}')">
+                      </td>`;
+                    }).join('')}
+                  </tr>
+                </table>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="margin-top:20px">
+      <div class="card">
+        <div class="card-head" style="background:#FFF3E0;color:#E65100">
+          <i class="ti ti-stack-2"></i> Masas a elaborar esta semana (estimado)
+        </div>
+        <div id="masas-estimadas-body" style="padding:12px 16px">
+          ${renderMasasEstimadas(b2cEst, b2bReal)}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderMasasEstimadas(b2cEst, b2bReal) {
+  // Croissant clásico: 10 por masa, Mini: 48 por masa (configurable)
+  const rendimiento = { 'Croissant clásico': 10, 'Croissant mini': 10, 'Pan de chocolate': 10 };
+  const dias = BOL_DIAS_NOMBRES;
+  const productos = Object.keys(BOL_ESTIMACION_B2B);
+
+  return dias.map(d => {
+    let totalMasas = 0;
+    const detalle = productos.map(prod => {
+      const b2b = BOL_ESTIMACION_B2B[prod];
+      const b2bV = parseFloat(b2bReal[prod]?.[d] ?? b2b[d]) || 0;
+      const b2cV = parseFloat(b2cEst[prod]?.[d]) || 0;
+      const total = b2bV + b2cV;
+      const rend = rendimiento[prod] || 10;
+      const masas = Math.ceil(total / rend);
+      totalMasas += masas;
+      return total > 0 ? `${prod}: ${Math.round(total)} uni → ${masas} masa${masas>1?'s':''}` : null;
+    }).filter(Boolean);
+
+    return `
+      <div style="display:flex;align-items:flex-start;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="min-width:40px;font-weight:700;font-size:13px;color:var(--area-color)">${d}</div>
+        <div style="flex:1;font-size:11px;color:var(--txt2);line-height:1.7">${detalle.join(' · ') || 'Sin demanda'}</div>
+        <div style="font-family:'DM Mono',monospace;font-weight:700;font-size:15px;color:var(--area-color);min-width:50px;text-align:right">
+          ${totalMasas} <span style="font-size:10px;font-weight:400;color:var(--txt3)">masas</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function actualizarEstimacionBOL(tipo, prod, dia, valor, semana) {
+  const claveB2C = `fen_bol_b2c_est_${semana}`;
+  const claveB2B = `fen_bol_b2b_real_${semana}`;
+  const clave = tipo === 'b2c' ? claveB2C : claveB2B;
+  const data = (() => { try { return JSON.parse(localStorage.getItem(clave)||'{}'); } catch(e) { return {}; } })();
+  if (!data[prod]) data[prod] = {};
+  data[prod][dia] = parseFloat(valor) || 0;
+  localStorage.setItem(clave, JSON.stringify(data));
+
+  // Re-render masas estimadas
+  const b2cEst = (() => { try { return JSON.parse(localStorage.getItem(claveB2C)||'{}'); } catch(e) { return {}; } })();
+  const b2bReal = (() => { try { return JSON.parse(localStorage.getItem(claveB2B)||'{}'); } catch(e) { return {}; } })();
+  const body = document.getElementById('masas-estimadas-body');
+  if (body) body.innerHTML = renderMasasEstimadas(b2cEst, b2bReal);
 }
 
 // ── BOL: ESTADO TAREAS ───────────────────────────────────────
