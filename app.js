@@ -2780,6 +2780,7 @@ function renderPreElabDia(diaIdx) {
 
   // Calcular empastes desde plan de producción del día siguiente
   let totalEmpastes = 0;
+  const desglosEmpastes = []; // { nombre, cantidad }
   Object.entries(App.planSemana).forEach(([rid, cant]) => {
     const unidades = cant[diaSiguiente] || 0;
     if (!unidades) return;
@@ -2790,7 +2791,9 @@ function renderPreElabDia(diaIdx) {
     const porciones = parseInt(receta.porciones_base) || 1;
     ings.forEach(ing => {
       if ((ing.nombre||'').toLowerCase().includes('empaste')) {
-        totalEmpastes += Math.ceil((parseFloat(ing.unidades)||1) / porciones * unidades);
+        const n = Math.ceil((parseFloat(ing.unidades)||1) / porciones * unidades);
+        totalEmpastes += n;
+        desglosEmpastes.push({ nombre: receta.nombre, cantidad: n, unidades });
       }
     });
   });
@@ -2910,8 +2913,11 @@ function renderPreElabDia(diaIdx) {
 
       ${totalEmpastes > 0 ? `
       <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
-        <div style="font-size:13px;font-weight:600;margin-bottom:10px">
-          🧈 Empastes — ${totalEmpastes} total (${totalEmpastes * mantPorEmpaste}g mantequilla)
+        <div style="font-size:13px;font-weight:600;margin-bottom:6px">
+          🧈 Empastes — ${totalEmpastes} total · ${totalEmpastes * mantPorEmpaste}g mantequilla
+        </div>
+        <div style="font-size:11px;color:var(--txt3);margin-bottom:10px">
+          Para: ${desglosEmpastes.map(d => `${d.nombre} (${d.cantidad})`).join(' · ')}
         </div>
         <div style="display:flex;gap:16px;flex-wrap:wrap">
           <div>
