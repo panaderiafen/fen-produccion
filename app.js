@@ -3133,7 +3133,9 @@ function renderPreElabDia(diaIdx) {
   const cfg = cargarConfigSubrecetas();
   const semana = obtenerSemanaActual();
   const maxPorTanda = cfg.bol?.amasadora_max_por_tanda || 16;
+  const mantPorEmpaste = cfg.bol?.mantequilla_por_empaste || 250;
 
+  // Masa base MPs
   const masasBase = App.materiasPrimas.filter(m => {
     const esSR = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
     const nombre = (m.nombre || '').toLowerCase();
@@ -3147,52 +3149,67 @@ function renderPreElabDia(diaIdx) {
            (!m.areas_habilitadas || m.areas_habilitadas.includes('BOL'));
   });
 
-  const masasSiguiente = masasBase.map(m => ({
-    mp: m, cantidad: (_planMasasBOL[m.ID_MP] || [])[diaSiguiente] || 0,
-    receta: App.recetas.find(r => r.nombre === m.nombre && r.estado === 'consolidada')
-  })).filter(x => x.cantidad > 0);
-
-  const poolishSiguiente = poolishMPs.map(m => ({
+  // Poolish para MAÑANA (diaSiguiente)
+  const poolishHoy = poolishMPs.map(m => ({
     mp: m, cantidad: (_planMasasBOL[masasBase[0]?.ID_MP] || [])[diaSiguiente] || 0,
     receta: App.recetas.find(r => r.nombre === m.nombre && r.estado === 'consolidada')
   })).filter(x => x.cantidad > 0);
 
-  // Calcular empastes desde plan de producción del día siguiente
+  // Empastes para MAÑANA
   let totalEmpastes = 0;
-  const desglosEmpastes = []; // { nombre, cantidad }
+  const desglosEmpastes = [];
   Object.entries(App.planSemana).forEach(([rid, cant]) => {
     const unidades = cant[diaSiguiente] || 0;
     if (!unidades) return;
     const receta = App.recetas.find(r => r.ID_receta === rid);
     if (!receta) return;
-    let ings = [];
-    try { ings = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
+    let ings = []; try { ings = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
     const porciones = parseInt(receta.porciones_base) || 1;
     ings.forEach(ing => {
       if ((ing.nombre||'').toLowerCase().includes('empaste')) {
         const n = Math.ceil((parseFloat(ing.unidades)||1) / porciones * unidades);
         totalEmpastes += n;
-        desglosEmpastes.push({ nombre: receta.nombre, cantidad: n, unidades });
+        desglosEmpastes.push({ nombre: receta.nombre, cantidad: n });
       }
     });
   });
 
-  const mantPorEmpaste = cfg.bol?.mantequilla_por_empaste || 250;
+  // Excedente de empastes del día ANTERIOR
+  const diaAnterior = (diaIdx + 6) % 7;
+  const claveEmpEstAnt = `fen_bol_emp_est_${semana}_${diaAnterior}`;
+  const claveEmpPlanAnt = `fen_bol_emp_plan_${semana}_${diaAnterior}`;
+  const estAnt  = parseInt(localStorage.getItem(claveEmpEstAnt)) || 0;
+  const planAnt = parseInt(localStorage.getItem(claveEmpPlanAnt)) || 0;
+  const excedente = Math.max(0, estAnt - planAnt);
+  const empastesNecesarios = Math.max(0, totalEmpastes - excedente);
 
-  // Helper: get/set check state
+  // Estado empastes HOY
   const getCheck = id => getTareaEstadoBOL(id, semana, diaIdx, 'pre');
   const claveEmpPor = `fen_bol_emp_por_${semana}_${diaIdx}`;
   const claveEmpEst = `fen_bol_emp_est_${semana}_${diaIdx}`;
-  // Load from Sheet cache if available (for cross-device sync)
-  const empPorSheet = _tareasEstadoBOL['empaste_porcionados'];
-  const empEstSheet = _tareasEstadoBOL['empaste_estirados'];
-  const empPorcionados = parseInt(localStorage.getItem(claveEmpPor)) || 
-                         (empPorSheet ? parseInt(empPorSheet) : 0);
-  const empEstirados   = parseInt(localStorage.getItem(claveEmpEst)) || 
-                         (empEstSheet ? parseInt(empEstSheet) : 0);
+  const empPorcionados = parseInt(localStorage.getItem(claveEmpPor)) ||
+                         (parseInt(_tareasEstadoBOL['empaste_porcionados']) || 0);
+  const empEstirados   = parseInt(localStorage.getItem(claveEmpEst)) ||
+                         (parseInt(_tareasEstadoBOL['empaste_estirados']) || 0);
 
-  // Helper: render tanda blocks for masa/poolish
-  const renderTandas = (id, cantidad, receta, prefix) => {
+  // Save plan de empastes para que mañana pueda calcular excedente
+  localStorage.setItem(`fen_bol_emp_plan_${semana}_${diaIdx}`, totalEmpastes);
+
+  // Descongelar masas y productos para MAÑANA
+  const masasDescongelarManana = masasBase.map(m => ({
+    mp: m, cantidad: totalEmpastes, // 1:1 con empastes
+    receta: App.recetas.find(r => r.nombre === m.nombre && r.estado === 'consolidada')
+  })).filter(x => x.cantidad > 0);
+
+  const productosManana = Object.entries(App.planSemana)
+    .filter(([_, cant]) => (cant[diaSiguiente] || 0) > 0)
+    .map(([rid, cant]) => ({
+      receta: App.recetas.find(r => r.ID_receta === rid),
+      unidades: cant[diaSiguiente]
+    })).filter(x => x.receta && x.receta.tipo_receta !== 'sub_receta');
+
+  // Helper renderTandas
+  const renderTandas = (id, cantidad, receta) => {
     const claveTandas = `fen_bol_pre_tandas_${semana}_${diaIdx}_${id}`;
     let tandas = (() => { try { return JSON.parse(localStorage.getItem(claveTandas)||'null'); } catch(e) { return null; } })();
     if (!tandas) {
@@ -3200,7 +3217,6 @@ function renderPreElabDia(diaIdx) {
       let resto = cantidad;
       while (resto > 0) { const n = Math.min(resto, maxPorTanda); tandas.push(n); resto -= n; }
     }
-
     let ings = [];
     if (receta) try { ings = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
 
@@ -3231,8 +3247,7 @@ function renderPreElabDia(diaIdx) {
                   <span style="font-family:'DM Mono',monospace;font-size:14px;font-weight:700;color:var(--area-color)">${n}</span>
                   <span style="font-size:11px;color:var(--txt3)">masas</span>
                   <button onclick="editarTandaPreElab('${id}',${diaIdx},${i})"
-                    style="background:none;border:none;color:var(--txt3);cursor:pointer;padding:2px 4px;font-size:12px"
-                    title="Editar cantidad">
+                    style="background:none;border:none;color:var(--txt3);cursor:pointer;padding:2px 4px;font-size:12px">
                     <i class="ti ti-pencil"></i>
                   </button>
                 </div>
@@ -3259,13 +3274,16 @@ function renderPreElabDia(diaIdx) {
       </div>`;
   };
 
-  // Estado empastes
-  const empPorEstado = totalEmpastes === 0 ? '' : empPorcionados >= totalEmpastes ? 'completado' : empPorcionados > 0 ? 'parcial' : '';
-  const empEstEstado = totalEmpastes === 0 ? '' : empEstirados >= totalEmpastes ? 'completado' : empEstirados > 0 ? 'parcial' : '';
   const estadoColor = e => e === 'completado' ? '#2E7D32' : e === 'parcial' ? '#F57C00' : 'var(--txt3)';
   const estadoLabel = e => e === 'completado' ? '✓ Completado' : e === 'parcial' ? '◑ Parcial' : '';
+  const empPorEstado = totalEmpastes === 0 ? '' : empPorcionados >= totalEmpastes ? 'completado' : empPorcionados > 0 ? 'parcial' : '';
+  const empEstEstado = totalEmpastes === 0 ? '' : empEstirados >= totalEmpastes ? 'completado' : empEstirados > 0 ? 'parcial' : '';
 
-  const noPlan = masasSiguiente.length === 0 && poolishSiguiente.length === 0 && totalEmpastes === 0 && (_planMasasBOL[masasBase[0]?.ID_MP] || [])[diaIdx] === 0;
+  // Tareas manuales
+  const tareasManualKey = `fen_bol_tareas_manuales_pre_${semana}_${diaIdx}`;
+  const tareasManual = (() => { try { return JSON.parse(localStorage.getItem(tareasManualKey)||'[]'); } catch(e) { return []; } })();
+
+  const noPlan = poolishHoy.length === 0 && totalEmpastes === 0 && productosManana.length === 0;
 
   contenedor.innerHTML = noPlan ? `
     <div class="empty-state" style="height:200px">
@@ -3274,29 +3292,31 @@ function renderPreElabDia(diaIdx) {
       <p>No hay productos ni masas planificadas para mañana.</p>
     </div>` : `
 
-    ${poolishSiguiente.length ? `
+    <!-- POOLISH AM/PM -->
+    ${poolishHoy.length ? `
     <div class="card" style="margin-bottom:14px">
       <div class="card-head" style="background:#F3E5F5;color:#4A148C">
-        <i class="ti ti-droplet"></i> ${diasNombres[diaIdx]} AM — Poolish (elaborar 12h antes)
-        <span style="margin-left:auto;font-size:11px;font-weight:400">${poolishSiguiente[0].cantidad} masas para ${diasNombres[diaSiguiente]}</span>
+        <i class="ti ti-droplet"></i> ${diasNombres[diaIdx]} — Poolish (para masas de ${diasNombres[diaSiguiente]})
+        <span style="margin-left:auto;font-size:11px;font-weight:400">${poolishHoy[0].cantidad} masas</span>
       </div>
-      ${poolishSiguiente.map(({ mp, cantidad, receta }) =>
-        renderTandas(mp.ID_MP + '_poolish', cantidad, receta, 'poolish')
+      ${poolishHoy.map(({ mp, cantidad, receta }) =>
+        renderTandas(mp.ID_MP + '_poolish', cantidad, receta)
       ).join('')}
     </div>` : ''}
 
+    <!-- EMPASTES -->
+    ${totalEmpastes > 0 ? `
     <div class="card" style="margin-bottom:14px">
       <div class="card-head" style="background:#E8F5E9;color:#1B5E20">
-        <i class="ti ti-sun-low"></i> ${diasNombres[diaIdx]} PM — Elaboraciones
+        <i class="ti ti-sun-low"></i> ${diasNombres[diaIdx]} PM — Empastes para ${diasNombres[diaSiguiente]}
       </div>
-
-      ${totalEmpastes > 0 ? `
       <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
         <div style="font-size:13px;font-weight:600;margin-bottom:6px">
-          🧈 Empastes — ${totalEmpastes} total · ${totalEmpastes * mantPorEmpaste}g mantequilla
+          🧈 Empastes necesarios: <strong style="color:var(--area-color)">${empastesNecesarios}</strong> / ${totalEmpastes} total
+          ${excedente > 0 ? `<span style="font-size:11px;color:#2E7D32;margin-left:8px">✓ ${excedente} disponibles del ${diasNombres[diaAnterior]}</span>` : ''}
         </div>
         <div style="font-size:11px;color:var(--txt3);margin-bottom:10px">
-          Para: ${desglosEmpastes.map(d => `${d.nombre} (${d.cantidad})`).join(' · ')}
+          Para: ${desglosEmpastes.map(d => `${d.nombre} (${d.cantidad})`).join(' · ')} · ${totalEmpastes * mantPorEmpaste}g mantequilla total
         </div>
         <div style="display:flex;gap:16px;flex-wrap:wrap">
           <div>
@@ -3318,24 +3338,100 @@ function renderPreElabDia(diaIdx) {
                 oninput="actualizarEmpastes(${diaIdx})">
               <span style="font-size:11px">/ ${totalEmpastes}</span>
               <span style="font-size:11px;font-weight:600;color:${estadoColor(empEstEstado)}" id="emp-est-estado">${estadoLabel(empEstEstado)}</span>
-              ${empEstirados > totalEmpastes ? `<span style="font-size:11px;color:#2E7D32;font-weight:600">+${empEstirados - totalEmpastes} para otro día</span>` : ''}
+              ${empEstirados > totalEmpastes ? `<span id="emp-est-extra" style="font-size:11px;color:#2E7D32;font-weight:600">+${empEstirados - totalEmpastes} para otro día</span>` : `<span id="emp-est-extra"></span>`}
             </div>
           </div>
         </div>
+      </div>
+    </div>` : ''}
+
+    <!-- DESCONGELAR MASAS Y PRODUCTOS -->
+    ${(masasDescongelarManana.length > 0 || productosManana.length > 0) ? `
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-head" style="background:#E3F2FD;color:#1565C0">
+        <i class="ti ti-snowflake"></i> ${diasNombres[diaIdx]} PM — Descongelar para ${diasNombres[diaSiguiente]}
+      </div>
+      <div style="padding:8px 0">
+        ${masasDescongelarManana.map(({mp, cantidad}) => {
+          const id = 'desc_masa_' + mp.nombre.replace(/[^a-zA-Z0-9]/g,'_');
+          const done = getCheck(id);
+          return `
+          <div class="bol-tarea ${done?'bol-tarea-done':''}" id="pre-tarea-${id}">
+            <label class="rdc-check-wrap">
+              <input type="checkbox" ${done?'checked':''} onchange="togglePreTarea('${id}',${diaIdx},this.checked)">
+              <span class="rdc-check-box"></span>
+            </label>
+            <span style="font-size:16px">❄️</span>
+            <div style="flex:1">
+              <div style="font-size:13px;font-weight:600">Descongelar ${mp.nombre}</div>
+              <div style="font-size:11px;color:var(--txt3)">${cantidad} masas · en frío para ${diasNombres[diaSiguiente]}</div>
+            </div>
+          </div>`;
+        }).join('')}
+        ${productosManana.map(({receta: r, unidades}) => {
+          const id = 'desc_prod_' + r.ID_receta.replace(/[^a-zA-Z0-9]/g,'_');
+          const claveDesc = `fen_bol_desc_${semana}_${diaIdx}_${r.ID_receta}`;
+          const cantDesc = localStorage.getItem(claveDesc) !== null ? localStorage.getItem(claveDesc) : unidades;
+          if (localStorage.getItem(claveDesc) === null) localStorage.setItem(claveDesc, unidades);
+          const done = getCheck(id);
+          const pct = unidades > 0 ? Math.round(parseInt(cantDesc)/unidades*100) : 0;
+          const color = pct >= 100 ? '#2E7D32' : pct > 0 ? '#F57C00' : 'var(--txt3)';
+          const label = pct >= 100 ? '✓ Completo' : pct > 0 ? `◑ ${pct}%` : '';
+          return `
+          <div class="bol-tarea ${done?'bol-tarea-done':''}" id="pre-tarea-${id}" style="flex-direction:column;align-items:stretch">
+            <div style="display:flex;align-items:center;gap:8px">
+              <label class="rdc-check-wrap">
+                <input type="checkbox" ${done?'checked':''} onchange="togglePreTarea('${id}',${diaIdx},this.checked)">
+                <span class="rdc-check-box"></span>
+              </label>
+              <span style="font-size:16px">🧊</span>
+              <div style="flex:1">
+                <div style="font-size:13px;font-weight:600">Descongelar ${r.nombre}</div>
+                <div style="font-size:11px;color:var(--txt3)">${unidades} uni planificadas para ${diasNombres[diaSiguiente]}</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:6px 10px;background:var(--bg);border-radius:var(--r-sm)">
+              <span style="font-size:11px;color:var(--txt3)">Descongelado:</span>
+              <input type="number" min="0" value="${cantDesc}"
+                style="width:60px;padding:3px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace;text-align:center"
+                oninput="actualizarDescongelado('${r.ID_receta}',${diaIdx},this.value,${unidades})">
+              <span style="font-size:11px">/ ${unidades} uni</span>
+              <span style="font-size:11px;font-weight:600;color:${color}" id="desc-estado-${r.ID_receta}">${label}</span>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>` : ''}
+
+    <!-- TAREAS MANUALES -->
+    <div class="card" style="margin-bottom:14px">
+      ${tareasManual.length ? `
+      <div class="card-head" style="background:var(--bg);color:var(--txt2)">
+        <i class="ti ti-list-check"></i> Tareas adicionales
+      </div>
+      <div style="padding:8px 0">
+        ${tareasManual.map(t => {
+          const done = getCheck('manual_' + t.id);
+          return `
+          <div class="bol-tarea ${done?'bol-tarea-done':''}" id="pre-tarea-manual_${t.id}">
+            <label class="rdc-check-wrap">
+              <input type="checkbox" ${done?'checked':''} onchange="togglePreTarea('manual_${t.id}',${diaIdx},this.checked)">
+              <span class="rdc-check-box"></span>
+            </label>
+            <input type="time" value="${t.hora}"
+              style="border:none;background:none;font-family:'DM Mono',monospace;font-size:12px;color:var(--txt3);width:70px;cursor:pointer;padding:0;min-width:70px">
+            <span style="font-size:16px">📝</span>
+            <div style="flex:1">
+              <div style="font-size:13px;font-weight:600">${t.titulo}</div>
+              ${t.detalle ? `<div style="font-size:11px;color:var(--txt3)">${t.detalle}</div>` : ''}
+            </div>
+            <button onclick="eliminarTareaManualPreBOL('${t.id}',${diaIdx})" style="background:none;border:none;color:var(--txt3);cursor:pointer"><i class="ti ti-x"></i></button>
+          </div>`;
+        }).join('')}
       </div>` : ''}
-
-      ${masasSiguiente.map(({ mp, cantidad, receta }) => `
-      <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
-        <div style="font-size:13px;font-weight:600;margin-bottom:6px">
-          🌀 Elaborar ${mp.nombre} — ${cantidad} masas (reponer stock)
-        </div>
-        ${renderTandas(mp.ID_MP + '_masa', cantidad, receta, 'masa')}
-      </div>`).join('')}
-
-      <div style="padding:10px 16px">
-        <button class="btn-secundario" style="font-size:12px;width:100%"
-          onclick="abrirModalTareaManualBOL(${diaIdx},'pre')">
-          <i class="ti ti-plus"></i> Agregar tarea manual
+      <div style="padding:10px 16px;${tareasManual.length?'border-top:1px solid var(--border)':''}">
+        <button class="btn-secundario" style="font-size:12px;width:100%" onclick="abrirModalTareaManualBOL(${diaIdx},'pre')">
+          <i class="ti ti-plus"></i> Agregar tarea
         </button>
       </div>
     </div>
@@ -3350,36 +3446,27 @@ function actualizarEmpastes(diaIdx) {
   const est = parseInt(document.getElementById('emp-estirados')?.value) || 0;
   localStorage.setItem(`fen_bol_emp_por_${semana}_${diaIdx}`, por);
   localStorage.setItem(`fen_bol_emp_est_${semana}_${diaIdx}`, est);
+
   // Save to Sheet
   const payload = encodeURIComponent(JSON.stringify({
-    accion: 'guardar_tarea_bol',
-    semana_ID: semana,
-    dia: diaIdx,
-    tipo_tarea: 'empaste_porcionados',
-    subtarea: 'empaste_porcionados',
-    cantidad: por,
-    estado: '1',
-    fecha_local: fechaRealDiaSemana(diaIdx),
-    dispositivo: navigator.userAgent.slice(0,50)
+    accion: 'guardar_tarea_bol', semana_ID: semana, dia: diaIdx,
+    tipo_tarea: 'empaste_porcionados', subtarea: 'empaste_porcionados',
+    cantidad: por, cantidad_real: por, estado: '1',
+    fecha_local: fechaRealDiaSemana(diaIdx), dispositivo: navigator.userAgent.slice(0,50)
   }));
   fetch(FEN.WEBAPP_URL + '?payload=' + payload).catch(() => {});
   const payload2 = encodeURIComponent(JSON.stringify({
-    accion: 'guardar_tarea_bol',
-    semana_ID: semana,
-    dia: diaIdx,
-    tipo_tarea: 'empaste_estirados',
-    subtarea: 'empaste_estirados',
-    cantidad: est,
-    estado: '1',
-    fecha_local: fechaRealDiaSemana(diaIdx),
-    dispositivo: navigator.userAgent.slice(0,50)
+    accion: 'guardar_tarea_bol', semana_ID: semana, dia: diaIdx,
+    tipo_tarea: 'empaste_estirados', subtarea: 'empaste_estirados',
+    cantidad: est, cantidad_real: est, estado: '1',
+    fecha_local: fechaRealDiaSemana(diaIdx), dispositivo: navigator.userAgent.slice(0,50)
   }));
   fetch(FEN.WEBAPP_URL + '?payload=' + payload2).catch(() => {});
 
-  // Calcular total empastes
+  // Calculate total empastes for this day
   let total = 0;
+  const diaSig = (diaIdx + 1) % 7;
   Object.entries(App.planSemana).forEach(([rid, cant]) => {
-    const diaSig = (diaIdx + 1) % 7;
     const unidades = cant[diaSig] || 0;
     if (!unidades) return;
     const receta = App.recetas.find(r => r.ID_receta === rid);
@@ -3398,10 +3485,7 @@ function actualizarEmpastes(diaIdx) {
   const spEst = document.getElementById('emp-est-estado');
   if (spPor) { spPor.textContent = lbl(por); spPor.style.color = col(por); }
   if (spEst) { spEst.textContent = lbl(est); spEst.style.color = col(est); }
-  // Show extras
-  const spPorExtra = document.getElementById('emp-por-extra');
   const spEstExtra = document.getElementById('emp-est-extra');
-  if (spPorExtra) { spPorExtra.textContent = por > total ? `+${por-total} para otro día` : ''; }
   if (spEstExtra) { spEstExtra.textContent = est > total ? `+${est-total} para otro día` : ''; }
 }
 
@@ -3420,13 +3504,9 @@ function cancelarTandaPreElab(id, diaIdx, idx) {
 function confirmarTandaPreElab(id, diaIdx, idx) {
   const input = document.getElementById(`tanda-input-${id}-${idx}`);
   const valor = parseInt(input?.value) || 0;
-
-  // Save to localStorage
   const clave = `fen_bol_pre_tandas_${obtenerSemanaActual()}_${diaIdx}_${id}`;
   let tandas = (() => { try { return JSON.parse(localStorage.getItem(clave)||'null'); } catch(e) { return null; } })();
   if (tandas) { tandas[idx] = valor; localStorage.setItem(clave, JSON.stringify(tandas)); }
-
-  // Update display
   const displayDiv = document.getElementById(`tanda-display-${id}-${idx}`);
   if (displayDiv) {
     const span = displayDiv.querySelector('span:first-child');
@@ -3434,7 +3514,6 @@ function confirmarTandaPreElab(id, diaIdx, idx) {
   }
   document.getElementById(`tanda-display-${id}-${idx}`).style.display = 'flex';
   document.getElementById(`tanda-edit-${id}-${idx}`).style.display = 'none';
-
   // Update ingredients
   const mpId = id.replace('_poolish','').replace('_masa','');
   const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
@@ -3442,7 +3521,6 @@ function confirmarTandaPreElab(id, diaIdx, idx) {
   const receta = App.recetas.find(r => r.nombre === mp.nombre && r.estado === 'consolidada');
   if (!receta) return;
   let ings = []; try { ings = JSON.parse(receta.ingredientes_JSON||'[]'); } catch(e) {}
-
   ings.forEach(ing => {
     const el = document.getElementById(`ing-${id}-${idx}-${ing.id}`);
     if (el) el.textContent = Math.round((parseFloat(ing.gramos)||0) * valor) + 'g';
@@ -3473,54 +3551,33 @@ function actualizarTandaPreElab(id, diaIdx, idx, valor) {
   if (!tandas) return;
   tandas[idx] = parseInt(valor) || 0;
   localStorage.setItem(clave, JSON.stringify(tandas));
+}
 
-  // Actualizar ingredientes usando id de elemento directo (sin selectores con caracteres especiales)
-  const elId = `ing-tanda-${id}-${idx}`;
-  const ingDiv = document.getElementById(elId);
-  if (!ingDiv) return;
-
-  const mpId = id.replace('_poolish','').replace('_masa','');
-  const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
-  if (!mp) return;
-  const receta = App.recetas.find(r => r.nombre === mp.nombre && r.estado === 'consolidada');
-  if (!receta) return;
-  let ings = []; try { ings = JSON.parse(receta.ingredientes_JSON||'[]'); } catch(e) {}
-  const n = parseInt(valor) || 0;
-  ingDiv.innerHTML = ings.map(ing =>
-    `<div style="font-size:11px;color:var(--txt2);padding:2px 0">
-      ${ing.nombre}: <strong>${Math.round((parseFloat(ing.gramos)||0)*n)}g</strong>
-    </div>`
-  ).join('');
+function eliminarTareaManualPreBOL(id, diaIdx) {
+  const key = `fen_bol_tareas_manuales_pre_${obtenerSemanaActual()}_${diaIdx}`;
+  let tareas = (() => { try { return JSON.parse(localStorage.getItem(key)||'[]'); } catch(e) { return []; } })();
+  tareas = tareas.filter(t => t.id !== id);
+  localStorage.setItem(key, JSON.stringify(tareas));
+  renderPreElabDia(diaIdx);
 }
 
 function togglePreTarea(id, diaIdx, checked) {
   const semana = obtenerSemanaActual();
-  // localStorage es la fuente de verdad local
   localStorage.setItem(`fen_bol_pre_${semana}_${diaIdx}_${id}`, checked?'1':'0');
-  // Actualizar cache Sheet
   _tareasEstadoBOL[`pre_${id}`] = checked ? '1' : '0';
-  // Update visual — el elemento puede ser pre-tarea-ID o pre-tarea-ID_tanda_N
-  // Try exact id first, then look for tanda containers
   const elDirect = document.getElementById('pre-tarea-' + id);
   if (elDirect) {
     elDirect.classList.toggle('bol-tarea-done', checked);
   } else {
-    // It's a tanda checkbox — find the parent tanda div
     document.querySelectorAll(`[id^="pre-tarea-${id}"]`).forEach(el => {
       el.classList.toggle('bol-tarea-done', checked);
     });
   }
-  // Save to Sheet in background (best effort)
   const payloadTarea = encodeURIComponent(JSON.stringify({
-    accion: 'guardar_tarea_bol',
-    semana_ID: semana,
-    dia: diaIdx,
-    tipo_tarea: 'pre_' + id,
-    subtarea: id,
-    cantidad: 0,
+    accion: 'guardar_tarea_bol', semana_ID: semana, dia: diaIdx,
+    tipo_tarea: 'pre_' + id, subtarea: id, cantidad: 0,
     estado: checked ? '1' : '0',
-    fecha_local: fechaRealDiaSemana(diaIdx),
-    dispositivo: navigator.userAgent.slice(0,50)
+    fecha_local: fechaRealDiaSemana(diaIdx), dispositivo: navigator.userAgent.slice(0,50)
   }));
   fetch(FEN.WEBAPP_URL + '?payload=' + payloadTarea).catch(() => {});
 }
@@ -3815,9 +3872,91 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
         </button>
       </div>
     </div>
+
+    <!-- ELABORACIÓN MASA BASE PM -->
+    ${renderElaboracionMasaBaseBOL(diaIdx, diasNombres)}
   `;
 
   renderAvisos();
+}
+
+function renderElaboracionMasaBaseBOL(diaIdx, diasNombres) {
+  const masasBase = App.materiasPrimas.filter(m => {
+    const esSR = m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR');
+    const nombre = (m.nombre || '').toLowerCase();
+    return esSR && nombre.includes('masa') && !nombre.includes('madre') &&
+           !nombre.includes('poolish') && (!m.areas_habilitadas || m.areas_habilitadas.includes('BOL'));
+  });
+  const masasHoy = masasBase.map(m => ({
+    mp: m,
+    cantidad: (_planMasasBOL[m.ID_MP] || [])[diaIdx] || 0,
+    receta: App.recetas.find(r => r.nombre === m.nombre && r.estado === 'consolidada')
+  })).filter(x => x.cantidad > 0);
+
+  if (!masasHoy.length) return '';
+
+  const cfg = cargarConfigSubrecetas();
+  const maxPorTanda = cfg.bol?.amasadora_max_por_tanda || 16;
+  const semana = obtenerSemanaActual();
+
+  let html = '<div class="card" style="margin-bottom:16px;border-color:#E8F5E9">';
+  html += '<div class="card-head" style="background:#E8F5E9;color:#1B5E20">';
+  html += '<i class="ti ti-wind"></i> ' + diasNombres[diaIdx] + ' PM — Elaborar Masa Base';
+  html += '<span style="margin-left:auto;font-size:11px;font-weight:400">reponer stock</span></div>';
+
+  masasHoy.forEach(({mp, cantidad, receta}) => {
+    const claveTandas = 'fen_bol_elab_tandas_' + semana + '_' + diaIdx + '_' + mp.ID_MP;
+    let tandas = null;
+    try { tandas = JSON.parse(localStorage.getItem(claveTandas)||'null'); } catch(e) {}
+    if (!tandas) {
+      tandas = [];
+      let resto = cantidad;
+      while (resto > 0) { const n = Math.min(resto, maxPorTanda); tandas.push(n); resto -= n; }
+    }
+    let ings = [];
+    if (receta) try { ings = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
+
+    html += '<div style="padding:8px 16px">';
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
+    html += '<span style="font-weight:600;font-size:13px">' + mp.nombre + ' — ' + cantidad + ' masas</span>';
+    html += '<button onclick="agregarTandaElab("' + mp.ID_MP + '",' + diaIdx + ')" class="btn-secundario" style="font-size:11px;padding:2px 8px;margin-left:auto"><i class="ti ti-plus"></i> Tanda</button>';
+    html += '</div>';
+
+    tandas.forEach((n, i) => {
+      const idElab = 'elab_' + mp.ID_MP + '_' + i;
+      const done = getTareaEstadoBOL(idElab, semana, diaIdx, 'prod');
+      html += '<div class="bol-tarea ' + (done?'bol-tarea-done':'') + '" style="flex-direction:column;align-items:stretch;padding:8px 0;border-bottom:1px solid var(--border)">';
+      html += '<div style="display:flex;align-items:center;gap:8px">';
+      html += '<label class="rdc-check-wrap"><input type="checkbox" ' + (done?'checked':'') + ' onchange="toggleTareaBOLProduccion(' + JSON.stringify(idElab) + ',this.checked)"><span class="rdc-check-box"></span></label>';
+      html += '<span style="font-size:13px;font-weight:600">Tanda ' + (i+1) + ': ' + n + ' masas</span>';
+      html += '</div>';
+      if (ings.length) {
+        html += '<div style="margin-top:4px;padding:4px 10px;background:var(--bg);border-radius:var(--r-sm);margin-left:32px">';
+        ings.forEach(ing => {
+          html += '<div style="font-size:11px;color:var(--txt2);padding:1px 0">' + ing.nombre + ': <strong>' + Math.round((parseFloat(ing.gramos)||0)*n) + 'g</strong></div>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function agregarTandaElab(mpId, diaIdx) {
+  const clave = 'fen_bol_elab_tandas_' + obtenerSemanaActual() + '_' + diaIdx + '_' + mpId;
+  let tandas = null; try { tandas = JSON.parse(localStorage.getItem(clave)||'null'); } catch(e) {}
+  if (!tandas) tandas = [1]; else tandas.push(1);
+  localStorage.setItem(clave, JSON.stringify(tandas));
+  // Re-render just the elaboracion section
+  const contenedorDia = document.getElementById('contenedor-dia');
+  if (contenedorDia) {
+    const diasNombres = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+    const elabDiv = contenedorDia.querySelector('.card[style*="E8F5E9"]');
+    if (elabDiv) elabDiv.outerHTML = renderElaboracionMasaBaseBOL(diaIdx, diasNombres);
+  }
 }
 
 function toggleTareaBOLProduccion(id, checked) {
