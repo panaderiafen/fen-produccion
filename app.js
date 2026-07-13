@@ -2921,17 +2921,41 @@ async function cargarEstadoTareasBOL(diaIdx) {
         const valor = (t.tipo_tarea === 'empaste_porcionados' || t.tipo_tarea === 'empaste_estirados')
           ? String(t.cantidad) : t.estado;
         _tareasEstadoBOL[t.tipo_tarea] = valor;
-        // Solo actualizar localStorage si no hay valor local (otro dispositivo)
+
+        // Load manual tasks from Sheet into localStorage
+        if (t.tipo_tarea.startsWith('manual_')) {
+          try {
+            const tareaData = JSON.parse(t.subtarea);
+            const ctx = tareaData.contexto || 'prod';
+            const keyPre  = `fen_bol_tareas_manuales_pre_${semana}_${diaIdx}`;
+            const keyProd = `fen_bol_tareas_manuales_${semana}_${diaIdx}`;
+            const key = ctx === 'pre' ? keyPre : keyProd;
+            const tareas = (() => { try { return JSON.parse(localStorage.getItem(key)||'[]'); } catch(e) { return []; } })();
+            // Only add if not already there
+            if (!tareas.find(x => x.id === tareaData.id)) {
+              const tObj = { id: tareaData.id, hora: tareaData.hora, titulo: tareaData.titulo,
+                             detalle: tareaData.detalle, icono: '📝' };
+              if (ctx !== 'pre') { tObj.turno = 'am'; tObj.manual = true; }
+              tareas.push(tObj);
+              localStorage.setItem(key, JSON.stringify(tareas));
+            }
+          } catch(e) {}
+          return;
+        }
+
+        // Sheet es fuente de verdad — siempre actualizar localStorage desde Sheet
         const clavePreLS  = `fen_bol_pre_${semana}_${diaIdx}_${t.subtarea}`;
         const claveProdLS = `fen_bol_check_${semana}_${diaIdx}_${t.subtarea}`;
         const claveEmpPor = `fen_bol_emp_por_${semana}_${diaIdx}`;
         const claveEmpEst = `fen_bol_emp_est_${semana}_${diaIdx}`;
-        if (t.tipo_tarea === 'empaste_porcionados' && localStorage.getItem(claveEmpPor) === null)
+        if (t.tipo_tarea === 'empaste_porcionados')
           localStorage.setItem(claveEmpPor, String(t.cantidad));
-        if (t.tipo_tarea === 'empaste_estirados' && localStorage.getItem(claveEmpEst) === null)
+        else if (t.tipo_tarea === 'empaste_estirados')
           localStorage.setItem(claveEmpEst, String(t.cantidad));
-        if (localStorage.getItem(clavePreLS) === null)  localStorage.setItem(clavePreLS, t.estado);
-        if (localStorage.getItem(claveProdLS) === null) localStorage.setItem(claveProdLS, t.estado);
+        else {
+          localStorage.setItem(clavePreLS, t.estado);
+          localStorage.setItem(claveProdLS, t.estado);
+        }
       });
     }
   } catch(e) {
@@ -4063,23 +4087,39 @@ function guardarTareaManualBOL() {
   const detalle = document.getElementById('tarea-manual-detalle').value.trim();
   if (!titulo) { toast('Escribe un título para la tarea'); return; }
 
+  const semana = obtenerSemanaActual();
+  const id = Date.now().toString();
+  const tarea = { id, hora, titulo, detalle, icono: '📝' };
+
   if (contexto === 'pre') {
-    // Save to pre-elaboraciones manual tasks
-    const key = `fen_bol_tareas_manuales_pre_${obtenerSemanaActual()}_${diaIdx}`;
+    const key = `fen_bol_tareas_manuales_pre_${semana}_${diaIdx}`;
     const tareas = (() => { try { return JSON.parse(localStorage.getItem(key)||'[]'); } catch(e) { return []; } })();
-    tareas.push({ id: `${Date.now()}`, hora, titulo, detalle, icono: '📝' });
+    tareas.push(tarea);
     localStorage.setItem(key, JSON.stringify(tareas));
     document.getElementById('modal-tarea-manual-bol').classList.add('hidden');
     renderPreElabDia(diaIdx);
   } else {
-    // Save to produccion manual tasks
-    const key = `fen_bol_tareas_manuales_${obtenerSemanaActual()}_${diaIdx}`;
+    const key = `fen_bol_tareas_manuales_${semana}_${diaIdx}`;
     const tareas = (() => { try { return JSON.parse(localStorage.getItem(key)||'[]'); } catch(e) { return []; } })();
-    tareas.push({ id: `manual_${Date.now()}`, hora, titulo, detalle, turno: 'am', icono: '📝', manual: true });
+    tareas.push({ ...tarea, turno: 'am', manual: true });
     localStorage.setItem(key, JSON.stringify(tareas));
     document.getElementById('modal-tarea-manual-bol').classList.add('hidden');
     renderProduccionBOL(diaIdx, App._recetasHoyBOL || []);
   }
+
+  // Save to Sheet — store full JSON in subtarea field
+  const payload = encodeURIComponent(JSON.stringify({
+    accion: 'guardar_tarea_bol',
+    semana_ID: semana,
+    dia: diaIdx,
+    tipo_tarea: `manual_${contexto}_${id}`,
+    subtarea: JSON.stringify({ ...tarea, contexto }),
+    cantidad: 0,
+    estado: '0',
+    fecha_local: fechaRealDiaSemana(diaIdx),
+    dispositivo: navigator.userAgent.slice(0,50)
+  }));
+  fetch(FEN.WEBAPP_URL + '?payload=' + payload).catch(() => {});
   toast('Tarea agregada');
 }
 
