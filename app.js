@@ -2703,7 +2703,7 @@ function renderVistaEstimacionBOL() {
         </thead>
         <tbody>
           ${productos.map(prod => {
-            const b2b = BOL_ESTIMACION_B2B[prod];
+            const b2b = BOL_ESTIMACION_B2B[prod] || {};
             const semTotal = BOL_DIAS_NOMBRES.reduce((s,d) => {
               const b2bV = parseFloat((b2bReal[prod]?.[d] ?? b2b[d]) || 0);
               const b2cV = parseFloat(b2cEst[prod]?.[d] || 0);
@@ -2797,7 +2797,7 @@ function renderMasasEstimadas(b2cEst, b2bReal, metaData) {
             ${dias.map(d => {
               let totalUni = 0;
               productos.forEach(prod => {
-                const b2b = BOL_ESTIMACION_B2B[prod];
+                const b2b = BOL_ESTIMACION_B2B[prod] || {};
                 totalUni += parseFloat(b2bReal[prod]?.[d] ?? b2b[d]) || 0;
                 totalUni += parseFloat(b2cEst[prod]?.[d]) || 0;
               });
@@ -2821,7 +2821,7 @@ function renderMasasEstimadas(b2cEst, b2bReal, metaData) {
               let totalUni = metaData?.[d] || 0;
               if (!totalUni) {
                 productos.forEach(prod => {
-                  const b2b = BOL_ESTIMACION_B2B[prod];
+                  const b2b = BOL_ESTIMACION_B2B[prod] || {};
                   totalUni += parseFloat(b2bReal[prod]?.[d] ?? b2b[d]) || 0;
                   totalUni += parseFloat(b2cEst[prod]?.[d]) || 0;
                 });
@@ -2840,7 +2840,7 @@ function renderMasasEstimadas(b2cEst, b2bReal, metaData) {
               let totalUni = metaData?.[d] || 0;
               if (!totalUni) {
                 productos.forEach(prod => {
-                  const b2b = BOL_ESTIMACION_B2B[prod];
+                  const b2b = BOL_ESTIMACION_B2B[prod] || {};
                   totalUni += parseFloat(b2bReal[prod]?.[d] ?? b2b[d]) || 0;
                   totalUni += parseFloat(b2cEst[prod]?.[d]) || 0;
                 });
