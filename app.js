@@ -4042,10 +4042,12 @@ function actualizarStockCirculante(input, diaIdx) {
   if (totalSpan) totalSpan.textContent = total;
 }
 
-function abrirModalTareaManualBOL(diaIdx) {
+function abrirModalTareaManualBOL(diaIdx, contexto) {
   const modal = document.getElementById('modal-tarea-manual-bol');
   if (modal) {
-    document.getElementById('tarea-manual-dia').value = diaIdx;
+    const diaInput = document.getElementById('tarea-manual-dia');
+    diaInput.value = diaIdx;
+    diaInput.dataset.contexto = contexto || 'prod';
     document.getElementById('tarea-manual-hora').value = '10:00';
     document.getElementById('tarea-manual-titulo').value = '';
     document.getElementById('tarea-manual-detalle').value = '';
