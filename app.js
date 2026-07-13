@@ -1352,9 +1352,11 @@ function calcularPlanMasasAuto() {
 function renderVistaPlanificacion() {
   const recetasConsolidadas = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta');
   const dias = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+  const diasCorto = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
   const hoy  = new Date().getDay();
   const diaIdx = hoy === 0 ? 6 : hoy - 1;
   const semana = obtenerSemanaActual();
+  const esBOL = App.areaCodigo === 'BOL';
 
   const vista = document.getElementById('vista-planificacion');
   vista.innerHTML = `
@@ -1364,10 +1366,6 @@ function renderVistaPlanificacion() {
         <h1 class="vista-titulo">Plan semanal</h1>
       </div>
       <div style="display:flex;gap:8px">
-        ${App.areaCodigo === 'BOL' ? `
-        <button class="btn-secundario" onclick="editarStockBOL()" style="border-color:#90CAF9;color:#1565C0">
-          <i class="ti ti-snowflake"></i> Stock congelado
-        </button>` : ''}
         <button class="btn-secundario" onclick="sincronizarPlan(this)" id="btn-sync-plan">
           <i class="ti ti-refresh"></i> Sincronizar
         </button>
@@ -1378,7 +1376,8 @@ function renderVistaPlanificacion() {
     </div>
     <p style="font-size:12px;color:var(--txt3);margin-bottom:14px">
       <i class="ti ti-info-circle"></i>
-      El plan se guarda por semana. Puedes modificarlo en cualquier momento — los cambios se reflejan en "Recetas del día".
+      El plan se guarda por semana. Puedes modificarlo en cualquier momento.
+      ${esBOL ? 'Para BOL: ingresa la meta por canal (B2C vitrina + B2B pedidos).' : ''}
     </p>
 
     ${!recetasConsolidadas.length ? `
@@ -1386,7 +1385,62 @@ function renderVistaPlanificacion() {
         <i class="ti ti-calendar-off"></i>
         <h2>Sin recetas consolidadas</h2>
         <p>Solo puedes planificar recetas aprobadas en el maestro.</p>
+      </div>` : esBOL ? `
+      <!-- BOL: tabla con B2C/B2B por día -->
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:700px">
+          <thead>
+            <tr style="background:var(--bg)">
+              <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:2px solid var(--border);min-width:140px">Producto</th>
+              ${diasCorto.map((d,i) => `
+                <th colspan="3" style="text-align:center;padding:6px 4px;font-size:11px;font-weight:700;color:${i===diaIdx?'var(--area-color)':'var(--txt2)'};border-bottom:2px solid var(--border);border-left:2px solid var(--border)">
+                  ${i===diaIdx?'▶ ':''} ${d}
+                </th>`).join('')}
+              <th style="text-align:right;padding:8px 14px;font-size:10px;font-weight:700;color:var(--txt3);border-bottom:2px solid var(--border);border-left:2px solid var(--border)">Total</th>
+            </tr>
+            <tr style="background:var(--bg)">
+              <th style="border-bottom:1px solid var(--border)"></th>
+              ${diasCorto.map(() => `
+                <th style="text-align:center;padding:4px 3px;font-size:9px;color:#1565C0;font-weight:600;border-bottom:1px solid var(--border);border-left:2px solid var(--border)">B2C</th>
+                <th style="text-align:center;padding:4px 3px;font-size:9px;color:#E65100;font-weight:600;border-bottom:1px solid var(--border)">B2B</th>
+                <th style="text-align:center;padding:4px 3px;font-size:9px;color:var(--txt3);font-weight:600;border-bottom:1px solid var(--border)">Tot</th>`).join('')}
+              <th style="border-bottom:1px solid var(--border);border-left:2px solid var(--border)"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${recetasConsolidadas.map(r => {
+              const semana2 = semana;
+              const claveBOL = `fen_bol_plan_${semana2}_${r.ID_receta}`;
+              const planBOL = (() => { try { return JSON.parse(localStorage.getItem(claveBOL)||'null'); } catch(e) { return null; } })();
+              // planBOL = { b2c: [7], b2b: [7] } or fallback to App.planSemana
+              const b2c = planBOL?.b2c || Array(7).fill(0);
+              const b2b = planBOL?.b2b || Array(7).fill(0);
+              const totalSem = b2c.reduce((s,v)=>s+v,0) + b2b.reduce((s,v)=>s+v,0);
+              return `<tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:8px 14px;font-weight:600;font-size:13px">${r.nombre}</td>
+                ${Array(7).fill(0).map((_,i) => `
+                  <td style="padding:3px 2px;border-left:2px solid var(--border)">
+                    <input type="number" min="0" placeholder="0" value="${b2c[i]||''}"
+                      style="width:44px;text-align:center;padding:3px 2px;border:1px solid #90CAF9;border-radius:4px;font-size:12px;font-family:'DM Mono',monospace;color:#1565C0"
+                      oninput="actualizarPlanBOL('${r.ID_receta}',${i},'b2c',this.value,'${semana2}')">
+                  </td>
+                  <td style="padding:3px 2px">
+                    <input type="number" min="0" placeholder="0" value="${b2b[i]||''}"
+                      style="width:44px;text-align:center;padding:3px 2px;border:1px solid #FFCC80;border-radius:4px;font-size:12px;font-family:'DM Mono',monospace;color:#E65100"
+                      oninput="actualizarPlanBOL('${r.ID_receta}',${i},'b2b',this.value,'${semana2}')">
+                  </td>
+                  <td style="padding:3px 4px;text-align:center;font-family:'DM Mono',monospace;font-size:12px;font-weight:600;color:var(--txt2)" id="plan-tot-${r.ID_receta}-${i}">
+                    ${(b2c[i]||0)+(b2b[i]||0)||''}
+                  </td>`).join('')}
+                <td style="padding:8px 14px;text-align:right;font-family:'DM Mono',monospace;font-weight:700;font-size:14px;color:var(--area-color);border-left:2px solid var(--border)" id="plan-sem-${r.ID_receta}">
+                  ${totalSem||0}
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
       </div>` : `
+      <!-- PAN/PAS/CAF: tabla estándar -->
       <div class="plan-tabla-wrap">
         <table class="plan-tabla">
           <thead>
@@ -1397,33 +1451,21 @@ function renderVistaPlanificacion() {
             </tr>
           </thead>
           <tbody>
-            ${(() => {
-              const cfg = (typeof cargarConfigSubrecetas === 'function') ? cargarConfigSubrecetas() : {};
-              const stock = (App.areaCodigo === 'BOL' && cfg.bol?.stock) ? cfg.bol.stock : {};
-              const esBOL = App.areaCodigo === 'BOL';
-              return recetasConsolidadas.map(r => {
-                const cantidades = App.planSemana[r.ID_receta] || Array(7).fill(0);
-                const stockUnits = stock[r.ID_receta] || 0;
-                const total = cantidades.reduce((s,c)=>s+c,0);
-                const neto = Math.max(0, total - stockUnits);
-                return `<tr>
-                  <td class="td-nombre">
-                    ${r.nombre}
-                    ${esBOL && stockUnits > 0 ? `<br><span style="font-size:10px;color:#1565C0;font-weight:500">❄ Stock: ${stockUnits} uds · Neto: ${neto}</span>` : ''}
-                  </td>
-                  ${dias.map((_,i) => `
-                    <td class="${i===diaIdx?'dia-hoy':''}">
-                      <input type="number" min="0" placeholder="0"
-                        data-receta="${r.ID_receta}" data-dia="${i}"
-                        oninput="actualizarTotalFila(this)"
-                        value="${cantidades[i] || ''}">
-                    </td>`).join('')}
-                  <td class="td-total" id="total-${r.ID_receta}">
-                    ${total}${esBOL && stockUnits > 0 ? `<br><span style="font-size:10px;color:#1565C0">${neto} neto</span>` : ''}
-                  </td>
-                </tr>`;
-              }).join('');
-            })()}
+            ${recetasConsolidadas.map(r => {
+              const cantidades = App.planSemana[r.ID_receta] || Array(7).fill(0);
+              const total = cantidades.reduce((s,c)=>s+c,0);
+              return `<tr>
+                <td class="td-nombre">${r.nombre}</td>
+                ${dias.map((_,i) => `
+                  <td class="${i===diaIdx?'dia-hoy':''}">
+                    <input type="number" min="0" placeholder="0"
+                      data-receta="${r.ID_receta}" data-dia="${i}"
+                      oninput="actualizarTotalFila(this)"
+                      value="${cantidades[i] || ''}">
+                  </td>`).join('')}
+                <td class="td-total" id="total-${r.ID_receta}">${total}</td>
+              </tr>`;
+            }).join('')}
           </tbody>
         </table>
       </div>`}
@@ -1434,6 +1476,28 @@ function renderVistaPlanificacion() {
   }
 
   mostrarVista('planificacion');
+}
+
+function actualizarPlanBOL(recetaId, diaIdx, canal, valor, semana) {
+  const clave = `fen_bol_plan_${semana}_${recetaId}`;
+  const plan = (() => { try { return JSON.parse(localStorage.getItem(clave)||'null'); } catch(e) { return null; } })()
+    || { b2c: Array(7).fill(0), b2b: Array(7).fill(0) };
+  plan[canal][diaIdx] = parseInt(valor) || 0;
+  localStorage.setItem(clave, JSON.stringify(plan));
+
+  // Update App.planSemana with total for compatibility
+  if (!App.planSemana[recetaId]) App.planSemana[recetaId] = Array(7).fill(0);
+  App.planSemana[recetaId][diaIdx] = (plan.b2c[diaIdx]||0) + (plan.b2b[diaIdx]||0);
+
+  // Update total cell
+  const totCell = document.getElementById(`plan-tot-${recetaId}-${diaIdx}`);
+  const tot = (plan.b2c[diaIdx]||0) + (plan.b2b[diaIdx]||0);
+  if (totCell) totCell.textContent = tot || '';
+
+  // Update weekly total
+  const semCell = document.getElementById(`plan-sem-${recetaId}`);
+  const semTot = plan.b2c.reduce((s,v)=>s+v,0) + plan.b2b.reduce((s,v)=>s+v,0);
+  if (semCell) semCell.textContent = semTot || 0;
 }
 
 function actualizarTotalFila(input) {
@@ -1447,7 +1511,36 @@ function actualizarTotalFila(input) {
 async function guardarPlanificacion() {
   const btn = document.querySelector('#vista-planificacion .btn-primario');
   bloquearBtn(btn, 'Guardando plan...');
+  const semana = obtenerSemanaActual();
 
+  // BOL: save B2C/B2B plan separately + compute totals for App.planSemana
+  if (App.areaCodigo === 'BOL') {
+    const recetas = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta');
+    const plan = {};
+    recetas.forEach(r => {
+      const clave = `fen_bol_plan_${semana}_${r.ID_receta}`;
+      const planR = (() => { try { return JSON.parse(localStorage.getItem(clave)||'null'); } catch(e) { return null; } })()
+        || { b2c: Array(7).fill(0), b2b: Array(7).fill(0) };
+      // Total per day = b2c + b2b
+      plan[r.ID_receta] = Array(7).fill(0).map((_,i) => (planR.b2c[i]||0) + (planR.b2b[i]||0));
+    });
+    App.planSemana = plan;
+    guardarPlanLocal(plan);
+    try {
+      await escribirEnSheet('guardar_planificacion', {
+        hoja: FEN.AREAS['BOL'].hoja_plan,
+        semana,
+        plan
+      });
+      toast('Plan guardado correctamente');
+    } catch(e) {
+      toast('Guardado local OK (Sheet no disponible)');
+    }
+    desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan', true);
+    return;
+  }
+
+  // PAN/PAS/CAF: standard save
   const inputs = document.querySelectorAll('#vista-planificacion input[data-receta]');
   const plan = {};
   inputs.forEach(el => {
@@ -1456,36 +1549,19 @@ async function guardarPlanificacion() {
     if (!plan[rid]) plan[rid] = Array(7).fill(0);
     plan[rid][dia] = parseInt(el.value) || 0;
   });
-
-  // Guardar local inmediatamente (persiste aunque falle el Sheet)
   App.planSemana = plan;
   guardarPlanLocal(plan);
-
-  // Guardar plan de masas BOL si existe
-  if (App.areaCodigo === 'BOL') {
-    const cfg = cargarConfigSubrecetas();
-    if (!cfg.bol) cfg.bol = {};
-    cfg.bol.plan_masas = cfg.bol.plan_masas || {};
-    document.querySelectorAll('#vista-planificacion input[data-masa]').forEach(el => {
-      const mid = el.dataset.masa;
-      const dia = parseInt(el.dataset.dia);
-      if (!cfg.bol.plan_masas[mid]) cfg.bol.plan_masas[mid] = Array(7).fill(0);
-      cfg.bol.plan_masas[mid][dia] = parseInt(el.value) || 0;
-    });
-    guardarConfigSubrecetas(cfg);
-  }
-
   try {
     await escribirEnSheet('guardar_planificacion', {
       hoja:   FEN.AREAS[App.areaCodigo].hoja_plan,
-      semana: obtenerSemanaActual(),
+      semana,
       plan
     });
     desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan', true);
     toast('Plan guardado correctamente');
   } catch(e) {
     desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan', false);
-    toast('Guardado local OK (Sheet no disponible)', 'error');
+    toast('Guardado local OK (Sheet no disponible)');
   }
 }
 
@@ -3525,14 +3601,23 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
   const cfg = cargarConfigSubrecetas();
   const capacidadHorno = (cfg.bol?.capacidad_horno || 90);
 
-  // Calcular plan de horneado desde plan semanal
-  const planHorneado = recetasHoy.map(({ receta: r, unidades }) => ({
-    id: r.ID_receta,
-    nombre: r.nombre,
-    unidades: parseInt(unidades) || 0,
-    b2b: 0,    // se ingresa manualmente
-    a_hornear: parseInt(unidades) || 0
-  }));
+  // Calcular plan de horneado desde plan semanal BOL (B2C + B2B)
+  const semanaHorn = obtenerSemanaActual();
+  const planHorneado = recetasHoy.map(({ receta: r, unidades }) => {
+    const clavePlan = `fen_bol_plan_${semanaHorn}_${r.ID_receta}`;
+    const planR = (() => { try { return JSON.parse(localStorage.getItem(clavePlan)||'null'); } catch(e) { return null; } })();
+    const b2cVal = planR?.b2c?.[diaIdx] || 0;
+    const b2bVal = planR?.b2b?.[diaIdx] || 0;
+    const total = parseInt(unidades) || 0;
+    return {
+      id: r.ID_receta,
+      nombre: r.nombre,
+      unidades: total,
+      b2c_plan: b2cVal,
+      b2b_plan: b2bVal,
+      a_hornear: total
+    };
+  });
 
   const totalHornear = planHorneado.reduce((s,p) => s + p.a_hornear, 0);
   const tandasNecesarias = Math.ceil(totalHornear / capacidadHorno);
@@ -3701,38 +3786,35 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
           <thead>
             <tr style="background:var(--bg)">
               <th style="text-align:left;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Producto</th>
-              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Plan</th>
+              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:#1565C0">B2C plan</th>
+              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:#E65100">B2B plan</th>
+              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Total plan</th>
               <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Stock congelado</th>
               <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">A descongelar</th>
               <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">A formar hoy</th>
-              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">B2B</th>
-              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">B2C BA</th>
-              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">B2C Ain</th>
               <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">A hornear</th>
             </tr>
           </thead>
           <tbody>
             ${planHorneado.map(p => {
-              const semanaHoy = obtenerSemanaActual();
-              const claveStock = `fen_bol_stock_${semanaHoy}_${diaIdx}_${p.id}`;
-              // Also check if previous day registered descongelado for this product
-              const claveDescAnt = `fen_bol_desc_${semanaHoy}_${diaIdx > 0 ? diaIdx-1 : 6}_${p.id}`;
+              const semH = obtenerSemanaActual();
+              const claveStock = `fen_bol_stock_${semH}_${diaIdx}_${p.id}`;
+              const claveDescAnt = `fen_bol_desc_${semH}_${diaIdx > 0 ? diaIdx-1 : 6}_${p.id}`;
               const descAnt = localStorage.getItem(claveDescAnt);
-              const stockCongelado = parseInt(localStorage.getItem(claveStock)) || 
+              const stockCongelado = parseInt(localStorage.getItem(claveStock)) ||
                                      (descAnt !== null ? parseInt(descAnt) : 0);
-              // Update localStorage with best value
               if (descAnt !== null && !localStorage.getItem(claveStock)) {
                 localStorage.setItem(claveStock, descAnt);
               }
-              const claveb2b = `fen_bol_b2b_${obtenerSemanaActual()}_${diaIdx}_${p.id}`;
-              const b2bVal = parseInt(localStorage.getItem(claveb2b)) || 0;
               const aDescongelar = Math.min(p.unidades, stockCongelado);
-              const aFormarHoy = Math.max(0, Math.max(p.unidades, b2bVal) - aDescongelar);
-              const aHornear = Math.max(p.unidades, b2bVal);
+              const aFormarHoy = Math.max(0, p.unidades - aDescongelar);
+              const aHornear = p.unidades;
               return `
               <tr style="border-bottom:1px solid var(--border)">
                 <td style="padding:8px 16px;font-weight:500">${p.nombre}</td>
-                <td style="text-align:center;padding:8px;font-family:'DM Mono',monospace">${p.unidades}</td>
+                <td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;color:#1565C0;font-weight:600">${p.b2c_plan||0}</td>
+                <td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;color:#E65100;font-weight:600">${p.b2b_plan||0}</td>
+                <td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;font-weight:700">${p.unidades}</td>
                 <td style="text-align:center;padding:8px">
                   <input type="number" min="0" value="${stockCongelado}" data-prod="${p.id}" data-tipo="stock"
                     style="width:60px;text-align:center;padding:4px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace"
@@ -3744,22 +3826,7 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
                 <td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;color:#E65100;font-weight:600" id="a-formar-${p.id}">
                   ${aFormarHoy}
                 </td>
-                <td style="text-align:center;padding:8px">
-                  <input type="number" min="0" value="${b2bVal}" data-prod="${p.id}" data-tipo="b2b"
-                    style="width:60px;text-align:center;padding:4px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace"
-                    oninput="actualizarStockCirculante(this,${diaIdx})">
-                </td>
-                <td style="text-align:center;padding:8px">
-                  <input type="number" min="0" value="${parseInt(localStorage.getItem(`fen_bol_b2c_ba_${obtenerSemanaActual()}_${diaIdx}_${p.id}`))||0}" data-prod="${p.id}" data-tipo="b2c_ba"
-                    style="width:60px;text-align:center;padding:4px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace"
-                    oninput="actualizarStockCirculante(this,${diaIdx})">
-                </td>
-                <td style="text-align:center;padding:8px">
-                  <input type="number" min="0" value="${parseInt(localStorage.getItem(`fen_bol_b2c_ain_${obtenerSemanaActual()}_${diaIdx}_${p.id}`))||0}" data-prod="${p.id}" data-tipo="b2c_ain"
-                    style="width:60px;text-align:center;padding:4px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace"
-                    oninput="actualizarStockCirculante(this,${diaIdx})">
-                </td>
-                <td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;font-weight:700;color:#E65100;font-size:15px" id="a-hornear-${p.id}">
+                <td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;font-weight:700;color:var(--area-color);font-size:15px" id="a-hornear-${p.id}">
                   ${aHornear}
                 </td>
               </tr>`;
