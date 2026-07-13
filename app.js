@@ -2746,225 +2746,99 @@ function renderVistaEstimacionBOL() {
   if (!vista) return;
   mostrarVista('estimacion-bol');
 
-  const semana = obtenerSemanaActual();
-  const claveB2C = `fen_bol_b2c_est_${semana}`;
-  const claveB2B = `fen_bol_b2b_real_${semana}`;
-  const b2cEst = (() => { try { return JSON.parse(localStorage.getItem(claveB2C)||'{}'); } catch(e) { return {}; } })();
-  const b2bReal = (() => { try { return JSON.parse(localStorage.getItem(claveB2B)||'{}'); } catch(e) { return {}; } })();
+  const cfg = cargarConfigSubrecetas();
+  const maxMasas = (cfg.bol?.amasadora_tandas_dia || 2) * (cfg.bol?.amasadora_max_por_tanda || 16);
+  const capHorno = cfg.bol?.capacidad_horno || 90;
 
   const productos = [...new Set([...Object.keys(BOL_ESTIMACION_B2B), ...Object.keys(BOL_ESTIMACION_B2C)])];
+
+  // Para cada producto: calcular día más fuerte y promedios
+  const analisis = productos.map(prod => {
+    const b2b = BOL_ESTIMACION_B2B[prod] || {};
+    const b2c = BOL_ESTIMACION_B2C[prod] || {};
+    let maxTotal = 0, maxDia = '';
+    let sumB2B = 0, sumB2C = 0, nDias = 0;
+    BOL_DIAS_NOMBRES.forEach(d => {
+      const b2bV = parseFloat(b2b[d] || 0);
+      const b2cV = parseFloat(b2c[d] || 0);
+      const total = b2bV + b2cV;
+      sumB2B += b2bV; sumB2C += b2cV; nDias++;
+      if (total > maxTotal) { maxTotal = total; maxDia = d; }
+    });
+    const promedioB2B = (sumB2B / nDias).toFixed(1);
+    const promedioB2C = (sumB2C / nDias).toFixed(1);
+    const promedioTotal = ((sumB2B + sumB2C) / nDias).toFixed(1);
+    const semTotal = sumB2B + sumB2C;
+    return { prod, maxDia, maxB2B: b2b[maxDia]||0, maxB2C: b2c[maxDia]||0, maxTotal,
+             promedioB2B, promedioB2C, promedioTotal, semTotal: Math.round(semTotal) };
+  }).filter(a => a.semTotal > 0).sort((a,b) => b.semTotal - a.semTotal);
+
+  // Masas estimadas por día
+  const masasPorDia = BOL_DIAS_NOMBRES.map(d => {
+    let total = 0;
+    productos.forEach(prod => {
+      const b2b = BOL_ESTIMACION_B2B[prod] || {};
+      const b2c = BOL_ESTIMACION_B2C[prod] || {};
+      total += parseFloat(b2b[d]||0) + parseFloat(b2c[d]||0);
+    });
+    const masas = Math.ceil(total / 10);
+    const color = masas > maxMasas ? '#C62828' : masas > maxMasas*0.8 ? '#F57C00' : '#2E7D32';
+    return { d, total: Math.round(total), masas, color };
+  });
 
   vista.innerHTML = `
     <div class="vista-header">
       <div>
-        <div class="vista-eyebrow">Bollería</div>
+        <div class="vista-eyebrow">Bollería — Admin</div>
         <h1 class="vista-titulo">Estimación de demanda</h1>
       </div>
     </div>
-    <p style="font-size:13px;color:var(--txt2);margin-bottom:16px;line-height:1.6">
-      Promedios basados en datos reales: B2B (dic 2025 – jul 2026) · B2C (jun 2025 – jun 2026).
-      Ajusta según pedidos confirmados y tu meta de crecimiento.
+    <p style="font-size:12px;color:var(--txt2);margin-bottom:20px">
+      Basado en datos reales: B2B dic 2025–jul 2026 · B2C jun 2025–jun 2026.
+      Úsalo como referencia para definir tu meta de producción.
     </p>
 
-    <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:600px">
-        <thead>
-          <tr style="background:var(--bg)">
-            <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--border)">Producto</th>
-            ${BOL_DIAS_NOMBRES.map(d => `
-              <th style="text-align:center;padding:8px 6px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--border)">${d}</th>
-            `).join('')}
-            <th style="text-align:right;padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--border)">Sem</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${productos.map(prod => {
-            const b2b = BOL_ESTIMACION_B2B[prod] || {};
-            const semTotal = BOL_DIAS_NOMBRES.reduce((s,d) => {
-              const b2bV = parseFloat((b2bReal[prod]?.[d] ?? b2b[d]) || 0);
-              const b2cV = parseFloat(b2cEst[prod]?.[d] || 0);
-              return s + b2bV + b2cV;
-            }, 0);
-            return `
-            <tr>
-              <td colspan="${BOL_DIAS_NOMBRES.length + 2}" style="padding:0">
-                <table style="width:100%;border-collapse:collapse">
-                  <tr style="border-bottom:1px solid var(--border)">
-                    <td rowspan="3" style="padding:8px 14px;font-weight:600;font-size:13px;min-width:160px;vertical-align:middle">${prod}</td>
-                    ${BOL_DIAS_NOMBRES.map(d => {
-                      const b2bV = b2bReal[prod]?.[d] ?? b2b[d];
-                      return `<td style="text-align:center;padding:4px 6px;font-size:11px;color:var(--txt3);border-left:1px solid var(--border)">
-                        <div style="font-size:9px;color:var(--txt3);margin-bottom:2px">B2B hist.</div>
-                        <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--txt2)">${b2b[d]}</div>
-                      </td>`;
-                    }).join('')}
-                    <td rowspan="3" style="text-align:right;padding:8px 14px;font-family:'DM Mono',monospace;font-weight:700;font-size:15px;color:var(--area-color);border-left:1px solid var(--border);vertical-align:middle">
-                      ${Math.round(semTotal)}
-                    </td>
-                  </tr>
-                  <tr style="border-bottom:1px solid var(--border);background:var(--bg)">
-                    ${BOL_DIAS_NOMBRES.map(d => {
-                      const val = b2bReal[prod]?.[d] ?? '';
-                      return `<td style="text-align:center;padding:3px 4px;border-left:1px solid var(--border)">
-                        <div style="font-size:9px;color:var(--txt3);margin-bottom:2px">B2B real</div>
-                        <input type="number" min="0" placeholder="${b2b[d]}" value="${val}"
-                          style="width:52px;text-align:center;padding:2px 4px;border:1px solid var(--border);border-radius:4px;font-size:12px;font-family:'DM Mono',monospace;background:var(--surface)"
-                          oninput="actualizarEstimacionBOL('b2b','${prod}','${d}',this.value,'${semana}')">
-                      </td>`;
-                    }).join('')}
-                  </tr>
-                  <tr style="border-bottom:2px solid var(--border)">
-                    ${BOL_DIAS_NOMBRES.map(d => {
-                      const b2cHist = BOL_ESTIMACION_B2C[prod]?.[d] || 0;
-                      const val = b2cEst[prod]?.[d] !== undefined ? b2cEst[prod][d] : b2cHist;
-                      return `<td style="text-align:center;padding:3px 4px;border-left:1px solid var(--border)">
-                        <div style="font-size:9px;color:var(--txt3);margin-bottom:2px">B2C (hist: ${b2cHist})</div>
-                        <input type="number" min="0" value="${val}"
-                          style="width:52px;text-align:center;padding:2px 4px;border:1px solid var(--border);border-radius:4px;font-size:12px;font-family:'DM Mono',monospace;background:var(--surface)"
-                          oninput="actualizarEstimacionBOL('b2c','${prod}','${d}',this.value,'${semana}')">
-                      </td>`;
-                    }).join('')}
-                  </tr>
-                </table>
-              </td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head"><i class="ti ti-flame"></i> Días clave por producto</div>
+      ${analisis.map(a => `
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <div style="min-width:160px;font-weight:600;font-size:13px">${a.prod}</div>
+            <div style="background:#FFF3E0;border-radius:var(--r-md);padding:6px 12px;font-size:12px">
+              🔥 <strong>${a.maxDia}</strong> más fuerte —
+              B2B: <strong>${a.maxB2B}</strong> · B2C: <strong>${a.maxB2C}</strong> ·
+              Total: <strong style="color:#E65100">${Math.round(a.maxTotal)}</strong>
+            </div>
+            <div style="font-size:11px;color:var(--txt3)">
+              Prom/día: B2B ${a.promedioB2B} + B2C ${a.promedioB2C} = <strong>${a.promedioTotal}</strong> ·
+              Semana est.: <strong>${a.semTotal}</strong>
+            </div>
+          </div>
+        </div>`).join('')}
     </div>
 
-    <div style="margin-top:20px">
-      <div class="card">
-        <div class="card-head" style="background:#FFF3E0;color:#E65100">
-          <i class="ti ti-stack-2"></i> Masas a elaborar esta semana (estimado)
-        </div>
-        <div id="masas-estimadas-body" style="padding:12px 16px">
-          ${(() => {
-            const claveMeta = `fen_bol_meta_${semana}`;
-            const meta = (() => { try { return JSON.parse(localStorage.getItem(claveMeta)||'{}'); } catch(e) { return {}; } })();
-            return renderMasasEstimadas(b2cEst, b2bReal, meta);
-          })()}
-        </div>
+    <div class="card">
+      <div class="card-head" style="background:#FFF3E0;color:#E65100">
+        <i class="ti ti-stack-2"></i> Masas estimadas por día (histórico)
+        <span style="margin-left:auto;font-size:11px;font-weight:400">Cap: ${maxMasas} masas/día · ${capHorno} uni/tanda</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;padding:14px 16px">
+        ${masasPorDia.map(({d, total, masas, color}) => `
+          <div style="background:var(--bg);border:1.5px solid ${color}30;border-radius:var(--r-md);padding:10px 16px;min-width:90px;text-align:center">
+            <div style="font-size:12px;color:var(--txt3);margin-bottom:4px">${d}</div>
+            <div style="font-size:22px;font-weight:700;color:${color};font-family:'DM Mono',monospace">${masas}</div>
+            <div style="font-size:10px;color:var(--txt3)">masas</div>
+            <div style="font-size:10px;color:var(--txt2);margin-top:2px">${total} uni</div>
+            ${masas > maxMasas ? `<div style="font-size:9px;color:#C62828;margin-top:2px">⚠ +${masas-maxMasas}</div>` : ''}
+          </div>`).join('')}
+      </div>
+      <div style="padding:8px 16px 12px;font-size:11px;color:var(--txt3)">
+        ⚠ Estos son promedios históricos. Tu producción actual (~900 croissants/semana) ya los supera — úsalos como piso, no como techo.
       </div>
     </div>
   `;
 }
 
-function renderMasasEstimadas(b2cEst, b2bReal, metaData) {
-  const cfg = cargarConfigSubrecetas();
-  const maxMasas = (cfg.bol?.amasadora_tandas_dia || 2) * (cfg.bol?.amasadora_max_por_tanda || 16);
-  const capHorno = cfg.bol?.capacidad_horno || 90;
-  const rendimiento = { 'Croissant clásico': 10, 'Croissant mini': 10, 'Pan de chocolate': 10 };
-  const dias = BOL_DIAS_NOMBRES;
-  const productos = Object.keys(BOL_ESTIMACION_B2B);
-
-  return `
-    <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:500px">
-        <thead>
-          <tr style="background:var(--bg)">
-            <th style="text-align:left;padding:6px 12px;font-size:10px;color:var(--txt3);border-bottom:1px solid var(--border)">Métrica</th>
-            ${dias.map(d=>`<th style="text-align:center;padding:6px 8px;font-size:10px;color:var(--txt3);border-bottom:1px solid var(--border)">${d}</th>`).join('')}
-          </tr>
-        </thead>
-        <tbody>
-          <tr style="border-bottom:1px solid var(--border)">
-            <td style="padding:8px 12px;font-size:12px;color:var(--txt2)">Demanda estimada (uni)</td>
-            ${dias.map(d => {
-              let totalUni = 0;
-              productos.forEach(prod => {
-                const b2b = BOL_ESTIMACION_B2B[prod] || {};
-                totalUni += parseFloat(b2bReal[prod]?.[d] ?? b2b[d]) || 0;
-                totalUni += parseFloat(b2cEst[prod]?.[d]) || 0;
-              });
-              return `<td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;font-weight:600">${Math.round(totalUni)}</td>`;
-            }).join('')}
-          </tr>
-          <tr style="border-bottom:1px solid var(--border);background:var(--bg)">
-            <td style="padding:8px 12px;font-size:12px;color:#E65100;font-weight:600">Meta producción (uni)</td>
-            ${dias.map(d => {
-              const val = metaData?.[d] || '';
-              return `<td style="text-align:center;padding:4px">
-                <input type="number" min="0" placeholder="—" value="${val}"
-                  style="width:56px;text-align:center;padding:3px 4px;border:1.5px solid #E65100;border-radius:4px;font-size:13px;font-family:'DM Mono',monospace;font-weight:600;color:#E65100"
-                  oninput="actualizarMetaBOL('${d}',this.value)">
-              </td>`;
-            }).join('')}
-          </tr>
-          <tr style="border-bottom:1px solid var(--border)">
-            <td style="padding:8px 12px;font-size:12px;color:var(--txt2)">Masas necesarias</td>
-            ${dias.map(d => {
-              let totalUni = metaData?.[d] || 0;
-              if (!totalUni) {
-                productos.forEach(prod => {
-                  const b2b = BOL_ESTIMACION_B2B[prod] || {};
-                  totalUni += parseFloat(b2bReal[prod]?.[d] ?? b2b[d]) || 0;
-                  totalUni += parseFloat(b2cEst[prod]?.[d]) || 0;
-                });
-              }
-              const masas = Math.ceil(totalUni / 10);
-              const color = masas > maxMasas ? '#C62828' : masas > maxMasas*0.8 ? '#F57C00' : '#2E7D32';
-              return `<td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;font-weight:700;color:${color}">
-                ${masas}
-                ${masas > maxMasas ? `<div style="font-size:9px;color:#C62828">⚠ +${masas-maxMasas} cap</div>` : ''}
-              </td>`;
-            }).join('')}
-          </tr>
-          <tr>
-            <td style="padding:8px 12px;font-size:12px;color:var(--txt2)">Tandas horneado</td>
-            ${dias.map(d => {
-              let totalUni = metaData?.[d] || 0;
-              if (!totalUni) {
-                productos.forEach(prod => {
-                  const b2b = BOL_ESTIMACION_B2B[prod] || {};
-                  totalUni += parseFloat(b2bReal[prod]?.[d] ?? b2b[d]) || 0;
-                  totalUni += parseFloat(b2cEst[prod]?.[d]) || 0;
-                });
-              }
-              const tandas = Math.ceil(totalUni / capHorno);
-              return `<td style="text-align:center;padding:8px;font-family:'DM Mono',monospace;color:var(--txt2)">${tandas}</td>`;
-            }).join('')}
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <div style="margin-top:10px;font-size:11px;color:var(--txt3)">
-      Cap. elaboración: ${maxMasas} masas/día · Cap. horneado: ${capHorno} uni/tanda
-      <span style="margin-left:12px;color:#C62828">⚠ Rojo = supera capacidad actual</span>
-      <span style="margin-left:12px;color:#F57C00">⚠ Naranja = sobre 80% capacidad</span>
-    </div>`;
-}
-
-function actualizarMetaBOL(dia, valor) {
-  const semana = obtenerSemanaActual();
-  const clave = `fen_bol_meta_${semana}`;
-  const meta = (() => { try { return JSON.parse(localStorage.getItem(clave)||'{}'); } catch(e) { return {}; } })();
-  meta[dia] = parseFloat(valor) || 0;
-  localStorage.setItem(clave, JSON.stringify(meta));
-  // Re-render capacity section
-  const b2cEst = (() => { try { return JSON.parse(localStorage.getItem(`fen_bol_b2c_est_${semana}`)||'{}'); } catch(e) { return {}; } })();
-  const b2bReal = (() => { try { return JSON.parse(localStorage.getItem(`fen_bol_b2b_real_${semana}`)||'{}'); } catch(e) { return {}; } })();
-  const body = document.getElementById('masas-estimadas-body');
-  if (body) body.innerHTML = renderMasasEstimadas(b2cEst, b2bReal, meta);
-}
-
-function actualizarEstimacionBOL(tipo, prod, dia, valor, semana) {
-  const claveB2C = `fen_bol_b2c_est_${semana}`;
-  const claveB2B = `fen_bol_b2b_real_${semana}`;
-  const clave = tipo === 'b2c' ? claveB2C : claveB2B;
-  const data = (() => { try { return JSON.parse(localStorage.getItem(clave)||'{}'); } catch(e) { return {}; } })();
-  if (!data[prod]) data[prod] = {};
-  data[prod][dia] = parseFloat(valor) || 0;
-  localStorage.setItem(clave, JSON.stringify(data));
-
-  // Re-render masas estimadas
-  const b2cEst = (() => { try { return JSON.parse(localStorage.getItem(claveB2C)||'{}'); } catch(e) { return {}; } })();
-  const b2bReal = (() => { try { return JSON.parse(localStorage.getItem(claveB2B)||'{}'); } catch(e) { return {}; } })();
-  const claveMeta = `fen_bol_meta_${semana}`;
-  const meta = (() => { try { return JSON.parse(localStorage.getItem(claveMeta)||'{}'); } catch(e) { return {}; } })();
-  const body = document.getElementById('masas-estimadas-body');
-  if (body) body.innerHTML = renderMasasEstimadas(b2cEst, b2bReal, meta);
-}
 
 // ── BOL: ESTADO TAREAS ───────────────────────────────────────
 let _tareasEstadoBOL = {}; // { tipo_tarea: estado } cargado desde Sheet
@@ -3597,7 +3471,8 @@ function togglePreTarea(id, diaIdx, checked) {
 async function renderProduccionBOL(diaIdx, recetasHoy) {
   const contenedor = document.getElementById('contenedor-dia');
   const diasNombres = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
-  const diaAnterior = (diaIdx + 6) % 7; // día anterior para descongelados
+  const diaAnterior = (diaIdx + 6) % 7; // día anterior (para referencia)
+  const diaSiguiente = (diaIdx + 1) % 7; // día siguiente
   const cfg = cargarConfigSubrecetas();
   const capacidadHorno = (cfg.bol?.capacidad_horno || 90);
 
@@ -3634,12 +3509,10 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
            (!m.areas_habilitadas || m.areas_habilitadas.includes('BOL'));
   });
 
-  // Masas a descongelar = empastes necesarios para producción de hoy
-  // (empaste 1:1 con masa base, calculado desde plan de hoy)
-  let totalEmpastesHoy = 0;
-  const desglosEmpastesHoy = {};
+  // Masas a descongelar HOY PM = empastes necesarios para producción de MAÑANA
+  let totalEmpastesManana = 0;
   Object.entries(App.planSemana).forEach(([rid, cant]) => {
-    const unidades = cant[diaIdx] || 0;
+    const unidades = cant[diaSiguiente] || 0;
     if (!unidades) return;
     const receta = App.recetas.find(r => r.ID_receta === rid);
     if (!receta) return;
@@ -3647,19 +3520,32 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
     const porciones = parseInt(receta.porciones_base) || 1;
     ings.forEach(ing => {
       if ((ing.nombre||'').toLowerCase().includes('empaste')) {
-        totalEmpastesHoy += Math.ceil((parseFloat(ing.unidades)||1) / porciones * unidades);
+        totalEmpastesManana += Math.ceil((parseFloat(ing.unidades)||1) / porciones * unidades);
       }
     });
   });
 
   const masasPlanAnterior = masasBase
-    .filter(m => totalEmpastesHoy > 0 || (_planMasasBOL[m.ID_MP] || [])[diaIdx] > 0)
+    .filter(m => totalEmpastesManana > 0 || (_planMasasBOL[m.ID_MP] || [])[diaSiguiente] > 0)
     .map(m => ({
       nombre: m.nombre,
-      cantidad: totalEmpastesHoy || (_planMasasBOL[m.ID_MP] || [])[diaIdx] || 0
+      cantidad: totalEmpastesManana || (_planMasasBOL[m.ID_MP] || [])[diaSiguiente] || 0
     })).filter(m => m.cantidad > 0);
 
-  const productosFormados = planHorneado.filter(p => p.a_hornear > 0);
+  // Productos a descongelar HOY = plan de MAÑANA
+  const planManana = Object.entries(App.planSemana)
+    .filter(([_, cant]) => (cant[diaSiguiente] || 0) > 0)
+    .map(([rid, cant]) => ({
+      receta: App.recetas.find(r => r.ID_receta === rid),
+      unidades: cant[diaSiguiente]
+    }))
+    .filter(x => x.receta && x.receta.tipo_receta !== 'sub_receta');
+
+  const productosFormados = planManana.map(({receta: r, unidades}) => ({
+    id: r.ID_receta,
+    nombre: r.nombre,
+    a_hornear: parseInt(unidades) || 0
+  })).filter(p => p.a_hornear > 0);
 
   // Generar tareas automáticas
   const tareasAutomaticas = [
@@ -3705,7 +3591,7 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
   }
 
   // Render
-  const tareasAnterioresPM = todasTareas.filter(t => t.turno === 'anterior_pm');
+  const tareasPMHoy = todasTareas.filter(t => t.turno === 'pm_hoy');
   const tareasAM = todasTareas.filter(t => t.turno === 'am');
 
   const renderTarea = (t) => {
@@ -3845,13 +3731,13 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
     </div>
 
     <!-- TAREAS DÍA ANTERIOR PM -->
-    ${tareasAnterioresPM.length ? `
+    ${tareasPMHoy.length ? `
     <div class="card" style="margin-bottom:16px;border-color:#E3F2FD">
       <div class="card-head" style="background:#E3F2FD;color:#1565C0">
-        <i class="ti ti-moon"></i> ${diasNombres[diaAnterior]} PM — Preparar para mañana
+        <i class="ti ti-moon"></i> ${diasNombres[diaIdx]} PM — Preparar para ${diasNombres[diaSiguiente]}
       </div>
       <div style="padding:8px 0">
-        ${tareasAnterioresPM.map(renderTarea).join('')}
+        ${tareasPMHoy.map(renderTarea).join('')}
       </div>
     </div>` : ''}
 
