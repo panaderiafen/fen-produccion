@@ -2607,26 +2607,25 @@ async function cargarPlanB2CB2BBOL() {
     const data = await res.json();
     if (data.ok && data.filas?.length) {
       const dias = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo'];
+
+      // Build plan objects directly from Sheet data
+      const planPorReceta = {};
       data.filas.forEach(f => {
-        const clave = `fen_bol_plan_${semana}_${f.ID_receta}`;
-        const plan = (() => { try { return JSON.parse(localStorage.getItem(clave)||'null'); } catch(e) { return null; } })()
-          || { b2c: Array(7).fill(0), b2b: Array(7).fill(0) };
-        const canal = f.canal; // 'b2c' or 'b2b'
+        if (!planPorReceta[f.ID_receta]) {
+          planPorReceta[f.ID_receta] = { b2c: Array(7).fill(0), b2b: Array(7).fill(0) };
+        }
+        const canal = f.canal;
         if (canal === 'b2c' || canal === 'b2b') {
-          plan[canal] = dias.map(d => parseFloat(f[d]) || 0);
-          localStorage.setItem(clave, JSON.stringify(plan));
-          // Update App.planSemana totals
-          if (!App.planSemana[f.ID_receta]) App.planSemana[f.ID_receta] = Array(7).fill(0);
+          planPorReceta[f.ID_receta][canal] = dias.map(d => parseFloat(f[d]) || 0);
         }
       });
-      // Recalculate App.planSemana totals from localStorage
-      const recetas = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta');
-      recetas.forEach(r => {
-        const clave = `fen_bol_plan_${semana}_${r.ID_receta}`;
-        const plan = (() => { try { return JSON.parse(localStorage.getItem(clave)||'null'); } catch(e) { return null; } })();
-        if (plan) {
-          App.planSemana[r.ID_receta] = Array(7).fill(0).map((_,i) => (plan.b2c[i]||0) + (plan.b2b[i]||0));
-        }
+
+      // Save to localStorage and update App.planSemana
+      Object.entries(planPorReceta).forEach(([rid, plan]) => {
+        const clave = `fen_bol_plan_${semana}_${rid}`;
+        localStorage.setItem(clave, JSON.stringify(plan));
+        // Update App.planSemana with totals
+        App.planSemana[rid] = Array(7).fill(0).map((_,i) => (plan.b2c[i]||0) + (plan.b2b[i]||0));
       });
     }
   } catch(e) {
