@@ -367,7 +367,13 @@ function navegarA(vistaId) {
   switch(vistaId) {
     case 'nueva-receta':    renderVistaFormReceta(null, 'receta'); break;
     case 'mis-recetas':     renderVistaMisRecetas(); cargarAvisos(); break;
-    case 'planificacion':   cargarPlanSemana().then(() => cargarPlanB2CB2BBOL()).then(() => renderVistaPlanificacion()); break;
+    case 'planificacion':
+      (async () => {
+        await cargarPlanSemana();
+        if (App.areaCodigo === 'BOL') await cargarPlanB2CB2BBOL();
+        renderVistaPlanificacion();
+      })();
+      break;
     case 'recetas-del-dia': renderVistaRecetasDelDia(); cargarAvisos(); break;
     case 'maestro':         renderVistaMaestro(); break;
     case 'aprobaciones':    renderVistaAprobaciones(); break;
@@ -1413,10 +1419,12 @@ function renderVistaPlanificacion() {
             ${recetasConsolidadas.map(r => {
               const semana2 = semana;
               const claveBOL = `fen_bol_plan_${semana2}_${r.ID_receta}`;
+              // Always read from localStorage (populated from Sheet by cargarPlanB2CB2BBOL)
               const planBOL = (() => { try { return JSON.parse(localStorage.getItem(claveBOL)||'null'); } catch(e) { return null; } })();
-              // planBOL = { b2c: [7], b2b: [7] } or fallback to App.planSemana
+              // Fallback: if no B2C/B2B split, try to use App.planSemana totals as B2B
+              const totales = App.planSemana[r.ID_receta] || Array(7).fill(0);
               const b2c = planBOL?.b2c || Array(7).fill(0);
-              const b2b = planBOL?.b2b || Array(7).fill(0);
+              const b2b = planBOL?.b2b || (planBOL ? Array(7).fill(0) : totales);
               const totalSem = b2c.reduce((s,v)=>s+v,0) + b2b.reduce((s,v)=>s+v,0);
               return `<tr style="border-bottom:1px solid var(--border)">
                 <td style="padding:8px 14px;font-weight:600;font-size:13px">${r.nombre}</td>
