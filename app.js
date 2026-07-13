@@ -3414,12 +3414,12 @@ function renderPreElabDia(diaIdx) {
       </div>
     </div>` : ''}
 
-    <!-- TAREAS MANUALES -->
+    <!-- TAREAS DEL DÍA -->
     <div class="card" style="margin-bottom:14px">
-      ${tareasManual.length ? `
       <div class="card-head" style="background:var(--bg);color:var(--txt2)">
-        <i class="ti ti-list-check"></i> Tareas adicionales
+        <i class="ti ti-list-check"></i> Tareas del día
       </div>
+      ${tareasManual.length ? `
       <div style="padding:8px 0">
         ${tareasManual.map(t => {
           const done = getCheck('manual_' + t.id);
@@ -3440,7 +3440,7 @@ function renderPreElabDia(diaIdx) {
           </div>`;
         }).join('')}
       </div>` : ''}
-      <div style="padding:10px 16px;${tareasManual.length?'border-top:1px solid var(--border)':''}">
+      <div style="padding:10px 16px;border-top:1px solid var(--border)">
         <button class="btn-secundario" style="font-size:12px;width:100%" onclick="abrirModalTareaManualBOL(${diaIdx},'pre')">
           <i class="ti ti-plus"></i> Agregar tarea
         </button>
@@ -3697,8 +3697,6 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
     })),
     // Día actual AM
     { id: 'revisar_b2b', hora: '06:30', turno: 'am', icono: '📋', titulo: 'Revisar pedidos B2B', detalle: 'Actualizar cantidades a hornear' },
-    { id: 'estirar_paston', hora: '08:00', turno: 'am', icono: '🧈', titulo: 'Estirar pastón', detalle: 'Laminar y estirar masas descongeladas' },
-    { id: 'formar_productos', hora: '09:00', turno: 'am', icono: '✂️', titulo: 'Formar productos', detalle: 'Cortar, formar y preparar para hornear o congelar' },
     // Tarea de horneado se agrega manualmente según disponibilidad real del horno
   ];
 
@@ -3871,7 +3869,7 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
     <!-- TAREAS DÍA ACTUAL AM -->
     <div class="card" style="margin-bottom:16px">
       <div class="card-head" style="background:#FFF8E1;color:#F57C00">
-        <i class="ti ti-sun"></i> ${diasNombres[diaIdx]} AM — Producción
+        <i class="ti ti-sun"></i> ${diasNombres[diaIdx]} AM — Tareas
       </div>
       <div style="padding:8px 0">
         ${tareasAM.map(renderTarea).join('')}
