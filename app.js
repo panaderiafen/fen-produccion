@@ -296,12 +296,14 @@ function renderSidebar() {
       { id: 'nueva-receta',      icon: 'ti-plus',           label: 'Nueva receta / sub receta' },
       { id: 'mis-recetas',       icon: 'ti-clipboard-list', label: 'Mis recetas'        },
       { id: 'planificacion',     icon: 'ti-calendar-week',  label: 'Plan semanal'       },
-      { id: 'recetas-del-dia',   icon: 'ti-chef-hat',       label: 'Recetas del día'   },
-      { id: 'maestro',           icon: 'ti-book',           label: 'Maestro de recetas' },
+      { id: 'recetas-del-dia', icon: 'ti-flame', label: 'Recetas del día' },
+      { id: 'maestro',         icon: 'ti-book',  label: 'Maestro de recetas' },
     ];
     if (App.areaCodigo === 'CAF') items.splice(2, 2);
-    // Pre-elaboraciones BOL — va antes de recetas del día en el push
+    // BOL: rename recetas-del-dia and add pre-elaboraciones
     if (App.areaCodigo === 'BOL') {
+      const rdIdx = items.findIndex(i => i.id === 'recetas-del-dia');
+      if (rdIdx >= 0) items[rdIdx] = { id: 'recetas-del-dia', icon: 'ti-flame', label: 'Plan de horneado del día' };
       items.splice(3, 0, { id: 'pre-elaboraciones', icon: 'ti-clock-play', label: 'Pre-elaboraciones y tareas' });
     }
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL') {
@@ -3869,7 +3871,7 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
     <!-- TAREAS DÍA ACTUAL AM -->
     <div class="card" style="margin-bottom:16px">
       <div class="card-head" style="background:#FFF8E1;color:#F57C00">
-        <i class="ti ti-sun"></i> ${diasNombres[diaIdx]} AM — Tareas
+        <i class="ti ti-sun"></i> ${diasNombres[diaIdx]} — Planifica bien tu horneado del día
       </div>
       <div style="padding:8px 0">
         ${tareasAM.map(renderTarea).join('')}
@@ -4053,17 +4055,29 @@ function abrirModalTareaManualBOL(diaIdx) {
 
 function guardarTareaManualBOL() {
   const diaIdx = parseInt(document.getElementById('tarea-manual-dia').value);
+  const contexto = document.getElementById('tarea-manual-dia').dataset.contexto || 'prod';
   const hora   = document.getElementById('tarea-manual-hora').value;
   const titulo = document.getElementById('tarea-manual-titulo').value.trim();
   const detalle = document.getElementById('tarea-manual-detalle').value.trim();
   if (!titulo) { toast('Escribe un título para la tarea'); return; }
 
-  const key = `fen_bol_tareas_manuales_${obtenerSemanaActual()}_${diaIdx}`;
-  const tareas = (() => { try { return JSON.parse(localStorage.getItem(key)||'[]'); } catch(e) { return []; } })();
-  tareas.push({ id: `manual_${Date.now()}`, hora, titulo, detalle, turno: 'am', icono: '📝', manual: true });
-  localStorage.setItem(key, JSON.stringify(tareas));
-  document.getElementById('modal-tarea-manual-bol').classList.add('hidden');
-  renderProduccionBOL(diaIdx, App._recetasHoyBOL || []);
+  if (contexto === 'pre') {
+    // Save to pre-elaboraciones manual tasks
+    const key = `fen_bol_tareas_manuales_pre_${obtenerSemanaActual()}_${diaIdx}`;
+    const tareas = (() => { try { return JSON.parse(localStorage.getItem(key)||'[]'); } catch(e) { return []; } })();
+    tareas.push({ id: `${Date.now()}`, hora, titulo, detalle, icono: '📝' });
+    localStorage.setItem(key, JSON.stringify(tareas));
+    document.getElementById('modal-tarea-manual-bol').classList.add('hidden');
+    renderPreElabDia(diaIdx);
+  } else {
+    // Save to produccion manual tasks
+    const key = `fen_bol_tareas_manuales_${obtenerSemanaActual()}_${diaIdx}`;
+    const tareas = (() => { try { return JSON.parse(localStorage.getItem(key)||'[]'); } catch(e) { return []; } })();
+    tareas.push({ id: `manual_${Date.now()}`, hora, titulo, detalle, turno: 'am', icono: '📝', manual: true });
+    localStorage.setItem(key, JSON.stringify(tareas));
+    document.getElementById('modal-tarea-manual-bol').classList.add('hidden');
+    renderProduccionBOL(diaIdx, App._recetasHoyBOL || []);
+  }
   toast('Tarea agregada');
 }
 
@@ -4073,6 +4087,14 @@ function eliminarTareaManualBOL(id, diaIdx) {
   tareas = tareas.filter(t => t.id !== id);
   localStorage.setItem(key, JSON.stringify(tareas));
   renderProduccionBOL(diaIdx, App._recetasHoyBOL || []);
+}
+
+function eliminarTareaManualPreBOL(id, diaIdx) {
+  const key = `fen_bol_tareas_manuales_pre_${obtenerSemanaActual()}_${diaIdx}`;
+  let tareas = (() => { try { return JSON.parse(localStorage.getItem(key)||'[]'); } catch(e) { return []; } })();
+  tareas = tareas.filter(t => t.id !== id);
+  localStorage.setItem(key, JSON.stringify(tareas));
+  renderPreElabDia(diaIdx);
 }
 
 function actualizarHoraTarea(id, hora, turno) {
