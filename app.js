@@ -110,8 +110,9 @@ async function entrar(areaCodigo, rol, desdeAdmin = false) {
   if (areaCodigo === 'BOL') {
     const hoy = new Date().getDay();
     const diaIdx = hoy === 0 ? 6 : hoy - 1;
-    cargarPlanMasasBOL(); // no await — carga en background
-    cargarEstadoTareasBOL(diaIdx); // no await — carga en background
+    cargarPlanMasasBOL();
+    cargarPlanB2CB2BBOL(); // load B2C/B2B split from Sheet
+    cargarEstadoTareasBOL(diaIdx);
   }
 
   cargarAvisos(); // no await — carga en background
@@ -267,6 +268,7 @@ async function sincronizarTodo(btn) {
   await cargarPlanSemana();
   if (App.areaCodigo === 'BOL') {
     await cargarPlanMasasBOL();
+    await cargarPlanB2CB2BBOL();
     const hoy = new Date().getDay();
     await cargarEstadoTareasBOL(hoy === 0 ? 6 : hoy - 1);
   }
@@ -365,7 +367,7 @@ function navegarA(vistaId) {
   switch(vistaId) {
     case 'nueva-receta':    renderVistaFormReceta(null, 'receta'); break;
     case 'mis-recetas':     renderVistaMisRecetas(); cargarAvisos(); break;
-    case 'planificacion':   cargarPlanSemana().then(() => renderVistaPlanificacion()); break;
+    case 'planificacion':   cargarPlanSemana().then(() => cargarPlanB2CB2BBOL()).then(() => renderVistaPlanificacion()); break;
     case 'recetas-del-dia': renderVistaRecetasDelDia(); cargarAvisos(); break;
     case 'maestro':         renderVistaMaestro(); break;
     case 'aprobaciones':    renderVistaAprobaciones(); break;
@@ -1526,16 +1528,29 @@ async function guardarPlanificacion() {
     });
     App.planSemana = plan;
     guardarPlanLocal(plan);
+    // Save totals to BOL_planificacion
     try {
       await escribirEnSheet('guardar_planificacion', {
         hoja: FEN.AREAS['BOL'].hoja_plan,
         semana,
         plan
       });
-      toast('Plan guardado correctamente');
-    } catch(e) {
-      toast('Guardado local OK (Sheet no disponible)');
-    }
+    } catch(e) {}
+
+    // Save B2C/B2B detail to BOL_plan_b2cb2b
+    const filasBOL = [];
+    recetas.forEach(r => {
+      const clave = `fen_bol_plan_${semana}_${r.ID_receta}`;
+      const planR = (() => { try { return JSON.parse(localStorage.getItem(clave)||'null'); } catch(e) { return null; } })()
+        || { b2c: Array(7).fill(0), b2b: Array(7).fill(0) };
+      filasBOL.push({ semana_ID: semana, ID_receta: r.ID_receta, nombre_receta: r.nombre, canal: 'b2c', dias: planR.b2c });
+      filasBOL.push({ semana_ID: semana, ID_receta: r.ID_receta, nombre_receta: r.nombre, canal: 'b2b', dias: planR.b2b });
+    });
+    const payloadB2B = encodeURIComponent(JSON.stringify({
+      accion: 'guardar_plan_b2cb2b_bol', filas: filasBOL
+    }));
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadB2B).catch(() => {});
+    toast('Plan guardado correctamente');
     desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan', true);
     return;
   }
@@ -2573,6 +2588,43 @@ async function guardarConsolidadoAhora(btn) {
 
 // ── BOL: PLAN DE MASAS BASE ───────────────────────────────────
 let _planMasasBOL = {};
+
+async function cargarPlanB2CB2BBOL() {
+  const semana = obtenerSemanaActual();
+  try {
+    const payload = encodeURIComponent(JSON.stringify({
+      accion: 'leer_plan_b2cb2b_bol', semana_ID: semana
+    }));
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    if (data.ok && data.filas?.length) {
+      const dias = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo'];
+      data.filas.forEach(f => {
+        const clave = `fen_bol_plan_${semana}_${f.ID_receta}`;
+        const plan = (() => { try { return JSON.parse(localStorage.getItem(clave)||'null'); } catch(e) { return null; } })()
+          || { b2c: Array(7).fill(0), b2b: Array(7).fill(0) };
+        const canal = f.canal; // 'b2c' or 'b2b'
+        if (canal === 'b2c' || canal === 'b2b') {
+          plan[canal] = dias.map(d => parseFloat(f[d]) || 0);
+          localStorage.setItem(clave, JSON.stringify(plan));
+          // Update App.planSemana totals
+          if (!App.planSemana[f.ID_receta]) App.planSemana[f.ID_receta] = Array(7).fill(0);
+        }
+      });
+      // Recalculate App.planSemana totals from localStorage
+      const recetas = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta');
+      recetas.forEach(r => {
+        const clave = `fen_bol_plan_${semana}_${r.ID_receta}`;
+        const plan = (() => { try { return JSON.parse(localStorage.getItem(clave)||'null'); } catch(e) { return null; } })();
+        if (plan) {
+          App.planSemana[r.ID_receta] = Array(7).fill(0).map((_,i) => (plan.b2c[i]||0) + (plan.b2b[i]||0));
+        }
+      });
+    }
+  } catch(e) {
+    console.warn('[fën] No se pudo cargar plan B2C/B2B:', e.message);
+  }
+}
 
 async function cargarPlanMasasBOL() {
   const semana = obtenerSemanaActual();
