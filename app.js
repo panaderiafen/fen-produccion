@@ -302,7 +302,7 @@ function renderSidebar() {
     if (App.areaCodigo === 'CAF') items.splice(2, 2);
     // Pre-elaboraciones BOL — va antes de recetas del día en el push
     if (App.areaCodigo === 'BOL') {
-      items.splice(3, 0, { id: 'pre-elaboraciones', icon: 'ti-clock-play', label: 'Pre-elaboraciones' });
+      items.splice(3, 0, { id: 'pre-elaboraciones', icon: 'ti-clock-play', label: 'Pre-elaboraciones y tareas' });
     }
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL') {
       items.push({ id: 'resumen-semanal',     icon: 'ti-chart-grid-dots', label: 'Resumen semanal' });
@@ -3094,7 +3094,7 @@ async function renderVistaPreElaboraciones() {
     <div class="vista-header">
       <div>
         <div class="vista-eyebrow">Bollería</div>
-        <h1 class="vista-titulo">Pre-elaboraciones</h1>
+        <h1 class="vista-titulo">Pre-elaboraciones y tareas</h1>
       </div>
     </div>
     <div class="dia-selector-wrap">
@@ -3344,6 +3344,17 @@ function renderPreElabDia(diaIdx) {
         </div>
       </div>
     </div>` : ''}
+
+    <!-- ELABORAR MASA BASE (pre-elaboración del día planificado) -->
+    ${(() => {
+      const masasHoyElab = masasBase.map(m => ({
+        mp: m,
+        cantidad: (_planMasasBOL[m.ID_MP] || [])[diaIdx] || 0,
+        receta: App.recetas.find(r => r.nombre === m.nombre && r.estado === 'consolidada')
+      })).filter(x => x.cantidad > 0);
+      if (!masasHoyElab.length) return '';
+      return renderElaboracionMasaBaseBOL(diaIdx, diasNombres);
+    })()}
 
     <!-- DESCONGELAR MASAS Y PRODUCTOS -->
     ${(masasDescongelarManana.length > 0 || productosManana.length > 0) ? `
@@ -3850,7 +3861,7 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
     ${tareasPMHoy.length ? `
     <div class="card" style="margin-bottom:16px;border-color:#E3F2FD">
       <div class="card-head" style="background:#E3F2FD;color:#1565C0">
-        <i class="ti ti-moon"></i> ${diasNombres[diaIdx]} PM — Preparar para ${diasNombres[diaSiguiente]}
+        <i class="ti ti-moon"></i> ${diasNombres[diaIdx]} — Descongelar para ${diasNombres[diaSiguiente]}
       </div>
       <div style="padding:8px 0">
         ${tareasPMHoy.map(renderTarea).join('')}
@@ -3873,8 +3884,6 @@ async function renderProduccionBOL(diaIdx, recetasHoy) {
       </div>
     </div>
 
-    <!-- ELABORACIÓN MASA BASE PM -->
-    ${renderElaboracionMasaBaseBOL(diaIdx, diasNombres)}
   `;
 
   renderAvisos();
