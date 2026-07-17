@@ -1313,6 +1313,10 @@ function guardarConfigDesdeForm(btn) {
       if (inp.value.trim()) baristas.push(inp.value.trim());
     });
     cfg.caf.baristas = baristas;
+    // Save baristas to Sheet so they persist across devices
+    if (typeof guardarBaristasCafASheet === 'function') {
+      guardarBaristasCafASheet(baristas);
+    }
 
     cfg.caf.stock = cfg.caf.stock || {};
   }
