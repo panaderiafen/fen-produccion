@@ -691,19 +691,24 @@ function agregarIngredienteTemporal(data) {
   // Check if there's an assignment in avisos cache
   let nombreAsignado = null;
   let idAsignado = null;
-  if (window._avisosCache) {
-    const avisoAsig = window._avisosCache.find(a =>
-      (a.tipo === 'mp_aprobada' || a.tipo === 'mp_asignada') && a.mp_id === mpId
+
+  // Look for aviso matching this specific MP id OR any assignment aviso if id is __pendiente__
+  const avisosAsig = (_avisosCache || []).filter(a =>
+    a.tipo === 'mp_asignada' || a.tipo === 'mp_aprobada'
+  );
+
+  // Find aviso that matches this mp or general assignment
+  const avisoAsig = avisosAsig.find(a => a.mp_id === mpId) ||
+                    (mpId === '__pendiente__' && avisosAsig.length > 0 ? avisosAsig[avisosAsig.length-1] : null);
+
+  if (avisoAsig) {
+    // Find the assigned MP in maestro
+    const mpFound = App.materiasPrimas.find(m =>
+      m.estado === 'activa' && m.ID_MP === avisoAsig.mp_id
+    ) || App.materiasPrimas.find(m =>
+      m.estado === 'activa' && avisoAsig.mensaje.includes(m.nombre)
     );
-    if (avisoAsig) {
-      // Extract assigned MP name from message
-      nombreAsignado = avisoAsig.mensaje;
-      // Find the MP in list
-      const mpFound = App.materiasPrimas.find(m =>
-        m.estado === 'activa' && avisoAsig.mensaje.includes(m.nombre)
-      );
-      if (mpFound) { idAsignado = mpFound.ID_MP; nombreAsignado = mpFound.nombre; }
-    }
+    if (mpFound) { idAsignado = mpFound.ID_MP; nombreAsignado = mpFound.nombre; }
   }
 
   // Also check if MP itself was approved (estado changed to activa)
