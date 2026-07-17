@@ -4699,11 +4699,22 @@ function solicitarNuevaMP(selectEl) {
   }
 }
 
+function actualizarLabelGramosSolicitud() {
+  const unidad = document.getElementById('solicitar-mp-unidad')?.value || 'gramos';
+  const label  = document.getElementById('label-solicitar-mp-cantidad');
+  if (label) {
+    const labels = { gramos: 'Gramos (para agregar temporalmente)', unidades: 'Unidades (para agregar temporalmente)', ml: 'Mililitros (para agregar temporalmente)' };
+    label.textContent = labels[unidad] || 'Cantidad';
+  }
+}
+
 async function enviarSolicitudMP() {
   const nombre    = document.getElementById('solicitar-mp-nombre').value.trim();
   const esNueva   = document.getElementById('solicitar-mp-nueva').checked;
   const tmpNombre = document.getElementById('solicitar-mp-tmp').value.trim() || nombre;
-  const gramos    = document.getElementById('solicitar-mp-gramos').value;
+  const cantidad  = document.getElementById('solicitar-mp-gramos').value;
+  const unidad    = document.getElementById('solicitar-mp-unidad')?.value || 'gramos';
+  const gramos    = unidad === 'gramos' ? cantidad : '';
 
   if (!nombre) { toast('Escribe el nombre de la MP', 'error'); return; }
 
@@ -4715,6 +4726,7 @@ async function enviarSolicitudMP() {
     solicitada_por: areaNombre,
     area_codigo: App.areaCodigo || '',
     categoría: 'Pendiente de clasificar',
+    unidad_receta: unidad,
     fecha: new Date().toISOString()
   });
 
@@ -4729,7 +4741,7 @@ async function enviarSolicitudMP() {
           <option>⏳ ${tmpNombre} (pendiente habilitación)</option>
         </select>
       </td>
-      <td><input type="number" placeholder="0" value="${gramos || ''}" min="0" step="0.01"></td>
+      <td><input type="number" placeholder="0" value="${cantidad || ''}" min="0" step="0.01" data-unidad="${unidad}"></td>
       ${App.areaCodigo === 'PAN' ? '<td><input type="number" placeholder="0.00" readonly style="color:var(--txt3)"></td>' : ''}
       <td><button class="btn-fila-del" onclick="this.closest('tr').remove()" aria-label="Eliminar"><i class="ti ti-x"></i></button></td>
     `;
