@@ -665,6 +665,28 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
 }
 
 // ── INGREDIENTES ──────────────────────────────────────────────
+function agregarIngredienteTemporal(data) {
+  const tbody = document.getElementById('tbody-ingr');
+  const tr = document.createElement('tr');
+  tr.style.background = '#FFF9C4';
+  const unidad = data.unidad_receta || 'gramos';
+  const cantidad = unidad === 'unidades' ? (data.unidades || data.gramos || '')
+                 : unidad === 'ml' ? (data.ml || data.gramos || '')
+                 : (data.gramos || '');
+  tr.innerHTML = `
+    <td>
+      <select disabled style="color:#F57C00;font-weight:500">
+        <option>⏳ ${data.nombre} (pendiente habilitación)</option>
+      </select>
+    </td>
+    <td><input type="number" placeholder="0" value="${cantidad || ''}" min="0" step="0.01" data-unidad="${unidad}"></td>
+    ${App.areaCodigo === 'PAN' ? '<td><input type="number" placeholder="0.00" readonly style="color:var(--txt3)"></td>' : ''}
+    <td><button class="btn-fila-del" onclick="this.closest('tr').remove()" aria-label="Eliminar"><i class="ti ti-x"></i></button></td>
+  `;
+  tbody.appendChild(tr);
+}
+
+
 function agregarIngrediente(data = {}) {
   const esPan = App.areaCodigo === 'PAN';
   const tbody = document.getElementById('tbody-ingr');
