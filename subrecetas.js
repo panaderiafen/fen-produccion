@@ -1314,9 +1314,12 @@ function guardarConfigDesdeForm(btn) {
     });
     cfg.caf.baristas = baristas;
     // Save baristas to Sheet so they persist across devices
-    if (typeof guardarBaristasCafASheet === 'function') {
-      guardarBaristasCafASheet(baristas);
-    }
+    try {
+      const payloadB = encodeURIComponent(JSON.stringify({
+        accion: 'guardar_baristas_caf', baristas
+      }));
+      fetch(FEN.WEBAPP_URL + '?payload=' + payloadB, { redirect: 'follow' }).catch(() => {});
+    } catch(e) {}
 
     cfg.caf.stock = cfg.caf.stock || {};
   }
