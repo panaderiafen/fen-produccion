@@ -655,7 +655,13 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
     </div>
   `;
 
-  if (ingredientes.length > 0) ingredientes.forEach(ing => agregarIngrediente(ing));
+  if (ingredientes.length > 0) ingredientes.forEach(ing => {
+    if (ing.pendiente || ing.id === '__pendiente__') {
+      agregarIngredienteTemporal(ing);
+    } else {
+      agregarIngrediente(ing);
+    }
+  });
   else { agregarIngrediente(); agregarIngrediente(); agregarIngrediente(); }
 
   if (pasos.length > 0) pasos.forEach(p => agregarPaso(typeof p === 'string' ? p : ''));
