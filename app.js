@@ -833,6 +833,26 @@ async function guardarReceta(recetaId) {
   document.querySelectorAll('#tbody-ingr tr').forEach(tr => {
     const select = tr.querySelector('select');
     const inputs = tr.querySelectorAll('input[type="number"]');
+
+    // Handle temporary (pending) ingredients
+    if (select?.disabled && select.options[0]?.text.includes('pendiente')) {
+      const nombre = select.options[0].text.replace('⏳ ', '').replace(' (pendiente habilitación)', '').trim();
+      const cantidad = parseFloat(inputs[0]?.value) || 0;
+      const unidad = inputs[0]?.dataset?.unidad || 'gramos';
+      ingredientes.push({
+        id: '__pendiente__',
+        nombre,
+        gramos: unidad === 'gramos' ? cantidad : 0,
+        unidades: unidad === 'unidades' ? cantidad : null,
+        ml: unidad === 'ml' ? cantidad : null,
+        unidad_receta: unidad,
+        pct: 0,
+        costo: 0,
+        pendiente: true
+      });
+      return;
+    }
+
     if (select?.value && select.value !== '__nueva__') {
       const opcion = select.options[select.selectedIndex];
       const costoPorGramo = parseFloat(opcion.dataset.costo) || 0;
@@ -4221,15 +4241,17 @@ function renderVistaAprobaciones() {
               <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px">
                 <thead><tr>
                   <th style="text-align:left;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Ingrediente</th>
-                  <th style="text-align:right;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Gramos</th>
+                  <th style="text-align:right;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Cantidad</th>
                   ${r._area === 'PAN' || r.área === 'Panadería' ? `<th style="text-align:right;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border);color:#E65100;font-weight:600;text-transform:uppercase;letter-spacing:.3px">% pan.</th>` : ''}
                   <th style="text-align:right;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Costo</th>
                 </tr></thead>
                 <tbody>
                   ${ingredientes.map(ing => {
-                    const tieneUnidades = ing.unidades !== undefined && ing.unidades !== null;
-                    const displayVal = tieneUnidades
-                      ? `${parseFloat(ing.unidades).toFixed(0)} uni`
+                    const unidadRec = ing.unidad_receta || (ing.unidades !== undefined && ing.unidades !== null ? 'unidades' : 'gramos');
+                    const displayVal = unidadRec === 'unidades'
+                      ? `${parseFloat(ing.unidades||ing.gramos||0).toFixed(0)} uni`
+                      : unidadRec === 'ml'
+                      ? `${parseFloat(ing.ml||ing.gramos||0).toFixed(1)} ml`
                       : `${parseFloat(ing.gramos||0).toFixed(1)}g`;
                     return `
                     <tr>
