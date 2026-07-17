@@ -674,22 +674,91 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
 function agregarIngredienteTemporal(data) {
   const tbody = document.getElementById('tbody-ingr');
   const tr = document.createElement('tr');
-  tr.style.background = '#FFF9C4';
   const unidad = data.unidad_receta || 'gramos';
   const cantidad = unidad === 'unidades' ? (data.unidades || data.gramos || '')
                  : unidad === 'ml' ? (data.ml || data.gramos || '')
                  : (data.gramos || '');
+
+  // Check if this MP has been assigned/approved
+  const mpId = data.id || '__pendiente__';
+  const mpActual = App.materiasPrimas.find(m => m.ID_MP === mpId);
+  const mpAsignada = App.materiasPrimas.find(m =>
+    m.estado === 'activa' && m.ID_MP !== mpId &&
+    // Check avisos for assignment
+    false // will be handled below
+  );
+
+  // Check if there's an assignment in avisos cache
+  let nombreAsignado = null;
+  let idAsignado = null;
+  if (window._avisosCache) {
+    const avisoAsig = window._avisosCache.find(a =>
+      (a.tipo === 'mp_aprobada' || a.tipo === 'mp_asignada') && a.mp_id === mpId
+    );
+    if (avisoAsig) {
+      // Extract assigned MP name from message
+      nombreAsignado = avisoAsig.mensaje;
+      // Find the MP in list
+      const mpFound = App.materiasPrimas.find(m =>
+        m.estado === 'activa' && avisoAsig.mensaje.includes(m.nombre)
+      );
+      if (mpFound) { idAsignado = mpFound.ID_MP; nombreAsignado = mpFound.nombre; }
+    }
+  }
+
+  // Also check if MP itself was approved (estado changed to activa)
+  const mpAprobada = mpActual && mpActual.estado === 'activa';
+
+  const bgColor = idAsignado || mpAprobada ? '#E8F5E9' : '#FFF9C4';
+  const textColor = idAsignado || mpAprobada ? '#2E7D32' : '#F57C00';
+  const icono = idAsignado || mpAprobada ? '✓' : '⏳';
+
+  let labelText = `${icono} ${data.nombre}`;
+  if (idAsignado) labelText += ` → reemplazar por: ${nombreAsignado}`;
+  else if (mpAprobada) labelText += ` (aprobada — ya disponible)`;
+  else labelText += ` (pendiente habilitación)`;
+
+  tr.style.background = bgColor;
   tr.innerHTML = `
-    <td>
-      <select disabled style="color:#F57C00;font-weight:500">
-        <option>⏳ ${data.nombre} (pendiente habilitación)</option>
-      </select>
+    <td style="min-width:200px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <select disabled style="color:${textColor};font-weight:500;flex:1" data-mp-id="${mpId}" data-nombre-tmp="${data.nombre}">
+          <option>${labelText}</option>
+        </select>
+        ${(idAsignado || mpAprobada) ? `
+        <button onclick="reemplazarIngredienteTemporal(this,'${idAsignado || mpId}','${(nombreAsignado || data.nombre).replace(/'/g,"\'")}','${mpId}')"
+          style="background:#2E7D32;color:#fff;border:none;padding:4px 10px;border-radius:var(--r-sm);font-size:12px;cursor:pointer;white-space:nowrap">
+          <i class="ti ti-replace"></i> Reemplazar
+        </button>` : ''}
+      </div>
     </td>
     <td><input type="number" placeholder="0" value="${cantidad || ''}" min="0" step="0.01" data-unidad="${unidad}"></td>
     ${App.areaCodigo === 'PAN' ? '<td><input type="number" placeholder="0.00" readonly style="color:var(--txt3)"></td>' : ''}
     <td><button class="btn-fila-del" onclick="this.closest('tr').remove()" aria-label="Eliminar"><i class="ti ti-x"></i></button></td>
   `;
   tbody.appendChild(tr);
+}
+
+function reemplazarIngredienteTemporal(btn, mpIdNuevo, nombreNuevo, mpIdViejo) {
+  const tr = btn.closest('tr');
+  const inputs = tr.querySelectorAll('input[type="number"]');
+  const cantidad = parseFloat(inputs[0]?.value) || 0;
+  const unidad   = inputs[0]?.dataset?.unidad || 'gramos';
+
+  // Replace entire row with normal ingredient
+  tr.remove();
+
+  // Add as normal ingredient
+  const data = {
+    id: mpIdNuevo,
+    nombre: nombreNuevo,
+    gramos: unidad === 'gramos' ? cantidad : 0,
+    unidades: unidad === 'unidades' ? cantidad : null,
+    unidad_receta: unidad,
+    pendiente: false
+  };
+  agregarIngrediente(data);
+  toast(`Reemplazado por ${nombreNuevo}`);
 }
 
 
@@ -867,8 +936,9 @@ async function guardarReceta(recetaId) {
       const nombre = select.options[0].text.replace('⏳ ', '').replace(' (pendiente habilitación)', '').trim();
       const cantidad = parseFloat(inputs[0]?.value) || 0;
       const unidad = inputs[0]?.dataset?.unidad || 'gramos';
+      const mpId = select.dataset?.mpId || '__pendiente__';
       ingredientes.push({
-        id: '__pendiente__',
+        id: mpId,
         nombre,
         gramos: unidad === 'gramos' ? cantidad : 0,
         unidades: unidad === 'unidades' ? cantidad : null,
@@ -4764,30 +4834,39 @@ async function enviarSolicitudMP() {
   const tmpNombre = document.getElementById('solicitar-mp-tmp').value.trim() || nombre;
   const cantidad  = document.getElementById('solicitar-mp-gramos').value;
   const unidad    = document.getElementById('solicitar-mp-unidad')?.value || 'gramos';
-  const gramos    = unidad === 'gramos' ? cantidad : '';
 
   if (!nombre) { toast('Escribe el nombre de la MP', 'error'); return; }
 
-  // Enviar solicitud al Sheet
+  // Enviar solicitud al Sheet via GET para obtener el ID generado
   const areaNombre = App.area?.nombre || (App.areaCodigo ? FEN.AREAS[App.areaCodigo]?.nombre : '') || '';
-  escribirEnSheet('solicitar_mp', {
-    nombre,
-    es_nueva: esNueva,
-    solicitada_por: areaNombre,
-    area_codigo: App.areaCodigo || '',
-    categoría: 'Pendiente de clasificar',
-    unidad_receta: unidad,
-    fecha: new Date().toISOString()
-  });
+  let mpId = '__pendiente__';
+  try {
+    const payload = encodeURIComponent(JSON.stringify({
+      accion: 'solicitar_mp',
+      nombre,
+      es_nueva: esNueva,
+      solicitada_por: areaNombre,
+      area_codigo: App.areaCodigo || '',
+      categoría: 'Pendiente de clasificar',
+      unidad_receta: unidad,
+      fecha: new Date().toISOString()
+    }));
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    if (data.ok && data.id) mpId = data.id;
+  } catch(e) {
+    console.warn('[fën] No se pudo obtener ID de MP:', e.message);
+  }
 
-  // Agregar ingrediente temporal al formulario (en amarillo)
+  // Agregar ingrediente temporal al formulario con el ID real
   if (tmpNombre) {
     const tbody = document.getElementById('tbody-ingr');
     const tr = document.createElement('tr');
     tr.style.background = '#FFF9C4';
+    tr.dataset.mpId = mpId;
     tr.innerHTML = `
       <td>
-        <select disabled style="color:#F57C00;font-weight:500">
+        <select disabled style="color:#F57C00;font-weight:500" data-mp-id="${mpId}" data-nombre-tmp="${tmpNombre}">
           <option>⏳ ${tmpNombre} (pendiente habilitación)</option>
         </select>
       </td>
