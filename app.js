@@ -111,8 +111,11 @@ async function entrar(areaCodigo, rol, desdeAdmin = false) {
     const hoy = new Date().getDay();
     const diaIdx = hoy === 0 ? 6 : hoy - 1;
     cargarPlanMasasBOL();
-    cargarPlanB2CB2BBOL(); // load B2C/B2B split from Sheet
+    cargarPlanB2CB2BBOL();
     cargarEstadoTareasBOL(diaIdx);
+  }
+  if (areaCodigo === 'CAF') {
+    cargarBaristasCaf(); // Load baristas from Sheet on entry
   }
 
   cargarAvisos(); // no await — carga en background
@@ -312,7 +315,7 @@ function renderSidebar() {
     }
 
     if (App.areaCodigo === 'CAF') {
-      items.push({ id: 'stock-caf', icon: 'ti-package', label: 'Stock materias primas' });
+      items.push({ id: 'registros-caf', icon: 'ti-clipboard-list', label: 'Registros de turno' });
     }
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL' || App.areaCodigo === 'CAF') {
       items.push({ id: 'config-subrecetas',   icon: 'ti-adjustments',     label: App.areaCodigo === 'CAF' ? 'Configuración' : 'Config sub recetas' });
@@ -385,7 +388,7 @@ function navegarA(vistaId) {
     case 'config-subrecetas':   renderVistaConfigSubrecetas(); break;
     case 'resumen-semanal':     renderVistaResumenSemanal(); break;
     case 'consolidado-mensual': renderVistaConsolidado();    break;
-    case 'stock-caf':           renderVistaStockCAF();        break;
+    case 'registros-caf':       renderVistaRegistrosCAF();    break;
     case 'pre-elaboraciones':   renderVistaPreElaboraciones(); break;
     case 'estimacion-bol':      renderVistaEstimacionBOL();  break;
     default: mostrarVista('empty');
@@ -2181,215 +2184,239 @@ function renderVistaResumenSemanal() {
 // ── STOCK CAFETERÍA ────────────────────────────────────────────
 let _stockCAFCache = [];
 
-async function renderVistaStockCAF() {
-  const vista = document.getElementById('vista-stock-caf');
+// ── CAF: REGISTROS DE TURNO ──────────────────────────────────
+let _cafBaristas = [];
+let _cafRegistros = [];
+
+async function renderVistaRegistrosCAF() {
+  const vista = document.getElementById('vista-registros-caf');
   if (!vista) return;
-  mostrarVista('stock-caf');
+  mostrarVista('registros-caf');
+
+  // Load baristas and registros
+  await Promise.all([cargarBaristasCaf(), cargarRegistrosCAF()]);
+
+  const cfg = cargarConfigSubrecetas();
+  const gramosDef = cfg.caf?.gramos_por_shot || 14;
 
   vista.innerHTML = `
     <div class="vista-header">
       <div>
         <div class="vista-eyebrow">Cafetería</div>
-        <h1 class="vista-titulo">Stock de materias primas</h1>
+        <h1 class="vista-titulo">Registros de turno</h1>
       </div>
-      <button class="btn-primario" onclick="abrirModalMovStock()">
-        <i class="ti ti-plus"></i> Registrar movimiento
+      <button class="btn-primario" onclick="abrirModalRegistroCaf()">
+        <i class="ti ti-plus"></i> Nuevo registro
       </button>
     </div>
-    <div id="stock-caf-body">
-      <div style="padding:20px;text-align:center;color:var(--txt3)"><div class="spinner"></div> Cargando...</div>
+
+    <!-- FILTROS -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      <select id="filtro-caf-periodo" onchange="renderTablaRegistrosCAF()"
+        style="padding:7px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+        <option value="hoy">Hoy</option>
+        <option value="semana">Esta semana</option>
+        <option value="mes">Este mes</option>
+        <option value="todos">Todos</option>
+      </select>
+      <select id="filtro-caf-barista" onchange="renderTablaRegistrosCAF()"
+        style="padding:7px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+        <option value="">Todos los baristas</option>
+        ${_cafBaristas.map(b => `<option value="${b}">${b}</option>`).join('')}
+      </select>
+      <select id="filtro-caf-tipo" onchange="renderTablaRegistrosCAF()"
+        style="padding:7px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+        <option value="">Todos los tipos</option>
+        <option value="calibracion">Calibración</option>
+        <option value="merma">Merma</option>
+        <option value="prueba_receta">Prueba de receta</option>
+      </select>
+    </div>
+
+    <!-- RESUMEN -->
+    <div id="resumen-caf" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px"></div>
+
+    <!-- TABLA -->
+    <div class="card">
+      <div class="card-head"><i class="ti ti-list"></i> Registros</div>
+      <div id="tabla-registros-caf" style="overflow-x:auto"></div>
     </div>
   `;
 
-  await cargarStockCAF();
+  renderTablaRegistrosCAF();
 }
 
-async function cargarStockCAF() {
-  const body = document.getElementById('stock-caf-body');
-  if (!body) return;
+function renderTablaRegistrosCAF() {
+  const periodo  = document.getElementById('filtro-caf-periodo')?.value || 'hoy';
+  const barista  = document.getElementById('filtro-caf-barista')?.value || '';
+  const tipo     = document.getElementById('filtro-caf-tipo')?.value || '';
 
-  try {
-    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_stock_caf' }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
-    const data = await res.json();
-    _stockCAFCache = data.movimientos || [];
+  const hoy = new Date();
+  const fechaHoy = hoy.toISOString().slice(0,10);
+  const lunesSemana = (() => {
+    const d = new Date(hoy);
+    d.setDate(d.getDate() - (d.getDay()===0?6:d.getDay()-1));
+    return d.toISOString().slice(0,10);
+  })();
+  const primerMes = fechaHoy.slice(0,7) + '-01';
 
-    // Calcular saldo actual por MP
-    const mpItems = App.materiasPrimas.filter(m =>
-      !m.areas_habilitadas || m.areas_habilitadas.includes('CAF')
-    );
+  let filtrados = _cafRegistros.filter(r => {
+    if (barista && r.barista !== barista) return false;
+    if (tipo && r.tipo !== tipo) return false;
+    if (periodo === 'hoy' && r.fecha !== fechaHoy) return false;
+    if (periodo === 'semana' && r.fecha < lunesSemana) return false;
+    if (periodo === 'mes' && r.fecha < primerMes) return false;
+    return true;
+  }).sort((a,b) => b.fecha.localeCompare(a.fecha) || b.hora?.localeCompare(a.hora||''));
 
-    const saldos = {};
-    mpItems.forEach(m => { saldos[m.ID_MP] = { nombre: m.nombre, saldo: 0, unidad: m.unidad || 'unid' }; });
+  // Resumen
+  const totales = { calibracion: 0, merma: 0, prueba_receta: 0 };
+  filtrados.forEach(r => { totales[r.tipo] = (totales[r.tipo]||0) + (parseFloat(r.gramos)||0); });
+  const totalGr = Object.values(totales).reduce((s,v)=>s+v,0);
 
-    _stockCAFCache.forEach(mov => {
-      if (!saldos[mov.mp_id]) saldos[mov.mp_id] = { nombre: mov.nombre, saldo: 0, unidad: '' };
-      const cant = parseFloat(mov.cantidad) || 0;
-      if (mov.tipo === 'compra') saldos[mov.mp_id].saldo += cant;
-      else saldos[mov.mp_id].saldo -= cant; // consumo, merma
-    });
+  const colores = { calibracion: '#6A1B9A', merma: '#C62828', prueba_receta: '#1565C0' };
+  const nombres = { calibracion: 'Calibración', merma: 'Merma', prueba_receta: 'Prueba receta' };
+  const iconos  = { calibracion: '☕', merma: '🗑️', prueba_receta: '🧪' };
 
-    const itemsConMovimiento = Object.entries(saldos).filter(([id, s]) =>
-      _stockCAFCache.some(m => m.mp_id === id) || mpItems.some(m => m.ID_MP === id)
-    );
-
-    if (!itemsConMovimiento.length) {
-      body.innerHTML = '<p style="padding:20px;color:var(--txt3);font-size:13px">Sin materias primas configuradas para Cafetería. Agrégalas en "Materias primas" con área habilitada CAF.</p>';
-      return;
-    }
-
-    body.innerHTML = `
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-head"><i class="ti ti-package"></i> Stock actual</div>
-        <table class="tabla-vista">
-          <thead><tr>
-            <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Item</th>
-            <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Stock actual</th>
-          </tr></thead>
-          <tbody>
-            ${itemsConMovimiento.map(([id, s]) => `
-              <tr>
-                <td class="td-nombre">${s.nombre}</td>
-                <td class="td-num" style="font-weight:700;color:${s.saldo<=0?'#C62828':'var(--txt)'}">
-                  ${s.saldo.toFixed(s.unidad==='unidades'?0:2)} ${s.unidad}
-                </td>
-              </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-
-      <div class="card">
-        <div class="card-head" style="cursor:pointer" onclick="toggleHistoricoStock(this)">
-          <i class="ti ti-history"></i> Histórico de movimientos
-          <i class="ti ti-chevron-down" style="margin-left:auto;font-size:14px;transition:transform .2s"></i>
-        </div>
-        <div id="historico-stock-body" style="display:none">
-          <div style="padding:10px 16px">
-            <input type="text" placeholder="Buscar por item o barista..." id="buscar-historico"
-              style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit"
-              oninput="filtrarHistoricoStock(this.value)">
-          </div>
-          <table class="tabla-vista" id="tabla-historico-stock">
-            <thead><tr>
-              <th style="text-align:left;padding:7px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Fecha</th>
-              <th style="text-align:left;padding:7px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Item</th>
-              <th style="text-align:center;padding:7px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Tipo</th>
-              <th style="text-align:right;padding:7px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Cantidad</th>
-              <th style="text-align:left;padding:7px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Barista</th>
-            </tr></thead>
-            <tbody>
-              ${_stockCAFCache.slice().reverse().map(mov => `
-                <tr>
-                  <td style="font-size:12px;color:var(--txt2);padding:6px 16px">${mov.fecha}</td>
-                  <td style="font-size:12px;padding:6px 16px">${mov.nombre}</td>
-                  <td style="text-align:center;padding:6px 16px">
-                    <span style="font-size:10px;padding:2px 8px;border-radius:99px;font-weight:600;
-                      background:${mov.tipo==='compra'?'#E8F5E9':mov.tipo==='merma'?'#FFEBEE':'#FFF3E0'};
-                      color:${mov.tipo==='compra'?'#2E7D32':mov.tipo==='merma'?'#C62828':'#E65100'}">
-                      ${mov.tipo}
-                    </span>
-                  </td>
-                  <td style="text-align:right;font-family:'DM Mono',monospace;padding:6px 16px">${mov.cantidad}</td>
-                  <td style="font-size:12px;padding:6px 16px">${mov.barista||'—'}</td>
-                </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
-  } catch(e) {
-    body.innerHTML = `<p style="padding:20px;color:#C62828;font-size:13px">Error: ${e.message}</p>`;
+  const resumenEl = document.getElementById('resumen-caf');
+  if (resumenEl) {
+    resumenEl.innerHTML = Object.entries(totales).map(([t, gr]) => `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 16px;min-width:130px">
+        <div style="font-size:11px;color:var(--txt3)">${iconos[t]} ${nombres[t]}</div>
+        <div style="font-size:20px;font-weight:700;color:${colores[t]};font-family:'DM Mono',monospace">${gr.toFixed(1)}g</div>
+      </div>`).join('') +
+      `<div style="background:var(--surface);border:2px solid var(--area-color);border-radius:var(--r-md);padding:10px 16px;min-width:130px">
+        <div style="font-size:11px;color:var(--txt3)">☕ Total café</div>
+        <div style="font-size:20px;font-weight:700;color:var(--area-color);font-family:'DM Mono',monospace">${totalGr.toFixed(1)}g</div>
+      </div>`;
   }
-}
 
-function toggleHistoricoStock(header) {
-  const body = document.getElementById('historico-stock-body');
-  const chev = header.querySelector('.ti-chevron-down');
-  if (!body) return;
-  const visible = body.style.display !== 'none';
-  body.style.display = visible ? 'none' : 'block';
-  if (chev) chev.style.transform = visible ? '' : 'rotate(180deg)';
-}
+  const tablaEl = document.getElementById('tabla-registros-caf');
+  if (!tablaEl) return;
 
-function filtrarHistoricoStock(texto) {
-  const filas = document.querySelectorAll('#tabla-historico-stock tbody tr');
-  const t = texto.toLowerCase();
-  filas.forEach(fila => {
-    const match = fila.textContent.toLowerCase().includes(t);
-    fila.style.display = match ? '' : 'none';
-  });
-}
-
-function abrirModalMovStock() {
-  const cfg = cargarConfigSubrecetas();
-  const baristas = cfg.caf?.baristas || [];
-  const mpItems = App.materiasPrimas.filter(m =>
-    !m.areas_habilitadas || m.areas_habilitadas.includes('CAF')
-  );
-
-  const modal = document.getElementById('modal-mov-stock');
-  document.getElementById('mov-stock-mp').innerHTML = mpItems.map(m =>
-    `<option value="${m.ID_MP}" data-nombre="${m.nombre}">${m.nombre}</option>`
-  ).join('');
-  document.getElementById('mov-stock-barista').innerHTML =
-    '<option value="">— Selecciona —</option>' +
-    baristas.map(b => `<option value="${b}">${b}</option>`).join('');
-  document.getElementById('mov-stock-cantidad').value = '';
-  document.getElementById('mov-stock-nota').value = '';
-
-  modal.classList.remove('hidden');
-}
-
-async function guardarMovStock(btn) {
-  const mpSel = document.getElementById('mov-stock-mp');
-  const mpId = mpSel.value;
-  const nombre = mpSel.selectedOptions[0]?.dataset.nombre || '';
-  const tipo = document.getElementById('mov-stock-tipo').value;
-  const cantidad = parseFloat(document.getElementById('mov-stock-cantidad').value) || 0;
-  const nota = document.getElementById('mov-stock-nota').value.trim();
-  const barista = document.getElementById('mov-stock-barista').value;
-
-  if (!mpId || cantidad <= 0 || !barista) {
-    toast('Completa item, cantidad y barista');
+  if (!filtrados.length) {
+    tablaEl.innerHTML = '<p style="padding:20px;color:var(--txt3);font-size:13px;text-align:center">Sin registros para los filtros seleccionados.</p>';
     return;
   }
 
-  bloquearBtn(btn, 'Guardando...');
-  try {
-    let data;
-    try {
-      const payload = encodeURIComponent(JSON.stringify({
-        accion: 'mov_stock_caf', mp_id: mpId, nombre, tipo, cantidad, nota, barista
-      }));
-      const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
-      data = await res.json();
-    } catch(errGet) {
-      // Fallback: POST con no-cors (sin confirmación pero funciona con tildes)
-      await fetch(FEN.WEBAPP_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
-          accion: 'mov_stock_caf', mp_id: mpId, nombre, tipo, cantidad, nota, barista
-        })
-      });
-      data = { ok: true, msg: 'Enviado (sin confirmación)' };
-    }
-
-    if (data.ok) {
-      document.getElementById('modal-mov-stock').classList.add('hidden');
-      toast('Movimiento registrado');
-      await cargarStockCAF();
-    } else {
-      toast('Error: ' + data.msg);
-    }
-  } catch(e) {
-    toast('Error de conexión: ' + e.message);
-  }
-  desbloquearBtn(btn, '<i class="ti ti-check"></i> Registrar', true);
+  tablaEl.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr style="background:var(--bg)">
+          <th style="text-align:left;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--border)">Fecha</th>
+          <th style="text-align:left;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--border)">Barista</th>
+          <th style="text-align:left;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--border)">Turno</th>
+          <th style="text-align:left;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--border)">Tipo</th>
+          <th style="text-align:center;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--border)">Shots</th>
+          <th style="text-align:right;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--border)">Gramos</th>
+          <th style="text-align:left;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--border)">Nota</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filtrados.map(r => `
+          <tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:8px 16px;color:var(--txt2)">${r.fecha} ${r.hora||''}</td>
+            <td style="padding:8px 16px;font-weight:500">${r.barista}</td>
+            <td style="padding:8px 16px;color:var(--txt2)">${r.turno}</td>
+            <td style="padding:8px 16px">
+              <span style="font-size:11px;padding:2px 8px;border-radius:99px;font-weight:600;
+                background:${r.tipo==='calibracion'?'#F3E5F5':r.tipo==='merma'?'#FFEBEE':'#E3F2FD'};
+                color:${colores[r.tipo]||'var(--txt2)'}">
+                ${nombres[r.tipo]||r.tipo}
+              </span>
+            </td>
+            <td style="text-align:center;padding:8px 16px;font-family:'DM Mono',monospace">${r.shots||'—'}</td>
+            <td style="text-align:right;padding:8px 16px;font-family:'DM Mono',monospace;font-weight:600">${parseFloat(r.gramos).toFixed(1)}g</td>
+            <td style="padding:8px 16px;color:var(--txt2);font-size:12px">${r.nota||''}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
 }
 
-// ── CONSOLIDADO MENSUAL ──────────────────────────────────────
+async function cargarBaristasCaf() {
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_baristas_caf' }));
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    if (data.ok && data.baristas) _cafBaristas = data.baristas;
+  } catch(e) {
+    const cfg = cargarConfigSubrecetas();
+    _cafBaristas = cfg.caf?.baristas || [];
+  }
+}
+
+async function cargarRegistrosCAF() {
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_registros_caf' }));
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    if (data.ok) _cafRegistros = data.registros || [];
+  } catch(e) {
+    _cafRegistros = [];
+  }
+}
+
+function abrirModalRegistroCaf() {
+  const cfg = cargarConfigSubrecetas();
+  const gramosDef = cfg.caf?.gramos_por_shot || 14;
+  const modal = document.getElementById('modal-registro-caf');
+  if (!modal) return;
+  // Reset form
+  const baristaSelect = document.getElementById('rcaf-barista');
+  baristaSelect.innerHTML = _cafBaristas.map(b => `<option value="${b}">${b}</option>`).join('') || '<option value="">Sin baristas configurados</option>';
+  baristaSelect.value = _cafBaristas[0] || '';
+  document.getElementById('rcaf-turno').value = 'Mañana';
+  document.getElementById('rcaf-tipo').value = 'calibracion';
+  document.getElementById('rcaf-shots').value = '1';
+  document.getElementById('rcaf-gramos').value = gramosDef;
+  document.getElementById('rcaf-nota').value = '';
+  document.getElementById('rcaf-shots-row').style.display = '';
+  document.getElementById('rcaf-total-gr').textContent = gramosDef + 'g';
+  modal.classList.remove('hidden');
+}
+
+function actualizarTotalGrCaf() {
+  const shots  = parseInt(document.getElementById('rcaf-shots')?.value) || 1;
+  const gramos = parseFloat(document.getElementById('rcaf-gramos')?.value) || 0;
+  const tipo   = document.getElementById('rcaf-tipo')?.value;
+  const shotsRow = document.getElementById('rcaf-shots-row');
+  if (shotsRow) shotsRow.style.display = tipo === 'calibracion' ? '' : 'none';
+  const total = tipo === 'calibracion' ? shots * gramos : gramos;
+  const span = document.getElementById('rcaf-total-gr');
+  if (span) span.textContent = total.toFixed(1) + 'g';
+}
+
+async function guardarRegistroCaf(btn) {
+  bloquearBtn(btn, 'Guardando...');
+  const cfg = cargarConfigSubrecetas();
+  const barista = document.getElementById('rcaf-barista').value;
+  const turno   = document.getElementById('rcaf-turno').value;
+  const tipo    = document.getElementById('rcaf-tipo').value;
+  const shots   = parseInt(document.getElementById('rcaf-shots').value) || 1;
+  const gramos  = parseFloat(document.getElementById('rcaf-gramos').value) || 0;
+  const nota    = document.getElementById('rcaf-nota').value.trim();
+  const totalGr = tipo === 'calibracion' ? shots * gramos : gramos;
+
+  const hoy = new Date();
+  const off = hoy.getTimezoneOffset() * 60000;
+  const fecha = new Date(hoy - off).toISOString().slice(0,10);
+  const hora  = hoy.toLocaleTimeString('es-CL', {hour:'2-digit',minute:'2-digit'});
+
+  const registro = { fecha, hora, barista, turno, tipo, shots: tipo==='calibracion'?shots:null, gramos: totalGr, nota };
+
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'guardar_registro_caf', registro }));
+    await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    _cafRegistros.unshift(registro);
+    document.getElementById('modal-registro-caf').classList.add('hidden');
+    renderTablaRegistrosCAF();
+    toast('Registro guardado');
+  } catch(e) {
+    toast('Error al guardar', 'error');
+  }
+  desbloquearBtn(btn, '<i class="ti ti-check"></i> Guardar', true);
+}
+
 async function renderVistaConsolidado() {
   const vista = document.getElementById('vista-consolidado-mensual');
   if (!vista) return;
