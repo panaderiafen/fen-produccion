@@ -225,6 +225,11 @@ function marcarAvisoLeido(id) {
   localStorage.setItem('fen_avisos_leidos', JSON.stringify([..._avisosLeidos]));
   _avisosCache = _avisosCache.filter(a => a.id !== id);
   renderAvisos();
+  // Save to Sheet — aviso marked as read permanently
+  const payload = encodeURIComponent(JSON.stringify({
+    accion: 'marcar_aviso_leido', aviso_id: id
+  }));
+  fetch(FEN.WEBAPP_URL + '?payload=' + payload).catch(() => {});
 }
 
 function renderAvisos() {
