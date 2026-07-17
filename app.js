@@ -2252,11 +2252,12 @@ function renderTablaRegistrosCAF() {
   const tipo     = document.getElementById('filtro-caf-tipo')?.value || '';
 
   const hoy = new Date();
-  const fechaHoy = hoy.toISOString().slice(0,10);
+  const off = hoy.getTimezoneOffset() * 60000;
+  const fechaHoy = new Date(hoy - off).toISOString().slice(0,10);
   const lunesSemana = (() => {
     const d = new Date(hoy);
     d.setDate(d.getDate() - (d.getDay()===0?6:d.getDay()-1));
-    return d.toISOString().slice(0,10);
+    return new Date(d - off).toISOString().slice(0,10);
   })();
   const primerMes = fechaHoy.slice(0,7) + '-01';
 
