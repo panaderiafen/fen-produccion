@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
-  <link rel="stylesheet" href="main.css?v=1783921157">
+  <link rel="stylesheet" href="main.css?v=1784251817">
 </head>
 <body>
 
@@ -106,7 +106,7 @@
       <!-- Vista: resumen semanal -->
       <div class="vista" id="vista-resumen-semanal"></div>
       <div class="vista" id="vista-consolidado-mensual"></div>
-      <div class="vista" id="vista-stock-caf"></div>
+      <div class="vista" id="vista-registros-caf"></div>
       <div class="vista" id="vista-pre-elaboraciones"></div>
       <div class="vista" id="vista-estimacion-bol"></div>
 
@@ -382,11 +382,68 @@
   </div>
 </div>
 
+<!-- Modal: Registro CAF -->
+<div class="modal-fondo hidden" id="modal-registro-caf">
+  <div class="modal" style="max-width:440px;text-align:left">
+    <div class="modal-ico" style="background:#FFF8E1;color:#795548"><i class="ti ti-coffee"></i></div>
+    <h3 style="text-align:center;margin-bottom:16px">Nuevo registro de turno</h3>
+    <div class="form-grid">
+      <div class="campo">
+        <label>Barista</label>
+        <select id="rcaf-barista" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+          BARISTAS_OPTIONS
+        </select>
+      </div>
+      <div class="campo">
+        <label>Turno</label>
+        <select id="rcaf-turno" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+          <option>Mañana</option>
+          <option>Tarde</option>
+          <option>Noche</option>
+        </select>
+      </div>
+      <div class="campo full">
+        <label>Tipo de registro</label>
+        <select id="rcaf-tipo" oninput="actualizarTotalGrCaf()" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+          <option value="calibracion">☕ Calibración</option>
+          <option value="merma">🗑️ Merma de turno</option>
+          <option value="prueba_receta">🧪 Prueba de receta</option>
+        </select>
+      </div>
+      <div class="campo" id="rcaf-shots-row">
+        <label>N° de shots</label>
+        <input type="number" id="rcaf-shots" min="1" value="1" oninput="actualizarTotalGrCaf()"
+          style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace">
+      </div>
+      <div class="campo">
+        <label>Gramos por shot / total</label>
+        <input type="number" id="rcaf-gramos" min="0" step="0.1" value="14" oninput="actualizarTotalGrCaf()"
+          style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace">
+      </div>
+      <div class="campo full" style="background:var(--bg);border-radius:var(--r-sm);padding:10px 14px;text-align:center">
+        <div style="font-size:11px;color:var(--txt3)">Total café</div>
+        <div style="font-size:22px;font-weight:700;color:#795548;font-family:'DM Mono',monospace" id="rcaf-total-gr">14g</div>
+      </div>
+      <div class="campo full">
+        <label>Nota (opcional)</label>
+        <input type="text" id="rcaf-nota" placeholder="Ej: derrame en portafiltro"
+          style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+      </div>
+    </div>
+    <div class="modal-acciones">
+      <button class="btn-secundario" onclick="document.getElementById('modal-registro-caf').classList.add('hidden')">Cancelar</button>
+      <button class="btn-primario" onclick="guardarRegistroCaf(this)">
+        <i class="ti ti-check"></i> Guardar
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="config.js?v=1783921157"></script>
-<script src="subrecetas.js?v=1783921157"></script>
-<script src="app.js?v=1783921157"></script>
+<script src="config.js?v=1784251817"></script>
+<script src="subrecetas.js?v=1784251817"></script>
+<script src="app.js?v=1784251817"></script>
 </body>
 </html>
