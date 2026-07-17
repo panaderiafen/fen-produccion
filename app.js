@@ -4498,12 +4498,14 @@ async function notificarJefaMP(mpId, nombre) {
 
   // Crear aviso para la jefa del área via GET (payload pequeño)
   if (areaCode) {
-    getSheet('crear_aviso', {
+    const payloadAvisRec = encodeURIComponent(JSON.stringify({
+      accion: 'crear_aviso',
       area_codigo: areaCode,
       tipo: 'mp_recibida',
       mensaje: 'Tu solicitud fue recibida por administracion - esta siendo revisada.',
       mp_id: mpId
-    }).then(r => console.log('[fën] aviso recibida:', r));
+    }));
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisRec).catch(() => {});
   }
 
   if (mp) mp.estado = 'recibida';
@@ -4527,12 +4529,14 @@ async function aprobarMP(mpId) {
 
   const areaCode = mp.area_codigo || mp.areas_habilitadas?.split(',')?.[0] || '';
   if (areaCode) {
-    getSheet('crear_aviso', {
+    const payloadAviso = encodeURIComponent(JSON.stringify({
+      accion: 'crear_aviso',
       area_codigo: areaCode,
       tipo: 'mp_aprobada',
       mensaje: mp.nombre + ' fue aprobada y esta disponible - actualiza tu receta.',
       mp_id: mpId
-    }).then(r => console.log('[fën] aviso aprobada:', r));
+    }));
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso).catch(() => {});
   }
 
   mp.estado = 'activa';
@@ -4607,12 +4611,14 @@ async function confirmarAsignarMP() {
   // Update local state immediately
   App.materiasPrimas = App.materiasPrimas.map(m => m.ID_MP === mpSolicitudId ? {...m, estado: 'reemplazada'} : m);
   if (areaCode2) {
-    getSheet('crear_aviso', {
+    const payloadAvisAsig = encodeURIComponent(JSON.stringify({
+      accion: 'crear_aviso',
       area_codigo: areaCode2,
       tipo: 'mp_asignada',
       mensaje: 'Tu solicitud fue resuelta: usa ' + nombreExist + ' en lugar del ingrediente pendiente.',
       mp_id: mpSolicitudId
-    }).then(r => console.log('[fën] aviso asignada:', r));
+    }));
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisAsig).catch(() => {});
   }
 
   toast(`Asignado "${nombreExist}" — aviso enviado a la jefa`);
