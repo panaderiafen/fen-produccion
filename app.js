@@ -4499,6 +4499,24 @@ async function eliminarReceta(recetaId, area) {
 }
 
 // ── ADMIN: FLUJO SOLICITUD MP ─────────────────────────────────
+async function eliminarSolicitudMP(mpId, nombre, btn) {
+  if (!confirm(`¿Eliminar la solicitud "${nombre}"? Esta acción no se puede deshacer.`)) return;
+  bloquearBtn(btn, 'Eliminando...');
+  try {
+    const payload = encodeURIComponent(JSON.stringify({
+      accion: 'eliminar_mp', ID_MP: mpId
+    }));
+    await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    App.materiasPrimas = App.materiasPrimas.filter(m => m.ID_MP !== mpId);
+    Cache.invalidar('MP_maestro');
+    toast(`Solicitud "${nombre}" eliminada`);
+    renderVistaMP();
+  } catch(e) {
+    desbloquearBtn(btn, '<i class="ti ti-trash"></i> Eliminar', false);
+    toast('Error al eliminar', 'error');
+  }
+}
+
 async function notificarJefaMP(mpId, nombre) {
   const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
   const areaCode = mp?.area_codigo || mp?.areas_habilitadas?.split(',')?.[0] || '';
@@ -4684,6 +4702,10 @@ function renderVistaMP() {
               <button class="btn-secundario" style="font-size:12px;padding:5px 10px"
                 onclick="asignarMPExistente('${p.ID_MP}','${p.nombre}')" title="Asignar a una MP ya existente">
                 <i class="ti ti-link"></i> Usar MP existente
+              </button>
+              <button class="btn-secundario" style="font-size:12px;padding:5px 10px;border-color:#EF9A9A;color:#C62828"
+                onclick="eliminarSolicitudMP('${p.ID_MP}','${p.nombre}',this)" title="Eliminar esta solicitud">
+                <i class="ti ti-trash"></i> Eliminar
               </button>
             </div>
           </div>`;
