@@ -1075,10 +1075,15 @@ async function enviarARevision(recetaId) {
   if (r) r.estado = 'pendiente_aprobación';
   verificarAlertas();
 
-  // Enviar al Sheet en segundo plano
-  escribirEnSheet('cambiar_estado', {
-    ID_receta: recetaId, estado: 'pendiente_aprobación', hoja: App.area.hoja_recetas
-  }).catch(e => console.warn('Error actualizando Sheet:', e));
+  // Enviar al Sheet via GET para que el email también se dispare
+  const payloadRevision = encodeURIComponent(JSON.stringify({
+    accion: 'cambiar_estado',
+    ID_receta: recetaId,
+    estado: 'pendiente_aprobación',
+    hoja: App.area.hoja_recetas,
+    area_codigo: App.areaCodigo
+  }));
+  fetch(FEN.WEBAPP_URL + '?payload=' + payloadRevision, { redirect: 'follow' }).catch(e => console.warn('Error:', e));
 
   desbloquearBtn(btn, '<i class="ti ti-send"></i> Enviar a revisión', true);
   toast('Receta enviada a revisión');
