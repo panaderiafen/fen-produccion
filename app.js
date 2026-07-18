@@ -5039,6 +5039,11 @@ function renderVistaMP() {
                     onclick="cambiarTipoMP('${m.ID_MP}','${m.tipo || 'mp'}','${(m.nombre||'').replace(/'/g,"\\'")}')"
                     title="${(m.tipo || 'mp') === 'insumo' ? 'Marcar como Materia Prima' : 'Marcar como Insumo'}">
                     <i class="ti ti-package"></i>
+                  </button>
+                  <button class="btn-secundario" style="font-size:12px;padding:4px 10px"
+                    onclick="cambiarUnidadCompra('${m.ID_MP}','${(m.unidad_compra||'kg').toLowerCase()}','${(m.nombre||'').replace(/'/g,"\\'")}')"
+                    title="Unidad de compra actual: ${(m.unidad_compra||'kg').toLowerCase()} — clic para cambiar">
+                    <i class="ti ti-ruler-2"></i>
                   </button>` : ''}
                 </div>
               </td>
@@ -5049,6 +5054,37 @@ function renderVistaMP() {
     </div>
   `;
   mostrarVista('mp');
+}
+
+async function cambiarUnidadCompra(mpId, unidadActual, nombre) {
+  const opciones = { kg: 'Kilogramo (kg)', lt: 'Litro (lt)', un: 'Unidad (un)' };
+  const texto = Object.entries(opciones).map(([k,v]) => `${k} = ${v}`).join('\n');
+  const respuesta = prompt(
+    `Unidad de compra actual de "${nombre}": ${unidadActual}\n\nEscribe la nueva unidad:\n${texto}`,
+    unidadActual
+  );
+  if (!respuesta) return;
+  const nuevaUnidad = respuesta.trim().toLowerCase();
+  if (!opciones[nuevaUnidad]) { toast('Unidad inválida — usa kg, lt o un', 'error'); return; }
+
+  const item = App.materiasPrimas.find(m => m.ID_MP === mpId);
+  if (!item) return;
+
+  // 1. Actualizar la unidad de compra
+  await escribirEnSheet('editar_campo_mp', { ID_MP: mpId, campo: 'unidad_compra', valor: nuevaUnidad });
+  // 2. Volver a enviar el costo_neto para que el backend recalcule costo_bruto/por_kg/por_gramo
+  //    ya con la unidad correcta (evita que quede desfasado el costo por unidad/gramo)
+  await escribirEnSheet('editar_mp', { ID_MP: mpId, costo_neto: item.costo_neto || 0 });
+
+  item.unidad_compra = nuevaUnidad;
+  const bruto = (parseFloat(item.costo_neto) || 0) * 1.19;
+  const esPorUnidad = nuevaUnidad === 'un';
+  item.costo_por_gramo = esPorUnidad ? bruto : bruto / 1000;
+  item.costo_por_kg = bruto;
+
+  toast(`"${nombre}" ahora se compra por ${opciones[nuevaUnidad]} — costo recalculado`);
+  Cache.invalidar('mp_maestro');
+  renderVistaMP();
 }
 
 async function cambiarTipoMP(mpId, tipoActual, nombre) {
