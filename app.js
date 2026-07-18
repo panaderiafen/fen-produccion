@@ -679,54 +679,19 @@ function agregarIngredienteTemporal(data) {
                  : unidad === 'ml' ? (data.ml || data.gramos || '')
                  : (data.gramos || '');
 
-  // Check if this MP has been assigned/approved
+  // Check if this MP has been assigned/approved — using persistent Sheet field, NOT guessing
   const mpId = data.id || '__pendiente__';
   const mpActual = App.materiasPrimas.find(m => m.ID_MP === mpId);
   let nombreAsignado = null;
   let idAsignado = null;
 
-  // Method 1: MP was approved directly (estado changed to activa)
+  // Case 1: MP was approved directly (estado changed to activa) — same MP now usable
   const mpAprobada = mpActual && mpActual.estado === 'activa';
 
-  // Method 2: MP was replaced (estado = reemplazada) — find what replaced it
-  if (mpActual && mpActual.estado === 'reemplazada') {
-    // The replacement MP should have this area enabled and be activa
-    // Search all active MPs that match the area
-    const areaCode = mpActual.area_codigo || mpActual.areas_habilitadas || App.areaCodigo;
-    const posibles = App.materiasPrimas.filter(m =>
-      m.estado === 'activa' && m.ID_MP !== mpId &&
-      (m.areas_habilitadas || '').includes(areaCode)
-    );
-    // Try to match by name similarity or just take the most recent
-    if (posibles.length > 0) {
-      idAsignado = posibles[posibles.length - 1].ID_MP;
-      nombreAsignado = posibles[posibles.length - 1].nombre;
-    }
-  }
-
-  // Method 3: Check avisos (both read and unread) for specific assignment info
-  if (!idAsignado && !mpAprobada) {
-    const avisosAsig = (_avisosCache || []).filter(a =>
-      a.tipo === 'mp_asignada' || a.tipo === 'mp_aprobada'
-    );
-    const avisoAsig = avisosAsig.find(a => a.mp_id === mpId) ||
-                      (mpId === '__pendiente__' && avisosAsig.length > 0 ? avisosAsig[avisosAsig.length-1] : null);
-    if (avisoAsig) {
-      const mpFound = App.materiasPrimas.find(m =>
-        m.estado === 'activa' && m.ID_MP === avisoAsig.mp_id
-      ) || App.materiasPrimas.find(m =>
-        m.estado === 'activa' && avisoAsig.mensaje.includes(m.nombre)
-      );
-      if (mpFound) { idAsignado = mpFound.ID_MP; nombreAsignado = mpFound.nombre; }
-    }
-  }
-
-  // Method 4: For __pendiente__ with no aviso, check if any MP name matches
-  if (!idAsignado && !mpAprobada && mpId === '__pendiente__') {
-    const match = App.materiasPrimas.find(m =>
-      m.estado === 'activa' && m.nombre.toLowerCase() === data.nombre.toLowerCase()
-    );
-    if (match) { idAsignado = match.ID_MP; nombreAsignado = match.nombre; mpAprobada = true; }
+  // Case 2: MP was replaced by a specific existing MP — read the exact assignment
+  if (mpActual && mpActual.estado === 'reemplazada' && mpActual.reemplazada_por) {
+    const mpFound = App.materiasPrimas.find(m => m.ID_MP === mpActual.reemplazada_por);
+    if (mpFound) { idAsignado = mpFound.ID_MP; nombreAsignado = mpFound.nombre; }
   }
 
   const bgColor = idAsignado || mpAprobada ? '#E8F5E9' : '#FFF9C4';
