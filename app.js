@@ -724,7 +724,7 @@ function agregarIngredienteTemporal(data) {
   tbody.appendChild(tr);
 }
 
-function reemplazarIngredienteTemporal(btn, mpIdNuevo, nombreNuevo, mpIdViejo) {
+async function reemplazarIngredienteTemporal(btn, mpIdNuevo, nombreNuevo, mpIdViejo) {
   const tr = btn.closest('tr');
   const inputs = tr.querySelectorAll('input[type="number"]');
   const cantidad = parseFloat(inputs[0]?.value) || 0;
@@ -743,7 +743,10 @@ function reemplazarIngredienteTemporal(btn, mpIdNuevo, nombreNuevo, mpIdViejo) {
     pendiente: false
   };
   agregarIngrediente(data);
-  toast(`Reemplazado por ${nombreNuevo}`);
+
+  // Guardar la receta automáticamente para no perder el reemplazo
+  await guardarReceta(App._recetaEditandoId || '');
+  toast(`Reemplazado por ${nombreNuevo} y receta guardada`);
 }
 
 
@@ -4930,7 +4933,10 @@ async function enviarSolicitudMP(btn) {
 
   if (btn) desbloquearBtn(btn, '<i class="ti ti-send"></i> Enviar solicitud', true);
   cerrarModalSolicitarMP();
-  toast('Solicitud enviada a administración');
+
+  // Guardar la receta automáticamente para no perder el ingrediente temporal
+  await guardarReceta(App._recetaEditandoId || '');
+  toast('Solicitud enviada y receta guardada automáticamente');
 }
 
 function cerrarModalSolicitarMP() {
