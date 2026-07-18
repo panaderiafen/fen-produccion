@@ -682,37 +682,52 @@ function agregarIngredienteTemporal(data) {
   // Check if this MP has been assigned/approved
   const mpId = data.id || '__pendiente__';
   const mpActual = App.materiasPrimas.find(m => m.ID_MP === mpId);
-  const mpAsignada = App.materiasPrimas.find(m =>
-    m.estado === 'activa' && m.ID_MP !== mpId &&
-    // Check avisos for assignment
-    false // will be handled below
-  );
-
-  // Check if there's an assignment in avisos cache
   let nombreAsignado = null;
   let idAsignado = null;
 
-  // Look for aviso matching this specific MP id OR any assignment aviso if id is __pendiente__
-  const avisosAsig = (_avisosCache || []).filter(a =>
-    a.tipo === 'mp_asignada' || a.tipo === 'mp_aprobada'
-  );
+  // Method 1: MP was approved directly (estado changed to activa)
+  const mpAprobada = mpActual && mpActual.estado === 'activa';
 
-  // Find aviso that matches this mp or general assignment
-  const avisoAsig = avisosAsig.find(a => a.mp_id === mpId) ||
-                    (mpId === '__pendiente__' && avisosAsig.length > 0 ? avisosAsig[avisosAsig.length-1] : null);
-
-  if (avisoAsig) {
-    // Find the assigned MP in maestro
-    const mpFound = App.materiasPrimas.find(m =>
-      m.estado === 'activa' && m.ID_MP === avisoAsig.mp_id
-    ) || App.materiasPrimas.find(m =>
-      m.estado === 'activa' && avisoAsig.mensaje.includes(m.nombre)
+  // Method 2: MP was replaced (estado = reemplazada) — find what replaced it
+  if (mpActual && mpActual.estado === 'reemplazada') {
+    // The replacement MP should have this area enabled and be activa
+    // Search all active MPs that match the area
+    const areaCode = mpActual.area_codigo || mpActual.areas_habilitadas || App.areaCodigo;
+    const posibles = App.materiasPrimas.filter(m =>
+      m.estado === 'activa' && m.ID_MP !== mpId &&
+      (m.areas_habilitadas || '').includes(areaCode)
     );
-    if (mpFound) { idAsignado = mpFound.ID_MP; nombreAsignado = mpFound.nombre; }
+    // Try to match by name similarity or just take the most recent
+    if (posibles.length > 0) {
+      idAsignado = posibles[posibles.length - 1].ID_MP;
+      nombreAsignado = posibles[posibles.length - 1].nombre;
+    }
   }
 
-  // Also check if MP itself was approved (estado changed to activa)
-  const mpAprobada = mpActual && mpActual.estado === 'activa';
+  // Method 3: Check avisos (both read and unread) for specific assignment info
+  if (!idAsignado && !mpAprobada) {
+    const avisosAsig = (_avisosCache || []).filter(a =>
+      a.tipo === 'mp_asignada' || a.tipo === 'mp_aprobada'
+    );
+    const avisoAsig = avisosAsig.find(a => a.mp_id === mpId) ||
+                      (mpId === '__pendiente__' && avisosAsig.length > 0 ? avisosAsig[avisosAsig.length-1] : null);
+    if (avisoAsig) {
+      const mpFound = App.materiasPrimas.find(m =>
+        m.estado === 'activa' && m.ID_MP === avisoAsig.mp_id
+      ) || App.materiasPrimas.find(m =>
+        m.estado === 'activa' && avisoAsig.mensaje.includes(m.nombre)
+      );
+      if (mpFound) { idAsignado = mpFound.ID_MP; nombreAsignado = mpFound.nombre; }
+    }
+  }
+
+  // Method 4: For __pendiente__ with no aviso, check if any MP name matches
+  if (!idAsignado && !mpAprobada && mpId === '__pendiente__') {
+    const match = App.materiasPrimas.find(m =>
+      m.estado === 'activa' && m.nombre.toLowerCase() === data.nombre.toLowerCase()
+    );
+    if (match) { idAsignado = match.ID_MP; nombreAsignado = match.nombre; mpAprobada = true; }
+  }
 
   const bgColor = idAsignado || mpAprobada ? '#E8F5E9' : '#FFF9C4';
   const textColor = idAsignado || mpAprobada ? '#2E7D32' : '#F57C00';
@@ -4601,9 +4616,11 @@ async function confirmarAsignarMP() {
 
   if (!mpExistId) { toast('Selecciona una MP existente'); return; }
 
-  // 1. Marcar solicitud como reemplazada
+  // 1. Marcar solicitud como reemplazada + guardar cuál MP la reemplaza (dato persistente)
   const r1 = await getSheet('editar_campo_mp', { ID_MP: mpSolicitudId, campo: 'estado', valor: 'reemplazada' });
   console.log('[fën] marcar reemplazada:', r1);
+  const r1b = await getSheet('editar_campo_mp', { ID_MP: mpSolicitudId, campo: 'reemplazada_por', valor: mpExistId });
+  console.log('[fën] guardar reemplazada_por:', r1b);
 
   // 2. Habilitar el área en la MP existente
   const mpExist = App.materiasPrimas.find(m => m.ID_MP === mpExistId);
@@ -4631,13 +4648,13 @@ async function confirmarAsignarMP() {
 
   // Actualizar local
   const mpSol = App.materiasPrimas.find(m => m.ID_MP === mpSolicitudId);
-  if (mpSol) mpSol.estado = 'reemplazada';
+  if (mpSol) { mpSol.estado = 'reemplazada'; mpSol.reemplazada_por = mpExistId; }
 
   document.getElementById('modal-asignar-mp').classList.add('hidden');
   const mpSolObj = App.materiasPrimas.find(m => m.ID_MP === mpSolicitudId);
   const areaCode2 = mpSolObj?.area_codigo || areaCode || '';
   // Update local state immediately
-  App.materiasPrimas = App.materiasPrimas.map(m => m.ID_MP === mpSolicitudId ? {...m, estado: 'reemplazada'} : m);
+  App.materiasPrimas = App.materiasPrimas.map(m => m.ID_MP === mpSolicitudId ? {...m, estado: 'reemplazada', reemplazada_por: mpExistId} : m);
   if (areaCode2) {
     const payloadAvisAsig = encodeURIComponent(JSON.stringify({
       accion: 'crear_aviso',
