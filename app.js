@@ -4917,8 +4917,16 @@ async function confirmarAsignarMP(btn) {
 // ── ADMIN: MATERIAS PRIMAS ────────────────────────────────────
 function renderVistaMP() {
   const mp = App.materiasPrimas;
+  const filtro = App._filtroMP || 'todos';
+  const mpFiltrada = filtro === 'todos' ? mp : mp.filter(m => (m.tipo || 'mp') === filtro);
   const pendientes = mp.filter(m => m.estado === 'pendiente' || m.estado === 'recibida').filter(m => m.tipo !== 'sub_receta');
   const vista = document.getElementById('vista-mp');
+  const tabs = [
+    { key: 'todos',       label: 'Todos' },
+    { key: 'mp',          label: 'Materia Prima' },
+    { key: 'insumo',      label: 'Insumos' },
+    { key: 'sub_receta',  label: 'Sub recetas' },
+  ];
   vista.innerHTML = `
     <div class="vista-header">
       <h1 class="vista-titulo">Materias primas</h1>
@@ -4941,7 +4949,7 @@ function renderVistaMP() {
           return `
           <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
             <div style="flex:1;min-width:180px">
-              <div style="font-size:14px;font-weight:600">${p.nombre}</div>
+              <div style="font-size:14px;font-weight:600">${p.nombre} ${p.tipo === 'insumo' ? '<span style="font-size:10px;color:#E65100;font-weight:600;background:#FFF3E0;padding:2px 6px;border-radius:99px;margin-left:4px">📦 Insumo</span>' : ''}</div>
               <div style="font-size:11px;color:var(--txt2);margin-top:2px">
                 Solicitada por <strong>${areaLabel}</strong> · ${p.categoría||'Sin categoría'}
                 ${p.estado==='recibida' ? '<span style="font-size:10px;color:#1565C0;font-weight:600;margin-left:6px">✓ Acuse de recibo enviado</span>' : ''}
@@ -4956,12 +4964,12 @@ function renderVistaMP() {
                 <i class="ti ti-send"></i> Recibido
               </button>
               <button class="btn-primario" style="font-size:12px;padding:5px 10px"
-                onclick="aprobarMP('${p.ID_MP}',this)" title="Agregar al maestro de MP">
+                onclick="aprobarMP('${p.ID_MP}',this)" title="Agregar al maestro">
                 <i class="ti ti-check"></i> Agregar al maestro
               </button>
               <button class="btn-secundario" style="font-size:12px;padding:5px 10px"
-                onclick="asignarMPExistente('${p.ID_MP}','${p.nombre}')" title="Asignar a una MP ya existente">
-                <i class="ti ti-link"></i> Usar MP existente
+                onclick="asignarMPExistente('${p.ID_MP}','${p.nombre}')" title="Asignar a una MP/insumo ya existente">
+                <i class="ti ti-link"></i> Usar existente
               </button>
               <button class="btn-secundario" style="font-size:12px;padding:5px 10px;border-color:#EF9A9A;color:#C62828"
                 onclick="eliminarSolicitudMP('${p.ID_MP}','${p.nombre}',this)" title="Eliminar esta solicitud">
@@ -4971,8 +4979,17 @@ function renderVistaMP() {
           </div>`;
         }).join('')}
       </div>` : ''}
+    <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+      ${tabs.map(t => `
+        <button class="${filtro === t.key ? 'btn-primario' : 'btn-secundario'}"
+          style="font-size:12px;padding:6px 14px"
+          onclick="App._filtroMP='${t.key}';renderVistaMP()">
+          ${t.label}
+        </button>
+      `).join('')}
+    </div>
     <div class="card">
-      <div class="card-head"><i class="ti ti-list"></i> Catálogo (${mp.filter(m=>m.estado==='activa').length} activas)</div>
+      <div class="card-head"><i class="ti ti-list"></i> Catálogo (${mpFiltrada.filter(m=>m.estado==='activa').length} activas)</div>
       <table class="tabla-vista">
         <thead><tr>
           <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">MP</th>
@@ -4983,7 +5000,7 @@ function renderVistaMP() {
           <th style="padding:9px 16px;background:var(--bg);border-bottom:1px solid var(--border)"></th>
         </tr></thead>
         <tbody>
-          ${mp.map(m => {
+          ${mpFiltrada.map(m => {
             const est = m.estado==='activa'
               ? {c:'#2E7D32',bg:'#E8F5E9',l:'Activa'}
               : m.estado==='pendiente'
