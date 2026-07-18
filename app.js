@@ -4886,7 +4886,7 @@ async function enviarSolicitudMP(btn) {
   let mpId = '__pendiente__';
   try {
     // Get recipe name being edited
-    const recetaNombre = document.getElementById('receta-nombre')?.value?.trim() || 'Receta sin nombre';
+    const recetaNombre = document.getElementById('f-nombre')?.value?.trim() || 'Receta sin nombre';
     const payload = encodeURIComponent(JSON.stringify({
       accion: 'solicitar_mp',
       nombre,
