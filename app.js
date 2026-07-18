@@ -4998,7 +4998,7 @@ function renderVistaMP() {
           <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">MP</th>
           <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Categoría</th>
           <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Costo neto</th>
-          <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">$/g</th>
+          <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Costo unitario</th>
           <th style="text-align:center;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Estado</th>
           <th style="padding:9px 16px;background:var(--bg);border-bottom:1px solid var(--border)"></th>
         </tr></thead>
@@ -5016,7 +5016,7 @@ function renderVistaMP() {
               </td>
               <td style="font-size:13px;color:var(--txt2)">${m.categoría||'—'}</td>
               <td class="td-num" style="${(!m.costo_neto||parseFloat(m.costo_neto)===0)&&m.estado==='activa'?'color:#C62828':''}">${clp(m.costo_neto)||'—'}</td>
-              <td class="td-num" style="font-size:11px">${parseFloat(m.costo_por_gramo||0).toFixed(4)}</td>
+              <td class="td-num" style="font-size:11px">${parseFloat(m.costo_por_gramo||0).toFixed(4)}${(() => { const u=(m.unidad_compra||'kg').toLowerCase(); return u==='un'?'/u':u==='lt'?'/ml':'/g'; })()}</td>
               <td style="text-align:center">
                 <span class="estado-badge" style="color:${est.c};background:${est.bg}">${est.l}</span>
               </td>
