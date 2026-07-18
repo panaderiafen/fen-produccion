@@ -631,6 +631,28 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
 
     <div class="card" style="margin-bottom:16px">
       <div class="card-head">
+        <i class="ti ti-package"></i> Insumos
+        <span style="font-size:11px;color:var(--txt3);font-weight:400;margin-left:8px">envases, etiquetas, packaging...</span>
+        <button class="btn-agregar-fila" onclick="agregarInsumo()" style="margin-left:auto">
+          <i class="ti ti-plus"></i> Agregar
+        </button>
+      </div>
+      <div class="tabla-wrap">
+        <table class="tabla-ingr">
+          <thead>
+            <tr>
+              <th style="min-width:200px">Insumo</th>
+              <th>Cantidad por unidad</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody-insumos"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head">
         <i class="ti ti-list-numbers"></i> Pasos de preparación
         <button class="btn-agregar-fila" onclick="agregarPaso()" style="margin-left:auto">
           <i class="ti ti-plus"></i> Agregar paso
@@ -663,6 +685,15 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
     }
   });
   else { agregarIngrediente(); agregarIngrediente(); agregarIngrediente(); }
+
+  const insumos = (() => { try { return JSON.parse(receta?.insumos_JSON || '[]'); } catch(e) { return []; } })();
+  if (insumos.length > 0) insumos.forEach(ins => {
+    if (ins.pendiente || ins.id === '__pendiente__') {
+      agregarInsumoTemporal(ins);
+    } else {
+      agregarInsumo(ins);
+    }
+  });
 
   if (pasos.length > 0) pasos.forEach(p => agregarPaso(typeof p === 'string' ? p : ''));
   else { agregarPaso(); agregarPaso(); }
@@ -747,6 +778,172 @@ async function reemplazarIngredienteTemporal(btn, mpIdNuevo, nombreNuevo, mpIdVi
   // Guardar la receta automáticamente para no perder el reemplazo
   await guardarReceta(App._recetaEditandoId || '');
   toast(`Reemplazado por ${nombreNuevo} y receta guardada`);
+}
+
+
+// ── INSUMOS (envases, etiquetas, packaging, etc.) ─────────────
+function agregarInsumoTemporal(data) {
+  const tbody = document.getElementById('tbody-insumos');
+  const tr = document.createElement('tr');
+  const cantidad = data.unidades || data.gramos || '';
+
+  // Igual que MP: usar el campo persistente del Sheet, no adivinar
+  const insId = data.id || '__pendiente__';
+  const insActual = App.materiasPrimas.find(m => m.ID_MP === insId);
+  let nombreAsignado = null;
+  let idAsignado = null;
+
+  const insAprobado = insActual && insActual.estado === 'activa';
+
+  if (insActual && insActual.estado === 'reemplazada' && insActual.reemplazada_por) {
+    const insFound = App.materiasPrimas.find(m => m.ID_MP === insActual.reemplazada_por);
+    if (insFound) { idAsignado = insFound.ID_MP; nombreAsignado = insFound.nombre; }
+  }
+
+  const bgColor = idAsignado || insAprobado ? '#E8F5E9' : '#FFF9C4';
+  const textColor = idAsignado || insAprobado ? '#2E7D32' : '#F57C00';
+  const icono = idAsignado || insAprobado ? '✓' : '⏳';
+
+  let labelText = `${icono} ${data.nombre}`;
+  if (idAsignado) labelText += ` → reemplazar por: ${nombreAsignado}`;
+  else if (insAprobado) labelText += ` (aprobado — ya disponible)`;
+  else labelText += ` (pendiente habilitación)`;
+
+  tr.style.background = bgColor;
+  tr.innerHTML = `
+    <td style="min-width:200px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <select disabled style="color:${textColor};font-weight:500;flex:1" data-mp-id="${insId}" data-nombre-tmp="${data.nombre}">
+          <option>${labelText}</option>
+        </select>
+        ${(idAsignado || insAprobado) ? `
+        <button onclick="reemplazarInsumoTemporal(this,'${idAsignado || insId}','${(nombreAsignado || data.nombre).replace(/'/g,"\'")}','${insId}')"
+          style="background:#2E7D32;color:#fff;border:none;padding:4px 10px;border-radius:var(--r-sm);font-size:12px;cursor:pointer;white-space:nowrap">
+          <i class="ti ti-replace"></i> Reemplazar
+        </button>` : ''}
+      </div>
+    </td>
+    <td><input type="number" placeholder="1" value="${cantidad || ''}" min="0" step="1" data-unidad="unidades"></td>
+    <td><button class="btn-fila-del" onclick="this.closest('tr').remove()" aria-label="Eliminar"><i class="ti ti-x"></i></button></td>
+  `;
+  tbody.appendChild(tr);
+}
+
+async function reemplazarInsumoTemporal(btn, insIdNuevo, nombreNuevo, insIdViejo) {
+  const tr = btn.closest('tr');
+  const inputs = tr.querySelectorAll('input[type="number"]');
+  const cantidad = parseFloat(inputs[0]?.value) || 0;
+
+  tr.remove();
+
+  const data = { id: insIdNuevo, nombre: nombreNuevo, unidades: cantidad, pendiente: false };
+  agregarInsumo(data);
+
+  await guardarReceta(App._recetaEditandoId || '');
+  toast(`Reemplazado por ${nombreNuevo} y receta guardada`);
+}
+
+function agregarInsumo(data = {}) {
+  const tbody = document.getElementById('tbody-insumos');
+  const tr = document.createElement('tr');
+  const areaCode = App.areaCodigo || '';
+  const insumosActivos = App.materiasPrimas.filter(m =>
+    m.estado === 'activa' && m.tipo === 'insumo' &&
+    (!m.areas_habilitadas || m.areas_habilitadas.split(',').map(a=>a.trim()).includes(areaCode))
+  );
+
+  const options = insumosActivos.map(m =>
+    `<option value="${m.ID_MP}" data-costo="${m.costo_por_gramo || 0}"
+      ${m.ID_MP === data.id ? 'selected' : ''}>${m.nombre}</option>`
+  ).join('');
+
+  tr.innerHTML = `
+    <td>
+      <select onchange="onChangeInsumoSelect(this)">
+        <option value="">— Seleccionar —</option>
+        ${options}
+        <option value="__nuevo__">+ Solicitar / habilitar insumo...</option>
+      </select>
+    </td>
+    <td><input type="number" placeholder="1"
+      value="${data.unidades !== undefined && data.unidades !== null ? data.unidades : ''}"
+      min="0" step="1" data-unidad="unidades">
+    </td>
+    <td><button class="btn-fila-del" onclick="this.closest('tr').remove()"
+      aria-label="Eliminar"><i class="ti ti-x"></i></button></td>
+  `;
+  tbody.appendChild(tr);
+}
+
+function onChangeInsumoSelect(sel) {
+  if (sel.value === '__nuevo__') { solicitarNuevoInsumo(); sel.value = ''; return; }
+}
+
+function solicitarNuevoInsumo() {
+  const modal = document.getElementById('modal-solicitar-insumo');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function cerrarModalSolicitarInsumo() {
+  const modal = document.getElementById('modal-solicitar-insumo');
+  if (modal) modal.classList.add('hidden');
+  const selects = document.querySelectorAll('#tbody-insumos select');
+  selects.forEach(s => { if (s.value === '__nuevo__') s.value = ''; });
+}
+
+async function enviarSolicitudInsumo(btn) {
+  if (btn) bloquearBtn(btn, 'Enviando...');
+  const nombre    = document.getElementById('solicitar-insumo-nombre').value.trim();
+  const tmpNombre = document.getElementById('solicitar-insumo-tmp').value.trim() || nombre;
+  const cantidad  = document.getElementById('solicitar-insumo-cantidad').value;
+
+  if (!nombre) { toast('Escribe el nombre del insumo', 'error'); return; }
+
+  const areaNombre = App.area?.nombre || (App.areaCodigo ? FEN.AREAS[App.areaCodigo]?.nombre : '') || '';
+  let insId = '__pendiente__';
+  try {
+    const recetaNombre = document.getElementById('f-nombre')?.value?.trim() || 'Receta sin nombre';
+    const payload = encodeURIComponent(JSON.stringify({
+      accion: 'solicitar_mp',
+      tipo: 'insumo',
+      nombre,
+      es_nueva: true,
+      solicitada_por: areaNombre,
+      area_codigo: App.areaCodigo || '',
+      categoría: 'Insumos',
+      unidad_receta: 'unidades',
+      receta_nombre: recetaNombre,
+      fecha: new Date().toISOString()
+    }));
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    if (data.ok && data.id) insId = data.id;
+  } catch(e) {
+    console.warn('[fën] No se pudo obtener ID de insumo:', e.message);
+  }
+
+  if (tmpNombre) {
+    const tbody = document.getElementById('tbody-insumos');
+    const tr = document.createElement('tr');
+    tr.style.background = '#FFF9C4';
+    tr.dataset.mpId = insId;
+    tr.innerHTML = `
+      <td>
+        <select disabled style="color:#F57C00;font-weight:500" data-mp-id="${insId}" data-nombre-tmp="${tmpNombre}">
+          <option>⏳ ${tmpNombre} (pendiente habilitación)</option>
+        </select>
+      </td>
+      <td><input type="number" placeholder="1" value="${cantidad || ''}" min="0" step="1" data-unidad="unidades"></td>
+      <td><button class="btn-fila-del" onclick="this.closest('tr').remove()" aria-label="Eliminar"><i class="ti ti-x"></i></button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  if (btn) desbloquearBtn(btn, '<i class="ti ti-send"></i> Enviar solicitud', true);
+  cerrarModalSolicitarInsumo();
+
+  await guardarReceta(App._recetaEditandoId || '');
+  toast('Solicitud de insumo enviada y receta guardada automáticamente');
 }
 
 
@@ -980,6 +1177,41 @@ async function guardarReceta(recetaId, btn) {
     }
   });
 
+  const insumos = [];
+  document.querySelectorAll('#tbody-insumos tr').forEach(tr => {
+    const select = tr.querySelector('select');
+    const input = tr.querySelector('input[type="number"]');
+
+    // Insumo temporal (pendiente de habilitación)
+    if (select?.disabled && select.options[0]?.text.includes('pendiente')) {
+      const nombre = select.options[0].text.replace('⏳ ', '').replace(' (pendiente habilitación)', '').trim();
+      const cantidad = parseFloat(input?.value) || 0;
+      const insId = select.dataset?.mpId || '__pendiente__';
+      insumos.push({
+        id: insId,
+        nombre,
+        unidades: cantidad,
+        unidad_receta: 'unidades',
+        costo: 0,
+        pendiente: true
+      });
+      return;
+    }
+
+    if (select?.value && select.value !== '__nuevo__') {
+      const opcion = select.options[select.selectedIndex];
+      const costoPorUnidad = parseFloat(opcion.dataset.costo) || 0;
+      const cantidad = parseFloat(input?.value) || 0;
+      insumos.push({
+        id:       select.value,
+        nombre:   opcion.text,
+        unidades: cantidad,
+        unidad_receta: 'unidades',
+        costo:    costoPorUnidad * cantidad,
+      });
+    }
+  });
+
   const pasos = [];
   document.querySelectorAll('#contenedor-pasos textarea').forEach(ta => {
     if (ta.value.trim()) pasos.push(ta.value.trim());
@@ -1002,6 +1234,7 @@ async function guardarReceta(recetaId, btn) {
     porciones_base:              parseInt(porciones),
     peso_harina_total_g:         App.areaCodigo === 'PAN' ? (document.getElementById('f-harina')?.value || '') : '',
     ingredientes_JSON:           JSON.stringify(ingredientes),
+    insumos_JSON:                JSON.stringify(insumos),
     observaciones_procedimiento: document.getElementById('f-desc').value.trim(),
     'sistematización_notas':     document.getElementById('f-notas').value.trim(),
     merma_laminado_pct:          document.getElementById('f-merma-laminado')?.value || '',
