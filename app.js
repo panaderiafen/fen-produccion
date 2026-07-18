@@ -5031,6 +5031,12 @@ function renderVistaMP() {
                     onclick="gestionarAreasMP('${m.ID_MP}')" title="Gestionar areas">
                     <i class="ti ti-layout-grid"></i>
                   </button>
+                  ${m.tipo !== 'sub_receta' ? `
+                  <button class="btn-secundario" style="font-size:12px;padding:4px 10px"
+                    onclick="cambiarTipoMP('${m.ID_MP}','${m.tipo || 'mp'}','${(m.nombre||'').replace(/'/g,"\\'")}')"
+                    title="${(m.tipo || 'mp') === 'insumo' ? 'Marcar como Materia Prima' : 'Marcar como Insumo'}">
+                    <i class="ti ti-package"></i>
+                  </button>` : ''}
                 </div>
               </td>
             </tr>`;
@@ -5040,6 +5046,20 @@ function renderVistaMP() {
     </div>
   `;
   mostrarVista('mp');
+}
+
+async function cambiarTipoMP(mpId, tipoActual, nombre) {
+  const nuevoTipo = tipoActual === 'insumo' ? 'mp' : 'insumo';
+  const etiqueta = nuevoTipo === 'insumo' ? 'Insumo' : 'Materia Prima';
+  if (!confirm(`¿Marcar "${nombre}" como ${etiqueta}?\n\nEsto cambia dónde aparece en los desplegables de recetas.`)) return;
+
+  await getSheet('editar_campo_mp', { ID_MP: mpId, campo: 'tipo', valor: nuevoTipo });
+
+  const item = App.materiasPrimas.find(m => m.ID_MP === mpId);
+  if (item) item.tipo = nuevoTipo;
+  toast(`"${nombre}" ahora es ${etiqueta}`);
+  Cache.invalidar('mp_maestro');
+  renderVistaMP();
 }
 
 // ── ADMIN: COSTOS ─────────────────────────────────────────────
@@ -5151,6 +5171,7 @@ function actualizarLabelGramosSolicitud() {
 async function enviarSolicitudMP(btn) {
   if (btn) bloquearBtn(btn, 'Enviando...');
   const nombre    = document.getElementById('solicitar-mp-nombre').value.trim();
+  const tipoMP    = document.getElementById('solicitar-mp-tipo')?.value || 'mp';
   const esNueva   = true; // Admin decides if it's new or existing
   const tmpNombre = document.getElementById('solicitar-mp-tmp').value.trim() || nombre;
   const cantidad  = document.getElementById('solicitar-mp-gramos').value;
@@ -5166,11 +5187,12 @@ async function enviarSolicitudMP(btn) {
     const recetaNombre = document.getElementById('f-nombre')?.value?.trim() || 'Receta sin nombre';
     const payload = encodeURIComponent(JSON.stringify({
       accion: 'solicitar_mp',
+      tipo: tipoMP,
       nombre,
       es_nueva: esNueva,
       solicitada_por: areaNombre,
       area_codigo: App.areaCodigo || '',
-      categoría: 'Pendiente de clasificar',
+      categoría: tipoMP === 'insumo' ? 'Insumos' : 'Pendiente de clasificar',
       unidad_receta: unidad,
       receta_nombre: recetaNombre,
       fecha: new Date().toISOString()
