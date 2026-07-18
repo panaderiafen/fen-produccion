@@ -5244,8 +5244,14 @@ function cerrarModalSolicitarMP() {
 function editarMP(mpId) {
   const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
   if (!mp) return;
+  const unidadCompra = (mp.unidad_compra || 'kg').toLowerCase();
+  const etiquetaUnidad = unidadCompra === 'un' || unidadCompra === 'unidad' || unidadCompra === 'unidades'
+    ? 'por unidad'
+    : unidadCompra === 'lt'
+    ? 'por litro'
+    : 'por kilo';
   const nuevoPrecio = prompt(
-    `Precio neto de "${mp.nombre}"\nActual: ${clp(mp.costo_neto)}\n\nNuevo precio neto:`,
+    `Precio neto ${etiquetaUnidad} de "${mp.nombre}"\nActual: ${clp(mp.costo_neto)}\n\nNuevo precio neto (${etiquetaUnidad}):`,
     mp.costo_neto
   );
   if (nuevoPrecio === null) return;
