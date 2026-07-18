@@ -4643,7 +4643,7 @@ async function confirmarAsignarMP() {
       accion: 'crear_aviso',
       area_codigo: areaCode2,
       tipo: 'mp_asignada',
-      mensaje: 'Tu solicitud fue resuelta: usa ' + nombreExist + ' en lugar del ingrediente pendiente.' + (mp.receta_nombre ? ' Receta: ' + mp.receta_nombre + '.' : ''),
+      mensaje: 'Tu solicitud fue resuelta: usa ' + nombreExist + ' en lugar del ingrediente pendiente.' + (mpSolObj?.receta_nombre ? ' Receta: ' + mpSolObj.receta_nombre + '.' : ''),
       mp_id: mpSolicitudId
     }));
     fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisAsig).catch(() => {});
