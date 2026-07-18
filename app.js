@@ -4640,22 +4640,17 @@ async function confirmarAsignarMP() {
   const areaCode2 = mpSolObj?.area_codigo || areaCode || '';
   // Update local state immediately
   App.materiasPrimas = App.materiasPrimas.map(m => m.ID_MP === mpSolicitudId ? {...m, estado: 'reemplazada', reemplazada_por: mpExistId} : m);
-  console.log('[fën] areaCode2 para aviso:', areaCode2, 'mpSolObj:', mpSolObj);
   if (areaCode2) {
+    const nombreOriginal = mpSolObj?.nombre || 'ingrediente pendiente';
+    const recetaInfo = mpSolObj?.receta_nombre ? ` (receta: ${mpSolObj.receta_nombre})` : '';
     const payloadAvisAsig = encodeURIComponent(JSON.stringify({
       accion: 'crear_aviso',
       area_codigo: areaCode2,
       tipo: 'mp_asignada',
-      mensaje: 'Tu solicitud fue resuelta: usa ' + nombreExist + ' en lugar del ingrediente pendiente.' + (mpSolObj?.receta_nombre ? ' Receta: ' + mpSolObj.receta_nombre + '.' : ''),
+      mensaje: `Tu solicitud "${nombreOriginal}"${recetaInfo} fue resuelta: usa "${nombreExist}" en su lugar. Ve a Mis recetas → edita la receta y presiona Reemplazar.`,
       mp_id: mpSolicitudId
     }));
-    console.log('[fën] enviando aviso asignacion...');
-    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisAsig)
-      .then(r => r.json())
-      .then(r => console.log('[fën] aviso asignacion resultado:', r))
-      .catch(e => console.error('[fën] ERROR enviando aviso:', e));
-  } else {
-    console.warn('[fën] areaCode2 vacio, no se envia aviso');
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisAsig).catch(() => {});
   }
 
   toast(`Asignado "${nombreExist}" — aviso enviado a la jefa`);
