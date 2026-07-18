@@ -202,6 +202,68 @@
   </div>
 </div>
 
+<!-- Modal: Crear MP/Insumo directo (Admin) -->
+<div class="modal-fondo hidden" id="modal-crear-mp-admin">
+  <div class="modal" style="max-width:460px;text-align:left">
+    <div class="modal-ico" style="background:#E3F2FD;color:#1565C0">
+      <i class="ti ti-list-plus"></i>
+    </div>
+    <h3 style="text-align:center">Nueva MP / Insumo</h3>
+    <p style="text-align:center;font-size:13px;color:var(--txt2);margin-bottom:20px">
+      Se crea directamente en el maestro, sin flujo de aprobación.
+    </p>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Tipo</label>
+        <select id="crear-mp-tipo" style="width:100%;padding:8px 12px;border:none;font-size:13px;font-family:inherit;background:none">
+          <option value="mp">Materia Prima</option>
+          <option value="insumo">Insumo (envase, etiqueta, packaging...)</option>
+        </select>
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Nombre <span class="req">*</span></label>
+        <input type="text" id="crear-mp-nombre" placeholder="Ej: Vaso 8oz">
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Categoría</label>
+        <input type="text" id="crear-mp-categoria" placeholder="Ej: Insumos, Lácteos, Harinas...">
+      </div>
+      <div style="display:flex;gap:12px">
+        <div class="campo" style="flex:1;border:1px solid var(--border);border-radius:var(--r-md)">
+          <label>Unidad de compra</label>
+          <select id="crear-mp-unidad-compra" style="width:100%;padding:8px 12px;border:none;font-size:13px;font-family:inherit;background:none">
+            <option value="kg">Kilogramo (kg)</option>
+            <option value="lt">Litro (lt)</option>
+            <option value="un">Unidad (un)</option>
+          </select>
+        </div>
+        <div class="campo" style="flex:1;border:1px solid var(--border);border-radius:var(--r-md)">
+          <label>Costo neto</label>
+          <input type="number" id="crear-mp-costo" placeholder="0" min="0" step="1">
+        </div>
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Áreas habilitadas <span style="font-weight:400;color:var(--txt3)">(ninguna marcada = todas)</span></label>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;padding:6px 0">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400"><input type="checkbox" value="PAN" class="chk-area-crear-mp"> Panadería</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400"><input type="checkbox" value="BOL" class="chk-area-crear-mp"> Bollería</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400"><input type="checkbox" value="CAF" class="chk-area-crear-mp"> Cafetería</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400"><input type="checkbox" value="PAS" class="chk-area-crear-mp"> Pastelería</label>
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px">
+        <input type="checkbox" id="crear-mp-activa" checked> Activa (disponible de inmediato en los desplegables)
+      </label>
+    </div>
+    <div class="modal-acciones" style="margin-top:20px">
+      <button class="btn-secundario" onclick="cerrarModalCrearMPAdmin()">Cancelar</button>
+      <button class="btn-primario" onclick="crearMPAdmin(this)">
+        <i class="ti ti-plus"></i> Crear
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Stock BOL -->
 <div class="modal-fondo hidden" id="modal-stock-bol">
   <div class="modal" style="max-width:460px;text-align:left">
