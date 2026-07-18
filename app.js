@@ -4776,7 +4776,7 @@ async function notificarJefaMP(mpId, nombre, btn) {
   const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
   const areaCode = mp?.area_codigo || mp?.areas_habilitadas?.split(',')?.[0] || '';
 
-  await getSheet('editar_campo_mp', { ID_MP: mpId, campo: 'estado', valor: 'recibida' });
+  await escribirEnSheet('editar_campo_mp', { ID_MP: mpId, campo: 'estado', valor: 'recibida' });
 
   // Crear aviso para la jefa del área via GET (payload pequeño)
   if (areaCode) {
@@ -4808,7 +4808,7 @@ async function aprobarMP(mpId, btn) {
     if (!confirm(`"${mp.nombre}" no tiene costo. ¿Agregar igual? Aparecerá en rojo hasta costearse.`)) return;
   }
 
-  await getSheet('editar_campo_mp', { ID_MP: mpId, campo: 'estado', valor: 'activa' });
+  await escribirEnSheet('editar_campo_mp', { ID_MP: mpId, campo: 'estado', valor: 'activa' });
 
   const areaCode = mp.area_codigo || mp.areas_habilitadas?.split(',')?.[0] || '';
   if (areaCode) {
@@ -4858,9 +4858,9 @@ async function confirmarAsignarMP(btn) {
   if (!mpExistId) { toast('Selecciona una MP existente'); return; }
 
   // 1. Marcar solicitud como reemplazada + guardar cuál MP la reemplaza (dato persistente)
-  const r1 = await getSheet('editar_campo_mp', { ID_MP: mpSolicitudId, campo: 'estado', valor: 'reemplazada' });
+  const r1 = await escribirEnSheet('editar_campo_mp', { ID_MP: mpSolicitudId, campo: 'estado', valor: 'reemplazada' });
   console.log('[fën] marcar reemplazada:', r1);
-  const r1b = await getSheet('editar_campo_mp', { ID_MP: mpSolicitudId, campo: 'reemplazada_por', valor: mpExistId });
+  const r1b = await escribirEnSheet('editar_campo_mp', { ID_MP: mpSolicitudId, campo: 'reemplazada_por', valor: mpExistId });
   console.log('[fën] guardar reemplazada_por:', r1b);
 
   // 2. Habilitar el área en la MP existente
@@ -4870,7 +4870,7 @@ async function confirmarAsignarMP(btn) {
     if (!areasActuales.includes(areaCode)) {
       areasActuales.push(areaCode);
       const nuevasAreas = areasActuales.join(',');
-      const r2 = await getSheet('editar_campo_mp', { ID_MP: mpExistId, campo: 'areas_habilitadas', valor: nuevasAreas });
+      const r2 = await escribirEnSheet('editar_campo_mp', { ID_MP: mpExistId, campo: 'areas_habilitadas', valor: nuevasAreas });
       console.log('[fën] habilitar area:', r2);
       mpExist.areas_habilitadas = nuevasAreas;
     }
@@ -5053,7 +5053,7 @@ async function cambiarTipoMP(mpId, tipoActual, nombre) {
   const etiqueta = nuevoTipo === 'insumo' ? 'Insumo' : 'Materia Prima';
   if (!confirm(`¿Marcar "${nombre}" como ${etiqueta}?\n\nEsto cambia dónde aparece en los desplegables de recetas.`)) return;
 
-  await getSheet('editar_campo_mp', { ID_MP: mpId, campo: 'tipo', valor: nuevoTipo });
+  await escribirEnSheet('editar_campo_mp', { ID_MP: mpId, campo: 'tipo', valor: nuevoTipo });
 
   const item = App.materiasPrimas.find(m => m.ID_MP === mpId);
   if (item) item.tipo = nuevoTipo;
