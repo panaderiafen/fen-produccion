@@ -629,6 +629,7 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
       </div>
     </div>
 
+    ${tipoActual === 'sub_receta' ? '' : `
     <div class="card" style="margin-bottom:16px">
       <div class="card-head">
         <i class="ti ti-package"></i> Insumos
@@ -649,7 +650,7 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
           <tbody id="tbody-insumos"></tbody>
         </table>
       </div>
-    </div>
+    </div>`}
 
     <div class="card" style="margin-bottom:16px">
       <div class="card-head">
@@ -784,6 +785,7 @@ async function reemplazarIngredienteTemporal(btn, mpIdNuevo, nombreNuevo, mpIdVi
 // ── INSUMOS (envases, etiquetas, packaging, etc.) ─────────────
 function agregarInsumoTemporal(data) {
   const tbody = document.getElementById('tbody-insumos');
+  if (!tbody) return;
   const tr = document.createElement('tr');
   const cantidad = data.unidades || data.gramos || '';
 
@@ -845,6 +847,7 @@ async function reemplazarInsumoTemporal(btn, insIdNuevo, nombreNuevo, insIdViejo
 
 function agregarInsumo(data = {}) {
   const tbody = document.getElementById('tbody-insumos');
+  if (!tbody) return;
   const tr = document.createElement('tr');
   const areaCode = App.areaCodigo || '';
   const insumosActivos = App.materiasPrimas.filter(m =>
