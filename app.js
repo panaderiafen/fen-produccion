@@ -4561,7 +4561,7 @@ async function aprobarMP(mpId, btn) {
       accion: 'crear_aviso',
       area_codigo: areaCode,
       tipo: 'mp_aprobada',
-      mensaje: mp.nombre + ' fue aprobada y esta disponible - actualiza tu receta.',
+      mensaje: mp.nombre + ' fue aprobada y esta disponible.' + (mp.receta_nombre ? ' Receta: ' + mp.receta_nombre + '.' : '') + ' Actualiza tu receta.',
       mp_id: mpId
     }));
     fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso).catch(() => {});
@@ -4643,7 +4643,7 @@ async function confirmarAsignarMP() {
       accion: 'crear_aviso',
       area_codigo: areaCode2,
       tipo: 'mp_asignada',
-      mensaje: 'Tu solicitud fue resuelta: usa ' + nombreExist + ' en lugar del ingrediente pendiente.',
+      mensaje: 'Tu solicitud fue resuelta: usa ' + nombreExist + ' en lugar del ingrediente pendiente.' + (mp.receta_nombre ? ' Receta: ' + mp.receta_nombre + '.' : ''),
       mp_id: mpSolicitudId
     }));
     fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisAsig).catch(() => {});
@@ -4885,6 +4885,8 @@ async function enviarSolicitudMP(btn) {
   const areaNombre = App.area?.nombre || (App.areaCodigo ? FEN.AREAS[App.areaCodigo]?.nombre : '') || '';
   let mpId = '__pendiente__';
   try {
+    // Get recipe name being edited
+    const recetaNombre = document.getElementById('receta-nombre')?.value?.trim() || 'Receta sin nombre';
     const payload = encodeURIComponent(JSON.stringify({
       accion: 'solicitar_mp',
       nombre,
@@ -4893,6 +4895,7 @@ async function enviarSolicitudMP(btn) {
       area_codigo: App.areaCodigo || '',
       categoría: 'Pendiente de clasificar',
       unidad_receta: unidad,
+      receta_nombre: recetaNombre,
       fecha: new Date().toISOString()
     }));
     const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
