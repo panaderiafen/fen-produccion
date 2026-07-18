@@ -4538,7 +4538,8 @@ async function eliminarSolicitudMP(mpId, nombre, btn) {
   }
 }
 
-async function notificarJefaMP(mpId, nombre) {
+async function notificarJefaMP(mpId, nombre, btn) {
+  if (btn) bloquearBtn(btn, 'Notificando...');
   const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
   const areaCode = mp?.area_codigo || mp?.areas_habilitadas?.split(',')?.[0] || '';
 
@@ -4561,7 +4562,7 @@ async function notificarJefaMP(mpId, nombre) {
   // Force reload MP from Sheet to avoid stale cache
   App.materiasPrimas = App.materiasPrimas.map(m => m.ID_MP === mpId ? {...m, estado: 'recibida'} : m);
   Cache.invalidar('mp_maestro');
-  renderVistaMP();
+  renderVistaMP(); // re-renders the view, button feedback resets naturally
 }
 
 async function aprobarMP(mpId, btn) {
@@ -4613,7 +4614,8 @@ function asignarMPExistente(mpIdSolicitud, nombreSolicitud) {
   modal.classList.remove('hidden');
 }
 
-async function confirmarAsignarMP() {
+async function confirmarAsignarMP(btn) {
+  if (btn) bloquearBtn(btn, 'Asignando...');
   const mpSolicitudId = document.getElementById('asignar-mp-nueva-id').value;
   const mpExistId     = document.getElementById('asignar-mp-select').value;
   const areaCode      = document.getElementById('asignar-mp-area').value;
@@ -4717,7 +4719,7 @@ function renderVistaMP() {
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button class="btn-secundario" style="font-size:12px;padding:5px 10px;border-color:#90CAF9;color:#1565C0"
-                onclick="notificarJefaMP('${p.ID_MP}','${p.nombre}')" title="Notificar a la jefa que fue recibida">
+                onclick="notificarJefaMP('${p.ID_MP}','${p.nombre}',this)" title="Notificar a la jefa que fue recibida">
                 <i class="ti ti-send"></i> Recibido
               </button>
               <button class="btn-primario" style="font-size:12px;padding:5px 10px"
