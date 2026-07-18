@@ -648,7 +648,7 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
       </div>
       <div class="form-acciones-der">
         <button class="btn-secundario" onclick="navegarA('mis-recetas')">Cancelar</button>
-        <button class="btn-primario" onclick="guardarReceta('${recetaId || ''}')">
+        <button class="btn-primario" onclick="guardarReceta('${recetaId || ''}',this)">
           <i class="ti ti-device-floppy"></i> ${esEdicion ? 'Guardar cambios' : 'Crear receta'}
         </button>
       </div>
@@ -928,7 +928,7 @@ function renumerarPasos() {
 }
 
 // ── GUARDAR RECETA ────────────────────────────────────────────
-async function guardarReceta(recetaId) {
+async function guardarReceta(recetaId, btn) {
   const esEdicion = !!recetaId;
   const nombre    = document.getElementById('f-nombre').value.trim();
   const porciones = document.getElementById('f-porciones').value;
@@ -4332,7 +4332,7 @@ function renderVistaAprobaciones() {
                   <i class="ti ti-x"></i> Devolver
                 </button>
                 <button id="btn-aprobar-${r.ID_receta}" class="btn-primario" style="font-size:12px;padding:5px 12px"
-                  onclick="aprobarReceta('${r.ID_receta}','${r._area}')">
+                  onclick="aprobarReceta('${r.ID_receta}','${r._area}',this)">
                   <i class="ti ti-check"></i> Aprobar
                 </button>
               </div>
@@ -4520,7 +4520,8 @@ async function notificarJefaMP(mpId, nombre) {
   renderVistaMP();
 }
 
-async function aprobarMP(mpId) {
+async function aprobarMP(mpId, btn) {
+  if (btn) bloquearBtn(btn, 'Aprobando...');
   const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
   if (!mp) return;
 
@@ -4672,7 +4673,7 @@ function renderVistaMP() {
                 <i class="ti ti-send"></i> Recibido
               </button>
               <button class="btn-primario" style="font-size:12px;padding:5px 10px"
-                onclick="aprobarMP('${p.ID_MP}')" title="Agregar al maestro de MP">
+                onclick="aprobarMP('${p.ID_MP}',this)" title="Agregar al maestro de MP">
                 <i class="ti ti-check"></i> Agregar al maestro
               </button>
               <button class="btn-secundario" style="font-size:12px;padding:5px 10px"
@@ -4843,9 +4844,10 @@ function actualizarLabelGramosSolicitud() {
   }
 }
 
-async function enviarSolicitudMP() {
+async function enviarSolicitudMP(btn) {
+  if (btn) bloquearBtn(btn, 'Enviando...');
   const nombre    = document.getElementById('solicitar-mp-nombre').value.trim();
-  const esNueva   = document.getElementById('solicitar-mp-nueva').checked;
+  const esNueva   = true; // Admin decides if it's new or existing
   const tmpNombre = document.getElementById('solicitar-mp-tmp').value.trim() || nombre;
   const cantidad  = document.getElementById('solicitar-mp-gramos').value;
   const unidad    = document.getElementById('solicitar-mp-unidad')?.value || 'gramos';
@@ -4892,6 +4894,7 @@ async function enviarSolicitudMP() {
     tbody.appendChild(tr);
   }
 
+  if (btn) desbloquearBtn(btn, '<i class="ti ti-send"></i> Enviar solicitud', true);
   cerrarModalSolicitarMP();
   toast('Solicitud enviada a administración');
 }
