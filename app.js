@@ -4488,7 +4488,7 @@ async function eliminarSolicitudMP(mpId, nombre, btn) {
     }));
     await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
     App.materiasPrimas = App.materiasPrimas.filter(m => m.ID_MP !== mpId);
-    Cache.invalidar('MP_maestro');
+    Cache.invalidar('mp_maestro');
     toast(`Solicitud "${nombre}" eliminada`);
     renderVistaMP();
   } catch(e) {
@@ -4519,7 +4519,7 @@ async function notificarJefaMP(mpId, nombre) {
   toast(`Notificado: "${nombre}" fue recibida`);
   // Force reload MP from Sheet to avoid stale cache
   App.materiasPrimas = App.materiasPrimas.map(m => m.ID_MP === mpId ? {...m, estado: 'recibida'} : m);
-  Cache.invalidar('MP_maestro');
+  Cache.invalidar('mp_maestro');
   renderVistaMP();
 }
 
@@ -4549,7 +4549,7 @@ async function aprobarMP(mpId, btn) {
 
   mp.estado = 'activa';
   toast(`"${mp.nombre}" aprobada — aviso enviado a la jefa`);
-  Cache.invalidar('MP_maestro');
+  Cache.invalidar('mp_maestro');
   renderVistaMP();
 }
 
@@ -4632,7 +4632,7 @@ async function confirmarAsignarMP() {
   }
 
   toast(`Asignado "${nombreExist}" — aviso enviado a la jefa`);
-  Cache.invalidar('MP_maestro');
+  Cache.invalidar('mp_maestro');
   renderVistaMP();
 }
 
