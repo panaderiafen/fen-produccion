@@ -800,7 +800,10 @@ function agregarIngrediente(data = {}) {
   const esBOL = App.areaCodigo === 'BOL';
   // Para BOL, detectar si el ingrediente es sub receta (puede ser en unidades)
   const esSubRecetaIngr = data.id && (subRecetas.some(sr => sr.ID_MP === data.id));
-  const usaUnidades = esBOL && esSubRecetaIngr && (data.unidades !== undefined ? data.unidades : true);
+  // También considerar unidad_receta explícita (para MPs solicitadas con unidad específica)
+  const usaUnidades = (esBOL && esSubRecetaIngr && (data.unidades !== undefined ? data.unidades : true))
+    || (data.unidad_receta === 'unidades');
+  const usaMl = data.unidad_receta === 'ml';
 
   tr.innerHTML = `
     <td>
@@ -818,11 +821,12 @@ function agregarIngrediente(data = {}) {
       </select>
     </td>` : ''}
     <td><input type="number" placeholder="${usaUnidades?'1':'0'}"
-      value="${usaUnidades ? (data.unidades||'') : (data.gramos ? parseFloat(data.gramos).toFixed(1) : '')}"
+      value="${usaUnidades ? (data.unidades||'') : usaMl ? (data.ml||data.gramos||'') : (data.gramos ? parseFloat(data.gramos).toFixed(1) : '')}"
       min="0" step="${usaUnidades?'1':'0.01'}"
       oninput="${esPan ? 'desdeGramos(this)' : ''}"
       style="max-width:90px"
-      data-modo="${usaUnidades ? 'unidades' : 'gramos'}">
+      data-modo="${usaUnidades ? 'unidades' : usaMl ? 'ml' : 'gramos'}"
+      data-unidad="${data.unidad_receta || (usaUnidades ? 'unidades' : 'gramos')}">
     </td>
     ${esPan ? `<td><input type="number" placeholder="0.00"
       value="${data.pct ? (data.pct*100).toFixed(2) : ''}"
