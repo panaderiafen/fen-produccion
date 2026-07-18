@@ -4640,6 +4640,7 @@ async function confirmarAsignarMP() {
   const areaCode2 = mpSolObj?.area_codigo || areaCode || '';
   // Update local state immediately
   App.materiasPrimas = App.materiasPrimas.map(m => m.ID_MP === mpSolicitudId ? {...m, estado: 'reemplazada', reemplazada_por: mpExistId} : m);
+  console.log('[fën] areaCode2 para aviso:', areaCode2, 'mpSolObj:', mpSolObj);
   if (areaCode2) {
     const payloadAvisAsig = encodeURIComponent(JSON.stringify({
       accion: 'crear_aviso',
@@ -4648,7 +4649,13 @@ async function confirmarAsignarMP() {
       mensaje: 'Tu solicitud fue resuelta: usa ' + nombreExist + ' en lugar del ingrediente pendiente.' + (mpSolObj?.receta_nombre ? ' Receta: ' + mpSolObj.receta_nombre + '.' : ''),
       mp_id: mpSolicitudId
     }));
-    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisAsig).catch(() => {});
+    console.log('[fën] enviando aviso asignacion...');
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisAsig)
+      .then(r => r.json())
+      .then(r => console.log('[fën] aviso asignacion resultado:', r))
+      .catch(e => console.error('[fën] ERROR enviando aviso:', e));
+  } else {
+    console.warn('[fën] areaCode2 vacio, no se envia aviso');
   }
 
   toast(`Asignado "${nombreExist}" — aviso enviado a la jefa`);
