@@ -4316,7 +4316,7 @@ function renderVistaAprobaciones() {
               <strong style="margin-left:6px">${r.nombre}</strong>
               <div style="margin-left:auto;display:flex;gap:8px">
                 <button id="btn-devolver-${r.ID_receta}" class="btn-peligro" style="font-size:12px;padding:5px 12px"
-                  onclick="rechazarReceta('${r.ID_receta}','${r._area}')">
+                  onclick="abrirModalDevolverReceta('${r.ID_receta}','${r._area}','${(r.nombre||'').replace(/'/g,"\\'")}')">
                   <i class="ti ti-x"></i> Devolver
                 </button>
                 <button id="btn-aprobar-${r.ID_receta}" class="btn-primario" style="font-size:12px;padding:5px 12px"
@@ -4414,8 +4414,21 @@ async function aprobarReceta(recetaId, areaCodigo, btnParam) {
   }
 }
 
-async function rechazarReceta(recetaId, areaCodigo) {
-  const btn = document.getElementById('btn-devolver-' + recetaId);
+function abrirModalDevolverReceta(recetaId, areaCodigo, nombre) {
+  const modal = document.getElementById('modal-devolver-receta');
+  if (!modal) return;
+  document.getElementById('devolver-receta-id').value = recetaId;
+  document.getElementById('devolver-receta-area').value = areaCodigo;
+  document.getElementById('devolver-receta-nombre-display').textContent = nombre;
+  document.getElementById('devolver-receta-comentario').value = '';
+  modal.classList.remove('hidden');
+}
+
+async function rechazarReceta() {
+  const recetaId   = document.getElementById('devolver-receta-id').value;
+  const areaCodigo = document.getElementById('devolver-receta-area').value;
+  const comentario = document.getElementById('devolver-receta-comentario').value.trim();
+  const btn = document.getElementById('btn-confirmar-devolver');
   bloquearBtn(btn, 'Devolviendo...');
   try {
     const hoja = FEN.AREAS[areaCodigo]?.hoja_recetas;
@@ -4423,19 +4436,24 @@ async function rechazarReceta(recetaId, areaCodigo) {
     const r = App.recetas.find(x => x.ID_receta === recetaId);
     if (r) r.estado = 'en_prueba';
 
-    // Notificar a la jefa por aviso + correo
+    // Notificar a la jefa por aviso + correo, incluyendo el comentario
+    const mensajeBase = `Tu receta "${r?.nombre || recetaId}" fue devuelta para revisión.`;
+    const mensajeCompleto = comentario
+      ? `${mensajeBase} Comentario del admin: "${comentario}"`
+      : `${mensajeBase} Revisa los detalles y vuelve a enviarla.`;
     const payloadAviso = encodeURIComponent(JSON.stringify({
       accion: 'crear_aviso',
       area_codigo: areaCodigo,
       tipo: 'receta_devuelta',
-      mensaje: `Tu receta "${r?.nombre || recetaId}" fue devuelta para revisión. Revisa los comentarios y vuelve a enviarla.`
+      mensaje: mensajeCompleto
     }));
     fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso).catch(() => {});
 
+    document.getElementById('modal-devolver-receta').classList.add('hidden');
     toast('Receta devuelta a prueba');
     setTimeout(() => renderVistaAprobaciones(), 1200);
   } catch(e) {
-    desbloquearBtn(btn, '<i class="ti ti-x"></i> Devolver', false);
+    desbloquearBtn(btn, '<i class="ti ti-check"></i> Confirmar devolución', false);
     toast('Error: ' + e.message, 'error');
   }
 }
