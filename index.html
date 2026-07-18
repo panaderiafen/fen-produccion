@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
-  <link rel="stylesheet" href="main.css?v=1784390083">
+  <link rel="stylesheet" href="main.css?v=1784390846">
 </head>
 <body>
 
@@ -387,6 +387,28 @@
   </div>
 </div>
 
+<!-- Modal: Devolver Receta -->
+<div class="modal-fondo hidden" id="modal-devolver-receta">
+  <div class="modal" style="max-width:440px;text-align:left">
+    <div class="modal-ico" style="background:#FFEBEE;color:#C62828"><i class="ti ti-arrow-back-up"></i></div>
+    <h3 style="text-align:center;margin-bottom:6px">Devolver receta</h3>
+    <p style="text-align:center;font-size:13px;color:var(--txt3);margin-bottom:16px" id="devolver-receta-nombre-display"></p>
+    <input type="hidden" id="devolver-receta-id">
+    <input type="hidden" id="devolver-receta-area">
+    <div class="campo full">
+      <label>Comentario para la jefa (opcional)</label>
+      <textarea id="devolver-receta-comentario" rows="4" placeholder="Ej: Falta especificar la temperatura de horneado, revisar el rendimiento..."
+        style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit;resize:vertical"></textarea>
+    </div>
+    <div class="modal-acciones">
+      <button class="btn-secundario" onclick="document.getElementById('modal-devolver-receta').classList.add('hidden')">Cancelar</button>
+      <button class="btn-primario" id="btn-confirmar-devolver" onclick="rechazarReceta()" style="background:#C62828">
+        <i class="ti ti-check"></i> Confirmar devolución
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Registro CAF -->
 <div class="modal-fondo hidden" id="modal-registro-caf">
   <div class="modal" style="max-width:440px;text-align:left">
@@ -447,8 +469,8 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="config.js?v=1784390083"></script>
-<script src="subrecetas.js?v=1784390083"></script>
-<script src="app.js?v=1784390083"></script>
+<script src="config.js?v=1784390846"></script>
+<script src="subrecetas.js?v=1784390846"></script>
+<script src="app.js?v=1784390846"></script>
 </body>
 </html>
