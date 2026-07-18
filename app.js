@@ -4384,8 +4384,8 @@ function renderVistaAprobaciones() {
   mostrarVista('aprobaciones');
 }
 
-async function aprobarReceta(recetaId, areaCodigo) {
-  const btn = document.getElementById('btn-aprobar-' + recetaId);
+async function aprobarReceta(recetaId, areaCodigo, btnParam) {
+  const btn = btnParam || document.getElementById('btn-aprobar-' + recetaId);
   bloquearBtn(btn, 'Aprobando...');
   try {
     const hoja = FEN.AREAS[areaCodigo]?.hoja_recetas;
@@ -4393,6 +4393,16 @@ async function aprobarReceta(recetaId, areaCodigo) {
     clearEstadoLocal(recetaId);
     const r = App.recetas.find(x => x.ID_receta === recetaId);
     if (r) r.estado = 'consolidada';
+
+    // Notificar a la jefa por aviso + correo
+    const payloadAviso = encodeURIComponent(JSON.stringify({
+      accion: 'crear_aviso',
+      area_codigo: areaCodigo,
+      tipo: 'receta_aprobada',
+      mensaje: `Tu receta "${r?.nombre || recetaId}" fue aprobada y está disponible en el maestro.`
+    }));
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso).catch(() => {});
+
     toast('Receta aprobada y enviada al maestro');
     setTimeout(() => renderVistaAprobaciones(), 1200);
   } catch(e) {
@@ -4409,6 +4419,16 @@ async function rechazarReceta(recetaId, areaCodigo) {
     await escribirEnSheet('cambiar_estado', { ID_receta: recetaId, hoja, estado: 'en_prueba' });
     const r = App.recetas.find(x => x.ID_receta === recetaId);
     if (r) r.estado = 'en_prueba';
+
+    // Notificar a la jefa por aviso + correo
+    const payloadAviso = encodeURIComponent(JSON.stringify({
+      accion: 'crear_aviso',
+      area_codigo: areaCodigo,
+      tipo: 'receta_devuelta',
+      mensaje: `Tu receta "${r?.nombre || recetaId}" fue devuelta para revisión. Revisa los comentarios y vuelve a enviarla.`
+    }));
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso).catch(() => {});
+
     toast('Receta devuelta a prueba');
     setTimeout(() => renderVistaAprobaciones(), 1200);
   } catch(e) {
