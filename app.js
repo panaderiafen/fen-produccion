@@ -880,6 +880,7 @@ function onChangeInsumoSelect(sel) {
 }
 
 function solicitarNuevoInsumo() {
+  App._solicitudDesdeAdmin = false;
   const modal = document.getElementById('modal-solicitar-insumo');
   if (modal) modal.classList.remove('hidden');
 }
@@ -5149,6 +5150,8 @@ async function renderVistaMaestroAdmin() {
 
 // ── MP: SOLICITAR Y EDITAR ────────────────────────────────────
 function solicitarNuevaMP(selectEl) {
+  // Si viene desde una fila de ingrediente (jefa pidiendo MP), no es creación directa de Admin
+  if (selectEl) App._solicitudDesdeAdmin = false;
   // Mostrar modal de solicitud sin salir del formulario
   const modal = document.getElementById('modal-solicitar-mp');
   if (modal) {
@@ -5176,35 +5179,54 @@ async function enviarSolicitudMP(btn) {
   const tmpNombre = document.getElementById('solicitar-mp-tmp').value.trim() || nombre;
   const cantidad  = document.getElementById('solicitar-mp-gramos').value;
   const unidad    = document.getElementById('solicitar-mp-unidad')?.value || 'gramos';
+  const esCreacionAdmin = !!App._solicitudDesdeAdmin;
 
   if (!nombre) { toast('Escribe el nombre de la MP', 'error'); return; }
 
   // Enviar solicitud al Sheet via GET para obtener el ID generado
   const areaNombre = App.area?.nombre || (App.areaCodigo ? FEN.AREAS[App.areaCodigo]?.nombre : '') || '';
   let mpId = '__pendiente__';
+  let dataRes = null;
   try {
-    // Get recipe name being edited
+    // Get recipe name being edited (solo aplica si viene desde una receta)
     const recetaNombre = document.getElementById('f-nombre')?.value?.trim() || 'Receta sin nombre';
     const payload = encodeURIComponent(JSON.stringify({
       accion: 'solicitar_mp',
       tipo: tipoMP,
       nombre,
       es_nueva: esNueva,
-      solicitada_por: areaNombre,
+      origen: esCreacionAdmin ? 'admin' : '',
+      solicitada_por: esCreacionAdmin ? 'Admin' : areaNombre,
       area_codigo: App.areaCodigo || '',
       categoría: tipoMP === 'insumo' ? 'Insumos' : 'Pendiente de clasificar',
       unidad_receta: unidad,
-      receta_nombre: recetaNombre,
+      receta_nombre: esCreacionAdmin ? '' : recetaNombre,
       fecha: new Date().toISOString()
     }));
     const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
-    const data = await res.json();
-    if (data.ok && data.id) mpId = data.id;
+    dataRes = await res.json();
+    if (dataRes.ok && dataRes.id) mpId = dataRes.id;
   } catch(e) {
     console.warn('[fën] No se pudo obtener ID de MP:', e.message);
   }
 
-  // Agregar ingrediente temporal al formulario con el ID real
+  if (btn) desbloquearBtn(btn, '<i class="ti ti-send"></i> Enviar solicitud', true);
+  cerrarModalSolicitarMP();
+
+  // Creación directa desde Admin: ya quedó activa en el maestro, solo refrescar el catálogo
+  if (esCreacionAdmin) {
+    App._solicitudDesdeAdmin = false;
+    App.materiasPrimas.push({
+      ID_MP: mpId, nombre, tipo: tipoMP, categoría: tipoMP === 'insumo' ? 'Insumos' : 'Pendiente de clasificar',
+      estado: 'activa', costo_neto: 0, costo_por_gramo: 0, unidad_receta: unidad
+    });
+    Cache.invalidar('mp_maestro');
+    toast(`"${nombre}" creada y disponible — asígnele costo cuando corresponda`);
+    renderVistaMP();
+    return;
+  }
+
+  // Agregar ingrediente temporal al formulario con el ID real (flujo de jefa solicitando desde receta)
   if (tmpNombre) {
     const tbody = document.getElementById('tbody-ingr');
     const tr = document.createElement('tr');
@@ -5223,9 +5245,6 @@ async function enviarSolicitudMP(btn) {
     tbody.appendChild(tr);
   }
 
-  if (btn) desbloquearBtn(btn, '<i class="ti ti-send"></i> Enviar solicitud', true);
-  cerrarModalSolicitarMP();
-
   // Guardar la receta automáticamente para no perder el ingrediente temporal
   await guardarReceta(App._recetaEditandoId || '');
   toast('Solicitud enviada y receta guardada automáticamente');
@@ -5237,6 +5256,11 @@ function cerrarModalSolicitarMP() {
   // Resetear select que activó el modal
   const selects = document.querySelectorAll('#tbody-ingr select');
   selects.forEach(s => { if (s.value === '__nueva__') s.value = ''; });
+  // Restaurar texto original del modal (por si se abrió como creación directa de Admin)
+  const titulo = document.querySelector('#modal-solicitar-mp h3');
+  const desc   = document.querySelector('#modal-solicitar-mp p');
+  if (titulo) titulo.textContent = 'Solicitar materia prima';
+  if (desc)   desc.textContent = 'Admin habilitará la MP para tu área. Puedes continuar con la receta mientras tanto.';
 }
 
 function editarMP(mpId) {
@@ -5257,7 +5281,12 @@ function editarMP(mpId) {
 }
 
 function abrirFormNuevaMP() {
+  App._solicitudDesdeAdmin = true;
   solicitarNuevaMP();
+  const titulo = document.querySelector('#modal-solicitar-mp h3');
+  const desc   = document.querySelector('#modal-solicitar-mp p');
+  if (titulo) titulo.textContent = 'Nueva MP / Insumo';
+  if (desc)   desc.textContent = 'Se crea directamente en el maestro, activa y disponible para todas las áreas.';
 }
 
 function gestionarAreasMP(mpId) {
