@@ -3423,8 +3423,8 @@ const BOL_DIAS_NOMBRES = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 const PAN_ESTIMACION_B2C = {
   'Ciabatta': { Lun:92.61, Mar:67.43, Mié:64.2, Jue:61.88, Vie:70.22, Sáb:56.84, Dom:10.0 },
   'Marraqueta': { Lun:9.18, Mar:21.05, Mié:20.96, Jue:19.88, Vie:21.42, Sáb:15.0, Dom:1.24 },
-  'Hogaza Clasica': { Lun:10.79, Mar:7.84, Mié:6.89, Jue:6.32, Vie:7.05, Sáb:6.31, Dom:1.25 },
-  'H. Multigrano': { Lun:9.38, Mar:9.16, Mié:7.11, Jue:6.77, Vie:7.22, Sáb:5.84, Dom:0.89 },
+  'Hogaza Clásica': { Lun:10.79, Mar:7.84, Mié:6.89, Jue:6.32, Vie:7.05, Sáb:6.31, Dom:1.25 },
+  'Hogaza Multigrano': { Lun:9.38, Mar:9.16, Mié:7.11, Jue:6.77, Vie:7.22, Sáb:5.84, Dom:0.89 },
   'Molde Integral (60%)': { Lun:8.96, Mar:7.09, Mié:5.71, Jue:5.91, Vie:6.96, Sáb:4.8, Dom:0.75 },
   'Focaccia': { Lun:3.71, Mar:4.16, Mié:3.14, Jue:3.52, Vie:3.44, Sáb:2.38, Dom:0.13 },
   'Baguette': { Lun:1.5, Mar:2.77, Mié:2.82, Jue:3.12, Vie:3.02, Sáb:2.69, Dom:0.69 },
@@ -3443,13 +3443,13 @@ const PAN_ESTIMACION_B2C = {
 
 // Promedios B2B históricos PAN (dic 2025 – jul 2026)
 const PAN_ESTIMACION_B2B = {
-  'Ciabatta UNI': { Lun:79.3, Mar:102.52, Mié:81.16, Jue:63.26, Vie:67.58, Sáb:47.06, Dom:0.0 },
-  'Hogaza clásica': { Lun:22.87, Mar:42.77, Mié:26.39, Jue:20.03, Vie:22.87, Sáb:15.19, Dom:3.03 },
-  'Hogaza multigrano': { Lun:23.43, Mar:15.23, Mié:20.84, Jue:15.39, Vie:18.1, Sáb:14.61, Dom:1.33 },
+  'Ciabatta': { Lun:79.3, Mar:102.52, Mié:81.16, Jue:63.26, Vie:67.58, Sáb:47.06, Dom:0.0 },
+  'Hogaza Clásica': { Lun:22.87, Mar:42.77, Mié:26.39, Jue:20.03, Vie:22.87, Sáb:15.19, Dom:3.03 },
+  'Hogaza Multigrano': { Lun:23.43, Mar:15.23, Mié:20.84, Jue:15.39, Vie:18.1, Sáb:14.61, Dom:1.33 },
   'Molde Blanco': { Lun:8.63, Mar:5.55, Mié:6.19, Jue:4.52, Vie:5.48, Sáb:5.1, Dom:2.0 },
   'Ciabatta kG': { Lun:4.19, Mar:4.04, Mié:5.32, Jue:3.86, Vie:3.73, Sáb:4.66, Dom:0.0 },
   'Ciabatta Mini': { Lun:2.17, Mar:4.1, Mié:1.94, Jue:1.61, Vie:0.0, Sáb:0.0, Dom:0.0 },
-  'Molde 60% integral': { Lun:2.27, Mar:3.03, Mié:1.45, Jue:1.06, Vie:0.9, Sáb:0.0, Dom:0.0 },
+  'Molde Integral (60%)': { Lun:2.27, Mar:3.03, Mié:1.45, Jue:1.06, Vie:0.9, Sáb:0.0, Dom:0.0 },
   'Focaccia Tomate': { Lun:1.03, Mar:0.74, Mié:1.65, Jue:0.61, Vie:1.13, Sáb:0.94, Dom:0.0 },
   'Focaccia Pesto': { Lun:0.63, Mar:0.68, Mié:0.52, Jue:0.84, Vie:0.87, Sáb:1.16, Dom:0.0 },
   'Baguette': { Lun:0.0, Mar:0.13, Mié:0.0, Jue:0.16, Vie:0.0, Sáb:0.0, Dom:0.0 },
