@@ -6012,15 +6012,36 @@ function editarMP(mpId) {
     ? 'por litro'
     : 'por kilo';
   const nuevoPrecio = prompt(
-    `Precio neto ${etiquetaUnidad} de "${mp.nombre}"\nActual: ${clp(mp.costo_neto)}\n\nNuevo precio neto (${etiquetaUnidad}):`,
+    `Precio neto ${etiquetaUnidad} de "${mp.nombre}" (solo el producto, sin flete)\nActual: ${clp(mp.costo_neto)}\n\nNuevo precio neto (${etiquetaUnidad}):`,
     mp.costo_neto
   );
   if (nuevoPrecio === null) return;
   const precio = parseFloat(nuevoPrecio);
   if (isNaN(precio)) { toast('Precio inválido', 'error'); return; }
-  escribirEnSheet('editar_mp', { ID_MP: mpId, costo_neto: precio });
-  mp.costo_neto = precio;
-  toast('Precio actualizado');
+
+  const flete = prompt(
+    `¿Costo de transporte/flete ${etiquetaUnidad} de "${mp.nombre}"?\n(Si la compra a otra región, ingrese el flete prorrateado. Deje 0 o vacío si no aplica.)`,
+    '0'
+  );
+  if (flete === null) return;
+  const fletePct = parseFloat(flete) || 0;
+  if (isNaN(fletePct) || fletePct < 0) { toast('Flete inválido', 'error'); return; }
+
+  const precioFinal = precio + fletePct;
+  const payload = { ID_MP: mpId, costo_neto: precioFinal };
+
+  if (fletePct > 0) {
+    const obsActual = mp.observaciones || '';
+    const notaFlete = `[Precio $${precio} + flete $${fletePct}/${unidadCompra === 'un' ? 'u' : unidadCompra}]`;
+    // Reemplaza una nota de flete anterior si existe, para no ir acumulando notas viejas
+    const obsSinNotaVieja = obsActual.replace(/\[Precio \$[\d.]+ \+ flete \$[\d.]+\/\w+\]/, '').trim();
+    payload.observaciones = (obsSinNotaVieja + ' ' + notaFlete).trim();
+  }
+
+  escribirEnSheet('editar_mp', payload);
+  mp.costo_neto = precioFinal;
+  if (payload.observaciones !== undefined) mp.observaciones = payload.observaciones;
+  toast(fletePct > 0 ? `Precio actualizado: $${precio} + flete $${fletePct} = ${clp(precioFinal)}` : 'Precio actualizado');
   Cache.invalidar('mp_maestro');
   renderVistaMP();
 }
