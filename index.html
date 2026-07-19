@@ -332,6 +332,20 @@
   </div>
 </div>
 
+<!-- Modal: Acciones de MP/Insumo (reemplaza los íconos de fila, mejor para celular) -->
+<div class="modal-fondo hidden" id="modal-acciones-mp">
+  <div class="modal" style="max-width:380px;text-align:left">
+    <h3 id="acciones-mp-titulo" style="text-align:center;margin-bottom:4px">—</h3>
+    <p id="acciones-mp-subtitulo" style="text-align:center;font-size:12px;color:var(--txt3);margin-bottom:20px">—</p>
+    <div style="display:flex;flex-direction:column;gap:8px" id="acciones-mp-botones">
+      <!-- Botones inyectados por JS -->
+    </div>
+    <div class="modal-acciones" style="margin-top:20px">
+      <button class="btn-secundario" style="width:100%" onclick="document.getElementById('modal-acciones-mp').classList.add('hidden')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Stock BOL -->
 <div class="modal-fondo hidden" id="modal-stock-bol">
   <div class="modal" style="max-width:460px;text-align:left">
