@@ -335,6 +335,7 @@ function renderSidebar() {
       { id: 'costos',         icon: 'ti-chart-bar',             label: 'Estructuras de costo'},
       { id: 'estimacion-bol', icon: 'ti-chart-arrows-vertical', label: 'Estimación de demanda' },
       { id: 'analisis-merma', icon: 'ti-trash',                 label: 'Análisis de $ merma' },
+      { id: 'config-costeo',  icon: 'ti-settings-dollar',       label: 'Config de costeo (Fase 2)' },
     ].forEach(item => nav.appendChild(crearNavItem(item)));
 
     // Area shortcuts for admin
@@ -400,6 +401,7 @@ function navegarA(vistaId) {
     case 'pre-elaboraciones':   renderVistaPreElaboraciones(); break;
     case 'estimacion-bol':      renderVistaEstimacionDemanda();  break;
     case 'analisis-merma':      renderVistaAnalisisMerma();  break;
+    case 'config-costeo':       renderVistaConfigCosteo();   break;
     default: mostrarVista('empty');
   }
 }
@@ -5535,6 +5537,174 @@ function renderAnalisisMerma() {
       </tbody>
     </table>
   `;
+}
+
+// ── ADMIN: CONFIG DE COSTEO (FASE 2) ──────────────────────────
+let _configCosteoFilas = [];
+let _gastosSincronizados = null;
+
+async function renderVistaConfigCosteo() {
+  const vista = document.getElementById('vista-config-costeo');
+  if (!vista) return;
+  mostrarVista('config-costeo');
+
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_config_costeo' }));
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    _configCosteoFilas = data.filas || [];
+  } catch(e) {
+    _configCosteoFilas = [];
+  }
+
+  const hoy = new Date();
+  const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+
+  vista.innerHTML = `
+    <div class="vista-header">
+      <h1 class="vista-titulo">Config de costeo (Fase 2)</h1>
+    </div>
+    <p style="font-size:12px;color:var(--txt2);margin-bottom:20px">
+      Costos fijos y remuneración por área, sincronizados desde el Registro de Gastos. Merma y utilidad objetivo se ingresan manualmente mientras se acumula historial real.
+    </p>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head"><i class="ti ti-refresh"></i> Sincronizar y editar</div>
+      <div class="form-grid" style="padding:16px">
+        <div class="campo">
+          <label>Área</label>
+          <select id="cc-area" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+            ${Object.entries(FEN.AREAS).map(([cod,a]) => `<option value="${cod}">${a.nombre}</option>`).join('')}
+          </select>
+        </div>
+        <div class="campo">
+          <label>Mes (YYYY-MM)</label>
+          <input type="text" id="cc-mes" value="${mesActual}" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <div class="campo full">
+          <button class="btn-secundario" onclick="sincronizarGastosArea()">
+            <i class="ti ti-cloud-download"></i> Sincronizar desde Registro de Gastos
+          </button>
+          <span id="cc-sync-estado" style="font-size:12px;color:var(--txt3);margin-left:10px"></span>
+        </div>
+        <div class="campo">
+          <label>Costos fijos del mes ($)</label>
+          <input type="number" id="cc-fijos" placeholder="0" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <div class="campo">
+          <label>Remuneración del mes ($)</label>
+          <input type="number" id="cc-remuneracion" placeholder="0" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <div class="campo">
+          <label>% Merma estimado</label>
+          <input type="number" id="cc-merma" placeholder="5" step="0.1" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <div class="campo">
+          <label>% Utilidad objetivo B2C</label>
+          <input type="number" id="cc-utilidad-b2c" placeholder="30" step="0.1" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <div class="campo">
+          <label>% Utilidad objetivo B2B</label>
+          <input type="number" id="cc-utilidad-b2b" placeholder="25" step="0.1" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <div class="campo full">
+          <button class="btn-primario" onclick="guardarConfigCosteoUI(this)">
+            <i class="ti ti-device-floppy"></i> Guardar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><i class="ti ti-list"></i> Configuración guardada por área/mes</div>
+      <div style="overflow-x:auto">
+        ${!_configCosteoFilas.length ? `
+          <p style="padding:20px;color:var(--txt3);font-size:13px;text-align:center">Aún no hay configuración guardada.</p>
+        ` : `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Área</th>
+            <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Mes</th>
+            <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Costos fijos</th>
+            <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Remuneración</th>
+            <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">% Merma</th>
+            <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">% Util. B2C</th>
+            <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">% Util. B2B</th>
+            <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Fuente</th>
+          </tr></thead>
+          <tbody>
+            ${_configCosteoFilas.map(f => `
+              <tr style="border-top:1px solid var(--border);cursor:pointer" onclick="cargarFilaConfigCosteo('${f.area}','${f.mes}')">
+                <td style="padding:8px 14px;font-size:12px">${FEN.AREAS[f.area]?.nombre || f.area}</td>
+                <td style="padding:8px 14px;font-size:12px">${f.mes}</td>
+                <td style="padding:8px 14px;font-size:12px;text-align:right">${clp(f.costos_fijos_monto||0)}</td>
+                <td style="padding:8px 14px;font-size:12px;text-align:right">${clp(f.remuneracion_monto||0)}</td>
+                <td style="padding:8px 14px;font-size:12px;text-align:right">${f.merma_pct||0}%</td>
+                <td style="padding:8px 14px;font-size:12px;text-align:right">${f.utilidad_b2c_pct||0}%</td>
+                <td style="padding:8px 14px;font-size:12px;text-align:right">${f.utilidad_b2b_pct||0}%</td>
+                <td style="padding:8px 14px;font-size:12px;color:var(--txt3)">${f.fuente||''}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+async function sincronizarGastosArea() {
+  const area = document.getElementById('cc-area').value;
+  const mes  = document.getElementById('cc-mes').value.trim();
+  const estadoEl = document.getElementById('cc-sync-estado');
+  estadoEl.textContent = 'Sincronizando...';
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_gastos_area', mes }));
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    if (!data.ok) { estadoEl.textContent = 'Error: ' + (data.msg||''); return; }
+    const areaData = data.datos?.[area] || { fijos: 0, remuneracion: 0 };
+    document.getElementById('cc-fijos').value = Math.round(areaData.fijos);
+    document.getElementById('cc-remuneracion').value = Math.round(areaData.remuneracion);
+    estadoEl.textContent = `✓ Sincronizado (${mes})`;
+  } catch(e) {
+    estadoEl.textContent = 'No se pudo conectar al Registro de Gastos';
+  }
+}
+
+function cargarFilaConfigCosteo(area, mes) {
+  const f = _configCosteoFilas.find(x => x.area === area && x.mes === mes);
+  if (!f) return;
+  document.getElementById('cc-area').value = area;
+  document.getElementById('cc-mes').value = mes;
+  document.getElementById('cc-fijos').value = f.costos_fijos_monto || 0;
+  document.getElementById('cc-remuneracion').value = f.remuneracion_monto || 0;
+  document.getElementById('cc-merma').value = f.merma_pct || 0;
+  document.getElementById('cc-utilidad-b2c').value = f.utilidad_b2c_pct || 0;
+  document.getElementById('cc-utilidad-b2b').value = f.utilidad_b2b_pct || 0;
+}
+
+async function guardarConfigCosteoUI(btn) {
+  const registro = {
+    area: document.getElementById('cc-area').value,
+    mes: document.getElementById('cc-mes').value.trim(),
+    costos_fijos_monto: parseFloat(document.getElementById('cc-fijos').value) || 0,
+    remuneracion_monto: parseFloat(document.getElementById('cc-remuneracion').value) || 0,
+    merma_pct: parseFloat(document.getElementById('cc-merma').value) || 0,
+    utilidad_b2c_pct: parseFloat(document.getElementById('cc-utilidad-b2c').value) || 0,
+    utilidad_b2b_pct: parseFloat(document.getElementById('cc-utilidad-b2b').value) || 0,
+    fuente: document.getElementById('cc-sync-estado').textContent.includes('Sincronizado') ? 'auto+manual' : 'manual'
+  };
+  if (!registro.mes) { toast('Ingresa el mes', 'error'); return; }
+  bloquearBtn(btn, 'Guardando...');
+  try {
+    await escribirEnSheet('guardar_config_costeo', { registro });
+    toast('Configuración guardada');
+    renderVistaConfigCosteo();
+  } catch(e) {
+    toast('Error al guardar', 'error');
+  }
+  desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar', true);
 }
 
 async function renderVistaCostos() {
