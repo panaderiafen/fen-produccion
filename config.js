@@ -51,7 +51,15 @@ function csvAObjetos(csv) {
   return lineas.slice(1).map(linea => {
     const valores = parseCsvLinea(linea);
     const obj = {};
-    headers.forEach((h, i) => { obj[h.trim().replace(/"/g,'')] = (valores[i]||'').trim().replace(/^"|"$/g,''); });
+    headers.forEach((h, i) => {
+      let v = (valores[i]||'').trim().replace(/^"|"$/g,'');
+      // Si la celda del Sheet tenía formato de miles (ej. "1,681.00" por formato
+      // de moneda), el CSV exportado trae el texto formateado en vez del número
+      // crudo — se limpia acá para que todo lo que consuma este valor reciba
+      // un número parseable, no un string con comas.
+      if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(v)) v = v.replace(/,/g, '');
+      obj[h.trim().replace(/"/g,'')] = v;
+    });
     return obj;
   }).filter(o => Object.values(o).some(v => v));
 }
