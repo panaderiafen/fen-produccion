@@ -333,7 +333,7 @@ function renderSidebar() {
       { id: 'materias-primas',icon: 'ti-list',                  label: 'Materias primas'     },
       { id: 'maestro-admin',  icon: 'ti-book',                  label: 'Maestro de recetas'  },
       { id: 'costos',         icon: 'ti-chart-bar',             label: 'Estructuras de costo'},
-      { id: 'estimacion-bol', icon: 'ti-chart-arrows-vertical', label: 'Estimación BOL'      },
+      { id: 'estimacion-bol', icon: 'ti-chart-arrows-vertical', label: 'Estimación de demanda' },
       { id: 'analisis-merma', icon: 'ti-trash',                 label: 'Análisis de $ merma' },
     ].forEach(item => nav.appendChild(crearNavItem(item)));
 
@@ -398,7 +398,7 @@ function navegarA(vistaId) {
     case 'registros-caf':       renderVistaRegistrosCAF();    break;
     case 'registro-merma':      renderVistaRegistroMerma();   break;
     case 'pre-elaboraciones':   renderVistaPreElaboraciones(); break;
-    case 'estimacion-bol':      renderVistaEstimacionBOL();  break;
+    case 'estimacion-bol':      renderVistaEstimacionDemanda();  break;
     case 'analisis-merma':      renderVistaAnalisisMerma();  break;
     default: mostrarVista('empty');
   }
@@ -3419,21 +3419,84 @@ const BOL_ESTIMACION_B2C = {
 
 const BOL_DIAS_NOMBRES = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 
-function renderVistaEstimacionBOL() {
+// Promedios B2C históricos PAN (jun 2025 – jun 2026)
+const PAN_ESTIMACION_B2C = {
+  'Ciabatta': { Lun:92.61, Mar:67.43, Mié:64.2, Jue:61.88, Vie:70.22, Sáb:56.84, Dom:10.0 },
+  'Marraqueta': { Lun:9.18, Mar:21.05, Mié:20.96, Jue:19.88, Vie:21.42, Sáb:15.0, Dom:1.24 },
+  'Hogaza Clasica': { Lun:10.79, Mar:7.84, Mié:6.89, Jue:6.32, Vie:7.05, Sáb:6.31, Dom:1.25 },
+  'H. Multigrano': { Lun:9.38, Mar:9.16, Mié:7.11, Jue:6.77, Vie:7.22, Sáb:5.84, Dom:0.89 },
+  'Molde Integral (60%)': { Lun:8.96, Mar:7.09, Mié:5.71, Jue:5.91, Vie:6.96, Sáb:4.8, Dom:0.75 },
+  'Focaccia': { Lun:3.71, Mar:4.16, Mié:3.14, Jue:3.52, Vie:3.44, Sáb:2.38, Dom:0.13 },
+  'Baguette': { Lun:1.5, Mar:2.77, Mié:2.82, Jue:3.12, Vie:3.02, Sáb:2.69, Dom:0.69 },
+  'Coliza': { Lun:1.5, Mar:1.48, Mié:1.93, Jue:2.18, Vie:2.07, Sáb:0.31, Dom:0.09 },
+  'Focaccia Pesto': { Lun:1.09, Mar:1.38, Mié:1.46, Jue:1.57, Vie:1.47, Sáb:1.04, Dom:0.11 },
+  'Baguette Sésamo': { Lun:0.14, Mar:0.48, Mié:0.61, Jue:0.54, Vie:0.65, Sáb:0.47, Dom:0.04 },
+  'Hallulla Integral': { Lun:0.39, Mar:0.09, Mié:0.57, Jue:0.54, Vie:0.56, Sáb:0.31, Dom:0.07 },
+  'Hogaza Choco Nuez': { Lun:0.29, Mar:0.41, Mié:0.39, Jue:0.3, Vie:0.56, Sáb:0.4, Dom:0.04 },
+  'Hogaza Tomate Albahaca': { Lun:0.23, Mar:0.05, Mié:0.27, Jue:0.5, Vie:0.56, Sáb:0.31, Dom:0.07 },
+  'Hallullas': { Lun:0.0, Mar:0.0, Mié:0.0, Jue:0.0, Vie:0.49, Sáb:0.4, Dom:0.0 },
+  '80% Integral': { Lun:0.04, Mar:0.0, Mié:0.07, Jue:0.12, Vie:0.25, Sáb:0.18, Dom:0.02 },
+  'Ciabatta Integral': { Lun:0.0, Mar:0.0, Mié:0.0, Jue:0.34, Vie:0.07, Sáb:0.0, Dom:0.0 },
+  'Molde Blanco': { Lun:0.02, Mar:0.04, Mié:0.18, Jue:0.12, Vie:0.0, Sáb:0.0, Dom:0.0 },
+  'Pan De Campo': { Lun:0.09, Mar:0.0, Mié:0.0, Jue:0.02, Vie:0.11, Sáb:0.05, Dom:0.09 },
+};
+
+// Promedios B2B históricos PAN (dic 2025 – jul 2026)
+const PAN_ESTIMACION_B2B = {
+  'Ciabatta UNI': { Lun:79.3, Mar:102.52, Mié:81.16, Jue:63.26, Vie:67.58, Sáb:47.06, Dom:0.0 },
+  'Hogaza clásica': { Lun:22.87, Mar:42.77, Mié:26.39, Jue:20.03, Vie:22.87, Sáb:15.19, Dom:3.03 },
+  'Hogaza multigrano': { Lun:23.43, Mar:15.23, Mié:20.84, Jue:15.39, Vie:18.1, Sáb:14.61, Dom:1.33 },
+  'Molde Blanco': { Lun:8.63, Mar:5.55, Mié:6.19, Jue:4.52, Vie:5.48, Sáb:5.1, Dom:2.0 },
+  'Ciabatta kG': { Lun:4.19, Mar:4.04, Mié:5.32, Jue:3.86, Vie:3.73, Sáb:4.66, Dom:0.0 },
+  'Ciabatta Mini': { Lun:2.17, Mar:4.1, Mié:1.94, Jue:1.61, Vie:0.0, Sáb:0.0, Dom:0.0 },
+  'Molde 60% integral': { Lun:2.27, Mar:3.03, Mié:1.45, Jue:1.06, Vie:0.9, Sáb:0.0, Dom:0.0 },
+  'Focaccia Tomate': { Lun:1.03, Mar:0.74, Mié:1.65, Jue:0.61, Vie:1.13, Sáb:0.94, Dom:0.0 },
+  'Focaccia Pesto': { Lun:0.63, Mar:0.68, Mié:0.52, Jue:0.84, Vie:0.87, Sáb:1.16, Dom:0.0 },
+  'Baguette': { Lun:0.0, Mar:0.13, Mié:0.0, Jue:0.16, Vie:0.0, Sáb:0.0, Dom:0.0 },
+  'Marraqueta': { Lun:0.0, Mar:0.0, Mié:0.1, Jue:0.0, Vie:0.0, Sáb:0.0, Dom:0.0 },
+};
+
+// Promedios B2C históricos CAF (desde feb 2026 — período consistente, no desde el inicio de datos en oct 2025)
+const CAF_ESTIMACION_B2C = {
+  'Cappuccino': { Lun:1.43, Mar:0.95, Mié:2.14, Jue:1.62, Vie:1.75, Sáb:1.45, Dom:0.0 },
+  'Americano': { Lun:1.33, Mar:1.14, Mié:1.24, Jue:1.67, Vie:1.6, Sáb:1.75, Dom:0.0 },
+  'Latte': { Lun:0.38, Mar:0.52, Mié:0.81, Jue:0.76, Vie:0.45, Sáb:0.55, Dom:0.0 },
+  'Flatwhite': { Lun:0.86, Mar:0.62, Mié:0.24, Jue:0.33, Vie:0.75, Sáb:0.3, Dom:0.0 },
+  'Espresso': { Lun:0.52, Mar:0.43, Mié:0.86, Jue:0.29, Vie:0.35, Sáb:0.45, Dom:0.0 },
+  'Mocaccino': { Lun:0.76, Mar:0.38, Mié:0.38, Jue:0.38, Vie:0.35, Sáb:0.6, Dom:0.0 },
+  'Chocolate Caliente': { Lun:0.24, Mar:0.19, Mié:0.24, Jue:0.05, Vie:0.0, Sáb:0.15, Dom:0.0 },
+  'Chai Latte': { Lun:0.0, Mar:0.0, Mié:0.1, Jue:0.05, Vie:0.05, Sáb:0.0, Dom:0.0 },
+  'Golden Milk': { Lun:0.1, Mar:0.05, Mié:0.05, Jue:0.0, Vie:0.0, Sáb:0.0, Dom:0.0 },
+  'Dirty Chai': { Lun:0.0, Mar:0.0, Mié:0.1, Jue:0.0, Vie:0.0, Sáb:0.05, Dom:0.0 },
+};
+// CAF no tiene ventas B2B registradas (no aparece en hoja "Productos" del Excel B2B)
+const CAF_ESTIMACION_B2B = {};
+
+const ESTIMACION_POR_AREA = {
+  BOL: { b2b: BOL_ESTIMACION_B2B, b2c: BOL_ESTIMACION_B2C, nombre: 'Bollería', rango: 'B2B dic 2025–jul 2026 · B2C jun 2025–jun 2026' },
+  PAN: { b2b: PAN_ESTIMACION_B2B, b2c: PAN_ESTIMACION_B2C, nombre: 'Panadería', rango: 'B2B dic 2025–jul 2026 · B2C jun 2025–jun 2026' },
+  CAF: { b2b: CAF_ESTIMACION_B2B, b2c: CAF_ESTIMACION_B2C, nombre: 'Cafetería', rango: 'B2C feb 2026–jun 2026 (período consistente) · sin ventas B2B' },
+};
+
+function renderVistaEstimacionDemanda(areaSel) {
   const vista = document.getElementById('vista-estimacion-bol');
   if (!vista) return;
   mostrarVista('estimacion-bol');
+
+  const area = areaSel || App._areaEstimacionActual || 'BOL';
+  App._areaEstimacionActual = area;
+  const est = ESTIMACION_POR_AREA[area];
 
   const cfg = cargarConfigSubrecetas();
   const maxMasas = (cfg.bol?.amasadora_tandas_dia || 2) * (cfg.bol?.amasadora_max_por_tanda || 16);
   const capHorno = cfg.bol?.capacidad_horno || 90;
 
-  const productos = [...new Set([...Object.keys(BOL_ESTIMACION_B2B), ...Object.keys(BOL_ESTIMACION_B2C)])];
+  const productos = [...new Set([...Object.keys(est.b2b), ...Object.keys(est.b2c)])];
 
   // Para cada producto: calcular día más fuerte y promedios
   const analisis = productos.map(prod => {
-    const b2b = BOL_ESTIMACION_B2B[prod] || {};
-    const b2c = BOL_ESTIMACION_B2C[prod] || {};
+    const b2b = est.b2b[prod] || {};
+    const b2c = est.b2c[prod] || {};
     let maxTotal = 0, maxDia = '';
     let sumB2B = 0, sumB2C = 0, nDias = 0;
     BOL_DIAS_NOMBRES.forEach(d => {
@@ -3451,31 +3514,43 @@ function renderVistaEstimacionBOL() {
              promedioB2B, promedioB2C, promedioTotal, semTotal: Math.round(semTotal) };
   }).filter(a => a.semTotal > 0).sort((a,b) => b.semTotal - a.semTotal);
 
-  // Masas estimadas por día
-  const masasPorDia = BOL_DIAS_NOMBRES.map(d => {
+  // Masas estimadas por día — solo aplica a BOL (config de amasadora es específica de esa área)
+  const masasPorDia = area === 'BOL' ? BOL_DIAS_NOMBRES.map(d => {
     let total = 0;
     productos.forEach(prod => {
-      const b2b = BOL_ESTIMACION_B2B[prod] || {};
-      const b2c = BOL_ESTIMACION_B2C[prod] || {};
+      const b2b = est.b2b[prod] || {};
+      const b2c = est.b2c[prod] || {};
       total += parseFloat(b2b[d]||0) + parseFloat(b2c[d]||0);
     });
     const masas = Math.ceil(total / 10);
     const color = masas > maxMasas ? '#C62828' : masas > maxMasas*0.8 ? '#F57C00' : '#2E7D32';
     return { d, total: Math.round(total), masas, color };
-  });
+  }) : [];
 
   vista.innerHTML = `
     <div class="vista-header">
       <div>
-        <div class="vista-eyebrow">Bollería — Admin</div>
+        <div class="vista-eyebrow">${est.nombre} — Admin</div>
         <h1 class="vista-titulo">Estimación de demanda</h1>
       </div>
     </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      ${Object.entries(ESTIMACION_POR_AREA).map(([cod, e]) => `
+        <button class="${area===cod?'btn-primario':'btn-secundario'}" style="font-size:12px;padding:6px 14px"
+          onclick="renderVistaEstimacionDemanda('${cod}')">${e.nombre}</button>
+      `).join('')}
+    </div>
     <p style="font-size:12px;color:var(--txt2);margin-bottom:20px">
-      Basado en datos reales: B2B dic 2025–jul 2026 · B2C jun 2025–jun 2026.
+      Basado en datos reales: ${est.rango}.
       Úsalo como referencia para definir tu meta de producción.
     </p>
 
+    ${!analisis.length ? `
+      <div class="empty-state">
+        <i class="ti ti-chart-arrows-vertical"></i>
+        <h2>Sin datos suficientes</h2>
+        <p>No hay historial de ventas registrado para ${est.nombre}.</p>
+      </div>` : `
     <div class="card" style="margin-bottom:16px">
       <div class="card-head"><i class="ti ti-flame"></i> Días clave por producto</div>
       ${analisis.map(a => `
@@ -3493,8 +3568,9 @@ function renderVistaEstimacionBOL() {
             </div>
           </div>
         </div>`).join('')}
-    </div>
+    </div>`}
 
+    ${area === 'BOL' && analisis.length ? `
     <div class="card">
       <div class="card-head" style="background:#FFF3E0;color:#E65100">
         <i class="ti ti-stack-2"></i> Masas estimadas por día (histórico)
@@ -3514,6 +3590,7 @@ function renderVistaEstimacionBOL() {
         ⚠ Estos son promedios históricos. Tu producción actual (~900 croissants/semana) ya los supera — úsalos como piso, no como techo.
       </div>
     </div>
+    ` : ''}
   `;
 }
 
