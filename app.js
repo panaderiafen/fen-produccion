@@ -5305,6 +5305,7 @@ function renderVistaMP() {
     </div>
     <div class="card">
       <div class="card-head"><i class="ti ti-list"></i> Catálogo (${mpFiltrada.filter(m=>m.estado==='activa').length} activas)</div>
+      <div style="overflow-x:auto">
       <table class="tabla-vista">
         <thead><tr>
           <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">MP</th>
@@ -5342,6 +5343,7 @@ function renderVistaMP() {
           }).join('')}
         </tbody>
       </table>
+      </div>
     </div>
   `;
   mostrarVista('mp');
