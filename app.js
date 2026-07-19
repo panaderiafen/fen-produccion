@@ -5710,39 +5710,97 @@ async function guardarConfigCosteoUI(btn) {
 async function renderVistaCostos() {
   const ec = await Cache.get('EC_productos', () => leerHoja('EC_productos'));
   const vista = document.getElementById('vista-costos');
+  const hoy = new Date();
+  const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
   vista.innerHTML = `
     <div class="vista-header"><h1 class="vista-titulo">Estructuras de costo</h1></div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head"><i class="ti ti-calculator"></i> Calcular (Fase 2)</div>
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:16px">
+        <div class="campo">
+          <label>Área</label>
+          <select id="ec-area" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+            ${Object.entries(FEN.AREAS).map(([cod,a]) => `<option value="${cod}">${a.nombre}</option>`).join('')}
+          </select>
+        </div>
+        <div class="campo">
+          <label>Mes (YYYY-MM)</label>
+          <input type="text" id="ec-mes" value="${mesActual}" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <button class="btn-primario" onclick="calcularECUI(this)">
+          <i class="ti ti-refresh"></i> Calcular estructuras de costo
+        </button>
+        <span id="ec-calc-estado" style="font-size:12px;color:var(--txt3)"></span>
+      </div>
+      <p style="font-size:11px;color:var(--txt3);padding:0 16px 14px">
+        Requiere que ya exista una Config de costeo guardada para esa área/mes (costos fijos, remuneración, %merma, %utilidad).
+      </p>
+    </div>
     ${!ec.length ? `
       <div class="empty-state">
         <i class="ti ti-chart-bar-off"></i>
         <h2>Sin datos</h2>
-        <p>Las EC aparecen aquí cuando se aprueban recetas.</p>
+        <p>Calcule las estructuras de costo arriba, o espere a que se aprueben recetas.</p>
       </div>` : `
       <div class="card">
         <div class="card-head"><i class="ti ti-calculator"></i> Todos los productos</div>
+        <div style="overflow-x:auto">
         <table class="tabla-vista">
           <thead><tr>
             <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Producto</th>
             <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Área</th>
-            <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Costo MP</th>
+            <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">MP+Insumos</th>
+            <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Merma</th>
+            <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Fijos</th>
+            <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Remun.</th>
+            <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Costo total</th>
             <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">P. B2C</th>
             <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">P. B2B</th>
-            <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Margen B2C</th>
+            <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Util. %</th>
           </tr></thead>
           <tbody>
             ${ec.map(r => `<tr>
               <td class="td-nombre">${r.nombre}</td>
               <td style="font-size:13px;color:var(--txt2)">${r.área}</td>
-              <td class="td-num">${clp(r.costo_MP_unit)}</td>
+              <td class="td-num">${clp((parseFloat(r.costo_MP_unit)||0) + (parseFloat(r.costo_insumos_unit)||0))}</td>
+              <td class="td-num">${clp(r.costo_merma_unit||0)}</td>
+              <td class="td-num">${clp(r.costos_fijos_unit||0)}</td>
+              <td class="td-num">${clp(r.remuneracion_unit||0)}</td>
+              <td class="td-num" style="font-weight:600">${clp(r.total_costo_produccion||0)}</td>
               <td class="td-num">${clp(r.precio_B2C)}</td>
               <td class="td-num">${clp(r.precio_B2B)}</td>
               <td class="td-num" style="color:#2E7D32">${parseFloat(r['utilidad_mes_%']||0).toFixed(1)}%</td>
             </tr>`).join('')}
           </tbody>
         </table>
+        </div>
       </div>`}
   `;
   mostrarVista('costos');
+}
+
+async function calcularECUI(btn) {
+  const area = document.getElementById('ec-area').value;
+  const mes = document.getElementById('ec-mes').value.trim();
+  const estadoEl = document.getElementById('ec-calc-estado');
+  bloquearBtn(btn, 'Calculando...');
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'calcular_ec', area, mes }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    if (data.ok) {
+      estadoEl.textContent = '✓ ' + data.msg;
+      Cache.invalidar('EC_productos');
+      desbloquearBtn(btn, '<i class="ti ti-refresh"></i> Calcular estructuras de costo', true);
+      renderVistaCostos();
+      return;
+    } else {
+      estadoEl.textContent = 'Error: ' + (data.msg||'');
+    }
+  } catch(e) {
+    estadoEl.textContent = 'No se pudo calcular: ' + e.message;
+  }
+  desbloquearBtn(btn, '<i class="ti ti-refresh"></i> Calcular estructuras de costo', true);
 }
 
 // ── ADMIN: MAESTRO ────────────────────────────────────────────
