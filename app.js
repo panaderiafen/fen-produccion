@@ -5732,7 +5732,8 @@ async function renderVistaCostos() {
   const ec = await Cache.get('EC_productos', () => leerHoja('EC_productos'));
   const vista = document.getElementById('vista-costos');
   const hoy = new Date();
-  const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+  const mesActual = App._ecMesActual || `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+  const areaActual = App._ecAreaActual || Object.keys(FEN.AREAS)[0];
   vista.innerHTML = `
     <div class="vista-header"><h1 class="vista-titulo">Estructuras de costo</h1></div>
     <div class="card" style="margin-bottom:16px">
@@ -5741,7 +5742,7 @@ async function renderVistaCostos() {
         <div class="campo">
           <label>Área</label>
           <select id="ec-area" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
-            ${Object.entries(FEN.AREAS).map(([cod,a]) => `<option value="${cod}">${a.nombre}</option>`).join('')}
+            ${Object.entries(FEN.AREAS).map(([cod,a]) => `<option value="${cod}" ${cod===areaActual?'selected':''}>${a.nombre}</option>`).join('')}
           </select>
         </div>
         <div class="campo">
@@ -5803,6 +5804,8 @@ async function renderVistaCostos() {
 async function calcularECUI(btn) {
   const area = document.getElementById('ec-area').value;
   const mes = document.getElementById('ec-mes').value.trim();
+  App._ecAreaActual = area;
+  App._ecMesActual = mes;
   const estadoEl = document.getElementById('ec-calc-estado');
   bloquearBtn(btn, 'Calculando...');
   try {
