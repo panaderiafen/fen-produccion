@@ -334,6 +334,7 @@ function renderSidebar() {
       { id: 'maestro-admin',  icon: 'ti-book',                  label: 'Maestro de recetas'  },
       { id: 'costos',         icon: 'ti-chart-bar',             label: 'Estructuras de costo'},
       { id: 'estimacion-bol', icon: 'ti-chart-arrows-vertical', label: 'Estimación BOL'      },
+      { id: 'analisis-merma', icon: 'ti-trash',                 label: 'Análisis de $ merma' },
     ].forEach(item => nav.appendChild(crearNavItem(item)));
 
     // Area shortcuts for admin
@@ -398,6 +399,7 @@ function navegarA(vistaId) {
     case 'registro-merma':      renderVistaRegistroMerma();   break;
     case 'pre-elaboraciones':   renderVistaPreElaboraciones(); break;
     case 'estimacion-bol':      renderVistaEstimacionBOL();  break;
+    case 'analisis-merma':      renderVistaAnalisisMerma();  break;
     default: mostrarVista('empty');
   }
 }
@@ -2577,10 +2579,8 @@ async function renderVistaRegistroMerma() {
       </select>
     </div>
 
-    <div id="resumen-merma" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px"></div>
-
     <div class="card">
-      <div class="card-head"><i class="ti ti-list"></i> Registros</div>
+      <div class="card-head"><i class="ti ti-list"></i> Tus registros</div>
       <div id="tabla-registros-merma" style="overflow-x:auto"></div>
     </div>
   `;
@@ -2620,21 +2620,6 @@ function renderTablaRegistrosMerma() {
   }).sort((a,b) => b.fecha.localeCompare(a.fecha) || (b.hora||'').localeCompare(a.hora||''));
 
   const motivos = { derrame_error:'Derrame/error', devolucion_cliente:'Devolución cliente', vencimiento:'Vencimiento', prueba_receta:'Prueba de receta', otro:'Otro' };
-  const totalCosto = filtrados.reduce((s,r) => s + (parseFloat(r.costo_calculado)||0), 0);
-
-  const resumenEl = document.getElementById('resumen-merma');
-  if (resumenEl) {
-    resumenEl.innerHTML = `
-      <div style="background:var(--surface);border:2px solid #C62828;border-radius:var(--r-md);padding:10px 16px;min-width:160px">
-        <div style="font-size:11px;color:var(--txt3)">🗑️ Costo total perdido</div>
-        <div style="font-size:20px;font-weight:700;color:#C62828;font-family:'DM Mono',monospace">${clp(totalCosto)}</div>
-      </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 16px;min-width:130px">
-        <div style="font-size:11px;color:var(--txt3)">Registros</div>
-        <div style="font-size:20px;font-weight:700;font-family:'DM Mono',monospace">${filtrados.length}</div>
-      </div>
-    `;
-  }
 
   const tablaEl = document.getElementById('tabla-registros-merma');
   if (!tablaEl) return;
@@ -2651,7 +2636,6 @@ function renderTablaRegistrosMerma() {
         <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Ítem</th>
         <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Cantidad</th>
         <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Motivo</th>
-        <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Costo</th>
         <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Nota</th>
       </tr></thead>
       <tbody>
@@ -2661,7 +2645,6 @@ function renderTablaRegistrosMerma() {
             <td style="padding:8px 14px;font-size:12px;font-weight:600">${r.item_nombre || ''} ${r.tipo_perdida === 'mp' ? '<span style="font-size:10px;color:var(--txt3)">(MP)</span>' : ''}</td>
             <td style="padding:8px 14px;font-size:12px;text-align:right">${parseFloat(r.cantidad||0)} ${r.unidad||''}</td>
             <td style="padding:8px 14px;font-size:12px">${motivos[r.motivo] || r.motivo || ''}</td>
-            <td style="padding:8px 14px;font-size:12px;text-align:right;color:#C62828;font-weight:600">${clp(r.costo_calculado||0)}</td>
             <td style="padding:8px 14px;font-size:12px;color:var(--txt2)">${r.nota || ''}</td>
           </tr>
         `).join('')}
@@ -5352,6 +5335,131 @@ async function cambiarTipoMP(mpId, tipoActual, nombre) {
 }
 
 // ── ADMIN: COSTOS ─────────────────────────────────────────────
+// ── ADMIN: ANÁLISIS DE $ MERMA ────────────────────────────────
+let _mermaTodasAreas = [];
+
+async function renderVistaAnalisisMerma() {
+  const vista = document.getElementById('vista-analisis-merma');
+  if (!vista) return;
+  mostrarVista('analisis-merma');
+
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_registro_merma' }));
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    _mermaTodasAreas = data.registros || [];
+  } catch(e) {
+    _mermaTodasAreas = [];
+  }
+
+  vista.innerHTML = `
+    <div class="vista-header">
+      <h1 class="vista-titulo">Análisis de $ merma</h1>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      <select id="filtro-analisis-merma-area" onchange="renderAnalisisMerma()"
+        style="padding:7px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+        <option value="">Todas las áreas</option>
+        ${Object.entries(FEN.AREAS).map(([cod,a]) => `<option value="${cod}">${a.nombre}</option>`).join('')}
+      </select>
+      <select id="filtro-analisis-merma-periodo" onchange="renderAnalisisMerma()"
+        style="padding:7px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+        <option value="semana">Esta semana</option>
+        <option value="mes" selected>Este mes</option>
+        <option value="todos">Todos</option>
+      </select>
+    </div>
+    <div id="resumen-analisis-merma" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px"></div>
+    <div class="card">
+      <div class="card-head"><i class="ti ti-list"></i> Detalle</div>
+      <div id="tabla-analisis-merma" style="overflow-x:auto"></div>
+    </div>
+  `;
+  renderAnalisisMerma();
+}
+
+function renderAnalisisMerma() {
+  const areaFiltro = document.getElementById('filtro-analisis-merma-area')?.value || '';
+  const periodo     = document.getElementById('filtro-analisis-merma-periodo')?.value || 'mes';
+
+  const hoy = new Date();
+  const off = hoy.getTimezoneOffset() * 60000;
+  const fechaHoy = new Date(hoy - off).toISOString().slice(0,10);
+  const lunesSemana = (() => {
+    const d = new Date(hoy);
+    d.setDate(d.getDate() - (d.getDay()===0?6:d.getDay()-1));
+    return new Date(d - off).toISOString().slice(0,10);
+  })();
+  const primerMes = fechaHoy.slice(0,7) + '-01';
+
+  let filtrados = _mermaTodasAreas.filter(r => {
+    if (areaFiltro && r.area_codigo !== areaFiltro) return false;
+    if (periodo === 'semana' && r.fecha < lunesSemana) return false;
+    if (periodo === 'mes' && r.fecha < primerMes) return false;
+    return true;
+  }).sort((a,b) => b.fecha.localeCompare(a.fecha) || (b.hora||'').localeCompare(a.hora||''));
+
+  const motivos = { derrame_error:'Derrame/error', devolucion_cliente:'Devolución cliente', vencimiento:'Vencimiento', prueba_receta:'Prueba de receta', otro:'Otro' };
+  const totalCosto = filtrados.reduce((s,r) => s + (parseFloat(r.costo_calculado)||0), 0);
+
+  // Desglose por área
+  const porArea = {};
+  filtrados.forEach(r => { porArea[r.area_codigo] = (porArea[r.area_codigo]||0) + (parseFloat(r.costo_calculado)||0); });
+
+  const resumenEl = document.getElementById('resumen-analisis-merma');
+  if (resumenEl) {
+    resumenEl.innerHTML = `
+      <div style="background:var(--surface);border:2px solid #C62828;border-radius:var(--r-md);padding:10px 16px;min-width:160px">
+        <div style="font-size:11px;color:var(--txt3)">🗑️ Total perdido</div>
+        <div style="font-size:20px;font-weight:700;color:#C62828;font-family:'DM Mono',monospace">${clp(totalCosto)}</div>
+      </div>
+      ${Object.entries(porArea).map(([cod, monto]) => `
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 16px;min-width:140px">
+          <div style="font-size:11px;color:var(--txt3)">${FEN.AREAS[cod]?.nombre || cod}</div>
+          <div style="font-size:18px;font-weight:700;font-family:'DM Mono',monospace">${clp(monto)}</div>
+        </div>
+      `).join('')}
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 16px;min-width:110px">
+        <div style="font-size:11px;color:var(--txt3)">Registros</div>
+        <div style="font-size:20px;font-weight:700;font-family:'DM Mono',monospace">${filtrados.length}</div>
+      </div>
+    `;
+  }
+
+  const tablaEl = document.getElementById('tabla-analisis-merma');
+  if (!tablaEl) return;
+  if (!filtrados.length) {
+    tablaEl.innerHTML = '<p style="padding:20px;color:var(--txt3);font-size:13px;text-align:center">Sin registros para los filtros seleccionados.</p>';
+    return;
+  }
+  tablaEl.innerHTML = `
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr>
+        <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Fecha</th>
+        <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Área</th>
+        <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Ítem</th>
+        <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Cantidad</th>
+        <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Motivo</th>
+        <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Costo</th>
+        <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Nota</th>
+      </tr></thead>
+      <tbody>
+        ${filtrados.map(r => `
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:8px 14px;font-size:12px">${r.fecha}${r.hora ? ' · '+r.hora : ''}</td>
+            <td style="padding:8px 14px;font-size:12px">${FEN.AREAS[r.area_codigo]?.nombre || r.area_codigo}</td>
+            <td style="padding:8px 14px;font-size:12px;font-weight:600">${r.item_nombre || ''} ${r.tipo_perdida === 'mp' ? '<span style="font-size:10px;color:var(--txt3)">(MP)</span>' : ''}</td>
+            <td style="padding:8px 14px;font-size:12px;text-align:right">${parseFloat(r.cantidad||0)} ${r.unidad||''}</td>
+            <td style="padding:8px 14px;font-size:12px">${motivos[r.motivo] || r.motivo || ''}</td>
+            <td style="padding:8px 14px;font-size:12px;text-align:right;color:#C62828;font-weight:600">${clp(r.costo_calculado||0)}</td>
+            <td style="padding:8px 14px;font-size:12px;color:var(--txt2)">${r.nota || ''}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
 async function renderVistaCostos() {
   const ec = await Cache.get('EC_productos', () => leerHoja('EC_productos'));
   const vista = document.getElementById('vista-costos');
