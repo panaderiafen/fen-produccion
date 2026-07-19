@@ -107,6 +107,7 @@
       <div class="vista" id="vista-resumen-semanal"></div>
       <div class="vista" id="vista-consolidado-mensual"></div>
       <div class="vista" id="vista-registros-caf"></div>
+      <div class="vista" id="vista-registro-merma"></div>
       <div class="vista" id="vista-pre-elaboraciones"></div>
       <div class="vista" id="vista-estimacion-bol"></div>
 
@@ -259,6 +260,71 @@
       <button class="btn-secundario" onclick="cerrarModalCrearMPAdmin()">Cancelar</button>
       <button class="btn-primario" onclick="crearMPAdmin(this)">
         <i class="ti ti-plus"></i> Crear
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Registro de merma -->
+<div class="modal-fondo hidden" id="modal-registro-merma">
+  <div class="modal" style="max-width:460px;text-align:left">
+    <div class="modal-ico" style="background:#FFEBEE;color:#C62828">
+      <i class="ti ti-trash"></i>
+    </div>
+    <h3 style="text-align:center">Nuevo registro de merma</h3>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px">
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>¿Qué se perdió?</label>
+        <select id="merma-tipo-perdida" onchange="onCambioTipoPerdidaMerma()" style="width:100%;padding:8px 12px;border:none;font-size:13px;font-family:inherit;background:none">
+          <option value="receta">Producto / preparación (con receta)</option>
+          <option value="mp">Materia prima individual (aún sin procesar)</option>
+        </select>
+      </div>
+      <div class="campo" id="merma-campo-receta" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Receta</label>
+        <select id="merma-receta-id" onchange="onCambioItemMerma()" style="width:100%;padding:8px 12px;border:none;font-size:13px;font-family:inherit;background:none">
+          <option value="">— Seleccionar —</option>
+        </select>
+      </div>
+      <div class="campo hidden" id="merma-campo-mp" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Materia prima</label>
+        <select id="merma-mp-id" onchange="onCambioItemMerma()" style="width:100%;padding:8px 12px;border:none;font-size:13px;font-family:inherit;background:none">
+          <option value="">— Seleccionar —</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:12px">
+        <div class="campo" style="flex:1;border:1px solid var(--border);border-radius:var(--r-md)">
+          <label>Cantidad</label>
+          <input type="number" id="merma-cantidad" placeholder="0" min="0" step="0.1" oninput="calcularCostoPreviewMerma()">
+        </div>
+        <div class="campo" style="flex:1;border:1px solid var(--border);border-radius:var(--r-md);display:flex;flex-direction:column;justify-content:center">
+          <label>Unidad</label>
+          <div id="merma-unidad-label" style="font-size:13px;padding:8px 12px 8px 0;color:var(--txt2)">unidades</div>
+        </div>
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Motivo</label>
+        <select id="merma-motivo" style="width:100%;padding:8px 12px;border:none;font-size:13px;font-family:inherit;background:none">
+          <option value="derrame_error">Derrame / error</option>
+          <option value="devolucion_cliente">Devolución de cliente</option>
+          <option value="vencimiento">Vencimiento</option>
+          <option value="prueba_receta">Prueba de receta</option>
+          <option value="otro">Otro</option>
+        </select>
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Nota (opcional)</label>
+        <input type="text" id="merma-nota" placeholder="Ej: cliente se arrepintió">
+      </div>
+      <div class="campo full" style="background:var(--bg);border-radius:var(--r-sm);padding:10px 14px;text-align:center">
+        <div style="font-size:11px;color:var(--txt3)">Costo estimado perdido</div>
+        <div style="font-size:22px;font-weight:700;color:#C62828;font-family:'DM Mono',monospace" id="merma-costo-preview">$0</div>
+      </div>
+    </div>
+    <div class="modal-acciones" style="margin-top:20px">
+      <button class="btn-secundario" onclick="document.getElementById('modal-registro-merma').classList.add('hidden')">Cancelar</button>
+      <button class="btn-primario" onclick="guardarRegistroMerma(this)">
+        <i class="ti ti-check"></i> Guardar
       </button>
     </div>
   </div>
