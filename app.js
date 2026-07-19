@@ -5333,31 +5333,10 @@ function renderVistaMP() {
                 <span class="estado-badge" style="color:${est.c};background:${est.bg}">${est.l}</span>
               </td>
               <td style="text-align:right;padding:6px 12px">
-                <div style="display:flex;gap:4px;justify-content:flex-end">
-                  <button class="btn-secundario" style="font-size:12px;padding:4px 10px"
-                    onclick="editarMP('${m.ID_MP}')" title="Editar precio">
-                    <i class="ti ti-edit"></i>
-                  </button>
-                  <button class="btn-secundario" style="font-size:12px;padding:4px 10px;color:${m.estado==='inactiva'?'#2E7D32':'#C62828'};border-color:${m.estado==='inactiva'?'#A5D6A7':'#FFCDD2'}"
-                    onclick="toggleEstadoMP('${m.ID_MP}','${m.estado}')" title="${m.estado==='inactiva'?'Activar':'Desactivar'}">
-                    <i class="ti ${m.estado==='inactiva'?'ti-eye':'ti-eye-off'}"></i>
-                  </button>
-                  <button class="btn-secundario" style="font-size:12px;padding:4px 10px"
-                    onclick="gestionarAreasMP('${m.ID_MP}')" title="Gestionar areas">
-                    <i class="ti ti-layout-grid"></i>
-                  </button>
-                  ${m.tipo !== 'sub_receta' ? `
-                  <button class="btn-secundario" style="font-size:12px;padding:4px 10px"
-                    onclick="cambiarTipoMP('${m.ID_MP}','${m.tipo || 'mp'}','${(m.nombre||'').replace(/'/g,"\\'")}')"
-                    title="${(m.tipo || 'mp') === 'insumo' ? 'Marcar como Materia Prima' : 'Marcar como Insumo'}">
-                    <i class="ti ti-package"></i>
-                  </button>
-                  <button class="btn-secundario" style="font-size:12px;padding:4px 10px"
-                    onclick="cambiarUnidadCompra('${m.ID_MP}','${(m.unidad_compra||'kg').toLowerCase()}','${(m.nombre||'').replace(/'/g,"\\'")}')"
-                    title="Unidad de compra actual: ${(m.unidad_compra||'kg').toLowerCase()} — clic para cambiar">
-                    <i class="ti ti-ruler-2"></i>
-                  </button>` : ''}
-                </div>
+                <button class="btn-secundario" style="font-size:14px;padding:6px 14px"
+                  onclick='abrirAccionesMP(${JSON.stringify(m.ID_MP)})' title="Acciones">
+                  <i class="ti ti-dots-vertical"></i>
+                </button>
               </td>
             </tr>`;
           }).join('')}
@@ -5366,6 +5345,45 @@ function renderVistaMP() {
     </div>
   `;
   mostrarVista('mp');
+}
+
+function abrirAccionesMP(mpId) {
+  const m = App.materiasPrimas.find(x => x.ID_MP === mpId);
+  if (!m) return;
+
+  document.getElementById('acciones-mp-titulo').textContent = m.nombre;
+  document.getElementById('acciones-mp-subtitulo').textContent = m.ID_MP + ' · ' + (m.categoría || 'Sin categoría');
+
+  const nombreEscapado = (m.nombre || '').replace(/'/g, "\\'");
+  const tipoActual = m.tipo || 'mp';
+  const unidadActual = (m.unidad_compra || 'kg').toLowerCase();
+  const esInactiva = m.estado === 'inactiva';
+
+  const botones = [
+    { icono: 'ti-edit', label: 'Editar precio', accion: `editarMP('${mpId}')` },
+    { icono: esInactiva ? 'ti-eye' : 'ti-eye-off', label: esInactiva ? 'Activar' : 'Desactivar',
+      color: esInactiva ? '#2E7D32' : '#C62828', accion: `toggleEstadoMP('${mpId}','${m.estado}')` },
+    { icono: 'ti-layout-grid', label: 'Gestionar áreas', accion: `gestionarAreasMP('${mpId}')` },
+  ];
+  if (tipoActual !== 'sub_receta') {
+    botones.push({ icono: 'ti-package', label: tipoActual === 'insumo' ? 'Marcar como Materia Prima' : 'Marcar como Insumo',
+      accion: `cambiarTipoMP('${mpId}','${tipoActual}','${nombreEscapado}')` });
+    botones.push({ icono: 'ti-ruler-2', label: 'Cambiar unidad de compra (actual: ' + unidadActual + ')',
+      accion: `cambiarUnidadCompra('${mpId}','${unidadActual}','${nombreEscapado}')` });
+  }
+
+  document.getElementById('acciones-mp-botones').innerHTML = botones.map(b => `
+    <button class="btn-secundario" style="width:100%;justify-content:flex-start;gap:10px;padding:12px 14px;font-size:14px;${b.color?'color:'+b.color:''}"
+      onclick="cerrarModalAccionesMP(); ${b.accion}">
+      <i class="ti ${b.icono}" style="font-size:18px"></i> ${b.label}
+    </button>
+  `).join('');
+
+  document.getElementById('modal-acciones-mp').classList.remove('hidden');
+}
+
+function cerrarModalAccionesMP() {
+  document.getElementById('modal-acciones-mp').classList.add('hidden');
 }
 
 async function cambiarUnidadCompra(mpId, unidadActual, nombre) {
