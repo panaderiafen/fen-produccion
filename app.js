@@ -5363,6 +5363,7 @@ function abrirAccionesMP(mpId) {
 
   const botones = [
     { icono: 'ti-edit', label: 'Editar precio', accion: `editarMP('${mpId}')` },
+    { icono: 'ti-receipt-tax', label: 'Editar IVA / impuesto adicional', accion: `editarImpuestosMP('${mpId}')` },
     { icono: esInactiva ? 'ti-eye' : 'ti-eye-off', label: esInactiva ? 'Activar' : 'Desactivar',
       color: esInactiva ? '#2E7D32' : '#C62828', accion: `toggleEstadoMP('${mpId}','${m.estado}')` },
     { icono: 'ti-layout-grid', label: 'Gestionar áreas', accion: `gestionarAreasMP('${mpId}')` },
@@ -5958,6 +5959,47 @@ function cerrarModalSolicitarMP() {
   // Resetear select que activó el modal
   const selects = document.querySelectorAll('#tbody-ingr select');
   selects.forEach(s => { if (s.value === '__nueva__') s.value = ''; });
+}
+
+async function editarImpuestosMP(mpId) {
+  const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
+  if (!mp) return;
+
+  const ivaActual = ((parseFloat(mp['IVA_%']) || 0.19) * 100).toFixed(0);
+  const nuevoIva = prompt(
+    `IVA de "${mp.nombre}"\nActual: ${ivaActual}%\n\nNuevo IVA (%) — use 0 si está exento:`,
+    ivaActual
+  );
+  if (nuevoIva === null) return;
+  const ivaPct = parseFloat(nuevoIva);
+  if (isNaN(ivaPct)) { toast('IVA inválido', 'error'); return; }
+
+  const impActual = ((parseFloat(mp['imp_adicional_%']) || 0) * 100).toFixed(0);
+  const nuevoImp = prompt(
+    `Impuesto adicional de "${mp.nombre}"\nActual: ${impActual}%\n\nNuevo impuesto adicional (%) — ej: 12 para harina de trigo, 0 si no aplica:`,
+    impActual
+  );
+  if (nuevoImp === null) return;
+  const impPct = parseFloat(nuevoImp);
+  if (isNaN(impPct)) { toast('Impuesto adicional inválido', 'error'); return; }
+
+  await escribirEnSheet('editar_mp', {
+    ID_MP: mpId,
+    costo_neto: mp.costo_neto || 0,
+    iva_pct: ivaPct / 100,
+    imp_adicional_pct: impPct / 100
+  });
+
+  mp['IVA_%'] = ivaPct / 100;
+  mp['imp_adicional_%'] = impPct / 100;
+  const bruto = (parseFloat(mp.costo_neto) || 0) * (1 + ivaPct/100 + impPct/100);
+  const esPorUnidad = (mp.unidad_compra || 'kg').toLowerCase() === 'un';
+  mp.costo_por_gramo = esPorUnidad ? bruto : bruto / 1000;
+  mp.costo_por_kg = bruto;
+
+  toast('Impuestos actualizados');
+  Cache.invalidar('mp_maestro');
+  renderVistaMP();
 }
 
 function editarMP(mpId) {
