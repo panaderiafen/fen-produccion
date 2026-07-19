@@ -306,6 +306,7 @@ function renderSidebar() {
       { id: 'planificacion',     icon: 'ti-calendar-week',  label: 'Plan semanal'       },
       { id: 'recetas-del-dia', icon: 'ti-flame', label: 'Recetas del día' },
       { id: 'maestro',         icon: 'ti-book',  label: 'Maestro de recetas' },
+      { id: 'registro-merma',  icon: 'ti-trash', label: 'Registro de merma' },
     ];
     if (App.areaCodigo === 'CAF') items.splice(2, 2);
     // BOL: rename recetas-del-dia and add pre-elaboraciones
@@ -394,6 +395,7 @@ function navegarA(vistaId) {
     case 'resumen-semanal':     renderVistaResumenSemanal(); break;
     case 'consolidado-mensual': renderVistaConsolidado();    break;
     case 'registros-caf':       renderVistaRegistrosCAF();    break;
+    case 'registro-merma':      renderVistaRegistroMerma();   break;
     case 'pre-elaboraciones':   renderVistaPreElaboraciones(); break;
     case 'estimacion-bol':      renderVistaEstimacionBOL();  break;
     default: mostrarVista('empty');
@@ -2543,6 +2545,254 @@ let _stockCAFCache = [];
 // ── CAF: REGISTROS DE TURNO ──────────────────────────────────
 let _cafBaristas = [];
 let _cafRegistros = [];
+
+// ── REGISTRO DE MERMA (PAN/BOL/CAF/PAS) ───────────────────────
+let _mermaRegistros = [];
+
+async function renderVistaRegistroMerma() {
+  const vista = document.getElementById('vista-registro-merma');
+  if (!vista) return;
+  mostrarVista('registro-merma');
+
+  await cargarRegistrosMerma();
+
+  vista.innerHTML = `
+    <div class="vista-header">
+      <div>
+        <div class="vista-eyebrow">${App.area?.nombre}</div>
+        <h1 class="vista-titulo">Registro de merma</h1>
+      </div>
+      <button class="btn-primario" onclick="abrirModalRegistroMerma()">
+        <i class="ti ti-plus"></i> Nuevo registro
+      </button>
+    </div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      <select id="filtro-merma-periodo" onchange="renderTablaRegistrosMerma()"
+        style="padding:7px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+        <option value="hoy">Hoy</option>
+        <option value="semana" selected>Esta semana</option>
+        <option value="mes">Este mes</option>
+        <option value="todos">Todos</option>
+      </select>
+    </div>
+
+    <div id="resumen-merma" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px"></div>
+
+    <div class="card">
+      <div class="card-head"><i class="ti ti-list"></i> Registros</div>
+      <div id="tabla-registros-merma" style="overflow-x:auto"></div>
+    </div>
+  `;
+
+  renderTablaRegistrosMerma();
+}
+
+async function cargarRegistrosMerma() {
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_registro_merma', area_codigo: App.areaCodigo }));
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    _mermaRegistros = data.registros || [];
+  } catch(e) {
+    console.warn('[fën] No se pudieron cargar registros de merma:', e.message);
+    _mermaRegistros = [];
+  }
+}
+
+function renderTablaRegistrosMerma() {
+  const periodo = document.getElementById('filtro-merma-periodo')?.value || 'semana';
+  const hoy = new Date();
+  const off = hoy.getTimezoneOffset() * 60000;
+  const fechaHoy = new Date(hoy - off).toISOString().slice(0,10);
+  const lunesSemana = (() => {
+    const d = new Date(hoy);
+    d.setDate(d.getDate() - (d.getDay()===0?6:d.getDay()-1));
+    return new Date(d - off).toISOString().slice(0,10);
+  })();
+  const primerMes = fechaHoy.slice(0,7) + '-01';
+
+  let filtrados = _mermaRegistros.filter(r => {
+    if (periodo === 'hoy' && r.fecha !== fechaHoy) return false;
+    if (periodo === 'semana' && r.fecha < lunesSemana) return false;
+    if (periodo === 'mes' && r.fecha < primerMes) return false;
+    return true;
+  }).sort((a,b) => b.fecha.localeCompare(a.fecha) || (b.hora||'').localeCompare(a.hora||''));
+
+  const motivos = { derrame_error:'Derrame/error', devolucion_cliente:'Devolución cliente', vencimiento:'Vencimiento', prueba_receta:'Prueba de receta', otro:'Otro' };
+  const totalCosto = filtrados.reduce((s,r) => s + (parseFloat(r.costo_calculado)||0), 0);
+
+  const resumenEl = document.getElementById('resumen-merma');
+  if (resumenEl) {
+    resumenEl.innerHTML = `
+      <div style="background:var(--surface);border:2px solid #C62828;border-radius:var(--r-md);padding:10px 16px;min-width:160px">
+        <div style="font-size:11px;color:var(--txt3)">🗑️ Costo total perdido</div>
+        <div style="font-size:20px;font-weight:700;color:#C62828;font-family:'DM Mono',monospace">${clp(totalCosto)}</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 16px;min-width:130px">
+        <div style="font-size:11px;color:var(--txt3)">Registros</div>
+        <div style="font-size:20px;font-weight:700;font-family:'DM Mono',monospace">${filtrados.length}</div>
+      </div>
+    `;
+  }
+
+  const tablaEl = document.getElementById('tabla-registros-merma');
+  if (!tablaEl) return;
+
+  if (!filtrados.length) {
+    tablaEl.innerHTML = '<p style="padding:20px;color:var(--txt3);font-size:13px;text-align:center">Sin registros para el período seleccionado.</p>';
+    return;
+  }
+
+  tablaEl.innerHTML = `
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr>
+        <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Fecha</th>
+        <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Ítem</th>
+        <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Cantidad</th>
+        <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Motivo</th>
+        <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Costo</th>
+        <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Nota</th>
+      </tr></thead>
+      <tbody>
+        ${filtrados.map(r => `
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:8px 14px;font-size:12px">${r.fecha}${r.hora ? ' · '+r.hora : ''}</td>
+            <td style="padding:8px 14px;font-size:12px;font-weight:600">${r.item_nombre || ''} ${r.tipo_perdida === 'mp' ? '<span style="font-size:10px;color:var(--txt3)">(MP)</span>' : ''}</td>
+            <td style="padding:8px 14px;font-size:12px;text-align:right">${parseFloat(r.cantidad||0)} ${r.unidad||''}</td>
+            <td style="padding:8px 14px;font-size:12px">${motivos[r.motivo] || r.motivo || ''}</td>
+            <td style="padding:8px 14px;font-size:12px;text-align:right;color:#C62828;font-weight:600">${clp(r.costo_calculado||0)}</td>
+            <td style="padding:8px 14px;font-size:12px;color:var(--txt2)">${r.nota || ''}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function abrirModalRegistroMerma() {
+  const modal = document.getElementById('modal-registro-merma');
+  if (!modal) return;
+
+  // Recetas consolidadas del área, con su costo directo (MP + insumos) ya calculado
+  const maestro = await Cache.get('Maestro_recetas', () => leerHoja('Maestro_recetas'));
+  const recetasArea = maestro.filter(r => r.área === App.area?.nombre && r.tipo_receta !== 'sub_receta');
+  const selReceta = document.getElementById('merma-receta-id');
+  selReceta.innerHTML = '<option value="">— Seleccionar —</option>' + recetasArea.map(r => {
+    const costoUnit = (parseFloat(r.costo_MP_unitario)||0) + (parseFloat(r.costo_insumos_unitario)||0);
+    return `<option value="${r.ID_receta}" data-costo-unit="${costoUnit}">${r.nombre}</option>`;
+  }).join('');
+
+  // MP/insumos activos disponibles para el área
+  const mpArea = App.materiasPrimas.filter(m =>
+    m.estado === 'activa' && m.tipo !== 'sub_receta' &&
+    (!m.areas_habilitadas || m.areas_habilitadas.split(',').map(a=>a.trim()).includes(App.areaCodigo))
+  );
+  const selMP = document.getElementById('merma-mp-id');
+  selMP.innerHTML = '<option value="">— Seleccionar —</option>' + mpArea.map(m => {
+    const unidadCompra = (m.unidad_compra || 'kg').toLowerCase();
+    return `<option value="${m.ID_MP}" data-costo-gr="${m.costo_por_gramo||0}" data-unidad-compra="${unidadCompra}">${m.nombre}</option>`;
+  }).join('');
+
+  document.getElementById('merma-tipo-perdida').value = 'receta';
+  document.getElementById('merma-cantidad').value = '';
+  document.getElementById('merma-nota').value = '';
+  document.getElementById('merma-motivo').value = 'derrame_error';
+  onCambioTipoPerdidaMerma();
+  modal.classList.remove('hidden');
+}
+
+function onCambioTipoPerdidaMerma() {
+  const tipo = document.getElementById('merma-tipo-perdida').value;
+  document.getElementById('merma-campo-receta').classList.toggle('hidden', tipo !== 'receta');
+  document.getElementById('merma-campo-mp').classList.toggle('hidden', tipo !== 'mp');
+  onCambioItemMerma();
+}
+
+function onCambioItemMerma() {
+  const tipo = document.getElementById('merma-tipo-perdida').value;
+  const label = document.getElementById('merma-unidad-label');
+  if (tipo === 'receta') {
+    label.textContent = 'unidades';
+  } else {
+    const sel = document.getElementById('merma-mp-id');
+    const opcion = sel.options[sel.selectedIndex];
+    const unidadCompra = opcion?.dataset.unidadCompra || 'kg';
+    label.textContent = unidadCompra === 'un' ? 'unidades' : unidadCompra === 'lt' ? 'ml' : 'gramos';
+  }
+  calcularCostoPreviewMerma();
+}
+
+function calcularCostoPreviewMerma() {
+  const tipo = document.getElementById('merma-tipo-perdida').value;
+  const cantidad = parseFloat(document.getElementById('merma-cantidad').value) || 0;
+  let costoUnit = 0;
+  if (tipo === 'receta') {
+    const sel = document.getElementById('merma-receta-id');
+    costoUnit = parseFloat(sel.options[sel.selectedIndex]?.dataset.costoUnit) || 0;
+  } else {
+    const sel = document.getElementById('merma-mp-id');
+    costoUnit = parseFloat(sel.options[sel.selectedIndex]?.dataset.costoGr) || 0;
+  }
+  const total = costoUnit * cantidad;
+  document.getElementById('merma-costo-preview').textContent = clp(total);
+}
+
+async function guardarRegistroMerma(btn) {
+  const tipo = document.getElementById('merma-tipo-perdida').value;
+  const cantidad = parseFloat(document.getElementById('merma-cantidad').value) || 0;
+  const motivo = document.getElementById('merma-motivo').value;
+  const nota = document.getElementById('merma-nota').value.trim();
+  const unidad = document.getElementById('merma-unidad-label').textContent;
+
+  if (cantidad <= 0) { toast('Ingresa una cantidad mayor a 0', 'error'); return; }
+
+  let itemId = '', itemNombre = '', costoUnit = 0;
+  if (tipo === 'receta') {
+    const sel = document.getElementById('merma-receta-id');
+    if (!sel.value) { toast('Selecciona una receta', 'error'); return; }
+    itemId = sel.value;
+    itemNombre = sel.options[sel.selectedIndex].text;
+    costoUnit = parseFloat(sel.options[sel.selectedIndex].dataset.costoUnit) || 0;
+  } else {
+    const sel = document.getElementById('merma-mp-id');
+    if (!sel.value) { toast('Selecciona una materia prima', 'error'); return; }
+    itemId = sel.value;
+    itemNombre = sel.options[sel.selectedIndex].text;
+    costoUnit = parseFloat(sel.options[sel.selectedIndex].dataset.costoGr) || 0;
+  }
+
+  const costoCalculado = costoUnit * cantidad;
+  bloquearBtn(btn, 'Guardando...');
+
+  const hoy = new Date();
+  const off = hoy.getTimezoneOffset() * 60000;
+  const fecha = new Date(hoy - off).toISOString().slice(0,10);
+  const hora  = hoy.toLocaleTimeString('es-CL', {hour:'2-digit',minute:'2-digit'});
+
+  const registro = {
+    fecha, hora,
+    area_codigo: App.areaCodigo,
+    area_nombre: App.area?.nombre || '',
+    tipo_perdida: tipo,
+    item_id: itemId,
+    item_nombre: itemNombre,
+    cantidad, unidad,
+    costo_calculado: costoCalculado,
+    motivo, nota
+  };
+
+  try {
+    await escribirEnSheet('guardar_registro_merma', { registro });
+    _mermaRegistros.unshift(registro);
+    document.getElementById('modal-registro-merma').classList.add('hidden');
+    renderTablaRegistrosMerma();
+    toast('Registro de merma guardado');
+  } catch(e) {
+    toast('Error al guardar', 'error');
+  }
+  desbloquearBtn(btn, '<i class="ti ti-check"></i> Guardar', true);
+}
 
 async function renderVistaRegistrosCAF() {
   const vista = document.getElementById('vista-registros-caf');
