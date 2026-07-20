@@ -5797,6 +5797,40 @@ async function renderVistaCostos() {
         </div>
       ` : ''}
     </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head"><i class="ti ti-arrows-left-right"></i> Mapeo de nombres (receta ↔ ventas B2C/B2B)</div>
+      <p style="font-size:11px;color:var(--txt3);padding:10px 16px 0">
+        Si el volumen de un producto aparece en "—", su nombre en Ventas B2C/B2B no coincide con el nombre de la receta. Agréguelo aquí.
+      </p>
+      <div style="padding:10px 16px 0">
+        <button class="btn-secundario" onclick="sincronizarMapeoUI(this)" style="font-size:12px">
+          <i class="ti ti-refresh"></i> Traer nombres desde Maestro de recetas
+        </button>
+      </div>
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:16px">
+        <div class="campo">
+          <label>Nombre en la receta</label>
+          <input type="text" id="mp-nombre-receta" placeholder="Ej: Croissant" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <div class="campo">
+          <label>Nombre en Ventas B2C <span style="font-weight:400;color:var(--txt3)">(sistema viejo — el que usa el cálculo hoy)</span></label>
+          <input type="text" id="mp-nombre-b2c" placeholder="Ej: Croissant" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <div class="campo">
+          <label>Nombre en Ventas B2C <span style="font-weight:400;color:var(--txt3)">(sistema nuevo — referencia a futuro)</span></label>
+          <input type="text" id="mp-nombre-b2c-nuevo" placeholder="Ej: Croissant clásico" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <div class="campo">
+          <label>Nombre en Ventas B2B</label>
+          <input type="text" id="mp-nombre-b2b" placeholder="Ej: Croissant clásico" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <button class="btn-secundario" onclick="guardarMapeoUI(this)">
+          <i class="ti ti-plus"></i> Agregar/actualizar
+        </button>
+      </div>
+      <div id="mp-lista" style="padding:0 16px 16px;font-size:12px;color:var(--txt2)"></div>
+    </div>
     ${!ec.length ? `
       <div class="empty-state">
         <i class="ti ti-chart-bar-off"></i>
@@ -5842,17 +5876,109 @@ async function renderVistaCostos() {
       </div>`}
   `;
   mostrarVista('costos');
+  renderListaMapeo();
+}
+
+async function renderListaMapeo() {
+  const el = document.getElementById('mp-lista');
+  if (!el) return;
+  const mapeo = await cargarMapeoProductos();
+  if (!mapeo.length) { el.innerHTML = '<p style="color:var(--txt3)">Sin equivalencias guardadas todavía.</p>'; return; }
+  el.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;margin-top:8px">
+      <thead><tr>
+        <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Receta</th>
+        <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--txt3)">B2C (viejo)</th>
+        <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--txt3)">B2C (nuevo)</th>
+        <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--txt3)">B2B</th>
+      </tr></thead>
+      <tbody>
+        ${mapeo.map(m => `<tr style="border-top:1px solid var(--border);cursor:pointer" onclick="cargarFilaMapeo('${m.nombre_receta.replace(/'/g,"\\'")}')">
+          <td style="padding:6px 8px">${m.nombre_receta}</td>
+          <td style="padding:6px 8px${!m.nombre_B2C ? ';color:#C62828' : ''}">${m.nombre_B2C || '— sin completar'}</td>
+          <td style="padding:6px 8px;color:var(--txt3)">${m.nombre_B2C_nuevo || '—'}</td>
+          <td style="padding:6px 8px${!m.nombre_B2B ? ';color:#C62828' : ''}">${m.nombre_B2B || '— sin completar'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function cargarFilaMapeo(nombreReceta) {
+  const m = (App._mapeoProductos || []).find(x => x.nombre_receta === nombreReceta);
+  if (!m) return;
+  document.getElementById('mp-nombre-receta').value = m.nombre_receta || '';
+  document.getElementById('mp-nombre-b2c').value = m.nombre_B2C || '';
+  document.getElementById('mp-nombre-b2c-nuevo').value = m.nombre_B2C_nuevo || '';
+  document.getElementById('mp-nombre-b2b').value = m.nombre_B2B || '';
+}
+
+async function sincronizarMapeoUI(btn) {
+  bloquearBtn(btn, 'Sincronizando...');
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'sincronizar_mapeo' }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    if (data.ok) {
+      toast(data.msg);
+      App._mapeoProductos = null;
+      renderListaMapeo();
+    } else {
+      toast('Error: ' + (data.msg||''), 'error');
+    }
+  } catch(e) {
+    toast('No se pudo sincronizar', 'error');
+  }
+  desbloquearBtn(btn, '<i class="ti ti-refresh"></i> Traer nombres desde Maestro de recetas', true);
+}
+
+async function guardarMapeoUI(btn) {
+  const nombre_receta = document.getElementById('mp-nombre-receta').value.trim();
+  const nombre_B2C = document.getElementById('mp-nombre-b2c').value.trim();
+  const nombre_B2C_nuevo = document.getElementById('mp-nombre-b2c-nuevo').value.trim();
+  const nombre_B2B = document.getElementById('mp-nombre-b2b').value.trim();
+  if (!nombre_receta) { toast('Ingresa el nombre de la receta', 'error'); return; }
+  bloquearBtn(btn, 'Guardando...');
+  try {
+    await escribirEnSheet('guardar_mapeo_producto', { registro: { nombre_receta, nombre_B2C, nombre_B2C_nuevo, nombre_B2B } });
+    App._mapeoProductos = null; // forzar recarga
+    document.getElementById('mp-nombre-receta').value = '';
+    document.getElementById('mp-nombre-b2c').value = '';
+    document.getElementById('mp-nombre-b2c-nuevo').value = '';
+    document.getElementById('mp-nombre-b2b').value = '';
+    toast('Equivalencia guardada');
+    renderListaMapeo();
+  } catch(e) {
+    toast('Error al guardar', 'error');
+  }
+  desbloquearBtn(btn, '<i class="ti ti-plus"></i> Agregar/actualizar', true);
 }
 
 // Calcula el volumen mensual REAL de un área (suma B2C + B2B de todos los productos,
 // proyectado a los días reales del mes) usando la Estimación de demanda ya construida.
 // Devuelve null si el área no tiene estimación (ej. Pastelería aún no la tiene) —
 // en ese caso calcularEC cae de vuelta al criterio anterior (porciones_base).
+// Carga (con caché en memoria) la tabla de equivalencias de nombres de producto
+async function cargarMapeoProductos() {
+  if (App._mapeoProductos) return App._mapeoProductos;
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_mapeo_productos' }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    App._mapeoProductos = data.filas || [];
+  } catch(e) {
+    App._mapeoProductos = [];
+  }
+  return App._mapeoProductos;
+}
+
 // Igual que calcularVolumenMensualArea, pero devuelve el detalle por producto
-// (B2C y B2B por separado), para mostrar y guardar la cantidad estimada de cada uno.
-function calcularVolumenMensualPorProducto(areaCodigo, mesStr) {
+// (B2C y B2B por separado), traduciendo nombres de venta -> nombre de receta
+// usando Mapeo_productos cuando existe (si no hay mapeo, usa el nombre tal cual).
+async function calcularVolumenMensualPorProducto(areaCodigo, mesStr) {
   const est = ESTIMACION_POR_AREA[areaCodigo];
   if (!est) return {};
+  const mapeo = await cargarMapeoProductos();
 
   const [anio, mesNum] = mesStr.split('-').map(Number);
   if (!anio || !mesNum) return {};
@@ -5865,17 +5991,30 @@ function calcularVolumenMensualPorProducto(areaCodigo, mesStr) {
     conteoDia[nombresDia[dia]]++;
   }
 
-  const productos = [...new Set([...Object.keys(est.b2b), ...Object.keys(est.b2c)])];
+  function nombreRecetaPara(nombreEstimacion, canal) {
+    const fila = mapeo.find(m => (canal === 'b2c' ? m.nombre_B2C : m.nombre_B2B) === nombreEstimacion);
+    return fila ? fila.nombre_receta : nombreEstimacion;
+  }
+
   const resultado = {};
-  productos.forEach(prod => {
-    const b2b = est.b2b[prod] || {};
-    const b2c = est.b2c[prod] || {};
-    let totalB2C = 0, totalB2B = 0;
-    Object.keys(conteoDia).forEach(dia => {
-      totalB2C += (parseFloat(b2c[dia]||0)) * conteoDia[dia];
-      totalB2B += (parseFloat(b2b[dia]||0)) * conteoDia[dia];
+  function acumular(nombreEstimacion, canal, valor) {
+    const nombreReceta = nombreRecetaPara(nombreEstimacion, canal);
+    if (!resultado[nombreReceta]) resultado[nombreReceta] = { b2c: 0, b2b: 0 };
+    resultado[nombreReceta][canal] += valor;
+  }
+
+  ['b2c','b2b'].forEach(canal => {
+    Object.keys(est[canal]).forEach(prod => {
+      const dias = est[canal][prod];
+      let total = 0;
+      Object.keys(conteoDia).forEach(dia => { total += (parseFloat(dias[dia]||0)) * conteoDia[dia]; });
+      acumular(prod, canal, total);
     });
-    resultado[prod] = { b2c: Math.round(totalB2C), b2b: Math.round(totalB2B) };
+  });
+
+  Object.keys(resultado).forEach(k => {
+    resultado[k].b2c = Math.round(resultado[k].b2c);
+    resultado[k].b2b = Math.round(resultado[k].b2b);
   });
   return resultado;
 }
@@ -5917,7 +6056,7 @@ async function calcularECUI(btn) {
   bloquearBtn(btn, 'Calculando...');
   try {
     const volumenReal = calcularVolumenMensualArea(area, mes);
-    const volumenPorProducto = calcularVolumenMensualPorProducto(area, mes);
+    const volumenPorProducto = await calcularVolumenMensualPorProducto(area, mes);
     const payload = encodeURIComponent(JSON.stringify({ accion: 'calcular_ec', area, mes, volumenTotalReal: volumenReal, volumenPorProducto }));
     const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
     const data = await res.json();
