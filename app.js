@@ -5833,6 +5833,38 @@ async function renderVistaCostos() {
   mostrarVista('costos');
 }
 
+// Calcula el volumen mensual REAL de un área (suma B2C + B2B de todos los productos,
+// proyectado a los días reales del mes) usando la Estimación de demanda ya construida.
+// Devuelve null si el área no tiene estimación (ej. Pastelería aún no la tiene) —
+// en ese caso calcularEC cae de vuelta al criterio anterior (porciones_base).
+function calcularVolumenMensualArea(areaCodigo, mesStr) {
+  const est = ESTIMACION_POR_AREA[areaCodigo];
+  if (!est) return null;
+
+  const [anio, mesNum] = mesStr.split('-').map(Number);
+  if (!anio || !mesNum) return null;
+  const diasEnMes = new Date(anio, mesNum, 0).getDate();
+
+  // Contar cuántas veces cae cada día de semana en ese mes específico
+  const conteoDia = { Lun:0, Mar:0, Mié:0, Jue:0, Vie:0, Sáb:0, Dom:0 };
+  const nombresDia = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb']; // getDay(): 0=Dom
+  for (let d = 1; d <= diasEnMes; d++) {
+    const dia = new Date(anio, mesNum - 1, d).getDay();
+    conteoDia[nombresDia[dia]]++;
+  }
+
+  const productos = [...new Set([...Object.keys(est.b2b), ...Object.keys(est.b2c)])];
+  let total = 0;
+  productos.forEach(prod => {
+    const b2b = est.b2b[prod] || {};
+    const b2c = est.b2c[prod] || {};
+    Object.keys(conteoDia).forEach(dia => {
+      total += (parseFloat(b2b[dia]||0) + parseFloat(b2c[dia]||0)) * conteoDia[dia];
+    });
+  });
+  return Math.round(total);
+}
+
 async function calcularECUI(btn) {
   const area = document.getElementById('ec-area').value;
   const mes = document.getElementById('ec-mes').value.trim();
@@ -5841,11 +5873,12 @@ async function calcularECUI(btn) {
   const estadoEl = document.getElementById('ec-calc-estado');
   bloquearBtn(btn, 'Calculando...');
   try {
-    const payload = encodeURIComponent(JSON.stringify({ accion: 'calcular_ec', area, mes }));
+    const volumenReal = calcularVolumenMensualArea(area, mes);
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'calcular_ec', area, mes, volumenTotalReal: volumenReal }));
     const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
     const data = await res.json();
     if (data.ok) {
-      estadoEl.textContent = '✓ ' + data.msg;
+      estadoEl.textContent = '✓ ' + data.msg + (volumenReal ? ` (volumen real usado: ${volumenReal} uni/mes)` : ' (sin estimación de demanda — se usó porciones_base como respaldo)');
       Cache.invalidar('EC_productos');
       desbloquearBtn(btn, '<i class="ti ti-refresh"></i> Calcular estructuras de costo', true);
       renderVistaCostos();
