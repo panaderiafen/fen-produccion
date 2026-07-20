@@ -5812,6 +5812,7 @@ async function calcularECUI(btn) {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'calcular_ec', area, mes }));
     const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
     const data = await res.json();
+    console.log('[fën] Respuesta calcular_ec:', JSON.stringify(data.debug || {}, null, 2));
     if (data.ok) {
       estadoEl.textContent = '✓ ' + data.msg;
       Cache.invalidar('EC_productos');
