@@ -5810,6 +5810,8 @@ async function renderVistaCostos() {
           <thead><tr>
             <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Producto</th>
             <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Área</th>
+            <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Vol. B2C/mes</th>
+            <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Vol. B2B/mes</th>
             <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">MP+Insumos</th>
             <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Merma</th>
             <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Fijos</th>
@@ -5823,6 +5825,8 @@ async function renderVistaCostos() {
             ${ec.map(r => `<tr>
               <td class="td-nombre">${r.nombre}</td>
               <td style="font-size:13px;color:var(--txt2)">${r.área}</td>
+              <td class="td-num" style="color:var(--txt2)">${r.meta_B2C_mes ? parseFloat(r.meta_B2C_mes).toLocaleString('es-CL') : '—'}</td>
+              <td class="td-num" style="color:var(--txt2)">${r.meta_B2B_mes ? parseFloat(r.meta_B2B_mes).toLocaleString('es-CL') : '—'}</td>
               <td class="td-num">${clp((parseFloat(r.costo_MP_unit)||0) + (parseFloat(r.costo_insumos_unit)||0))}</td>
               <td class="td-num">${clp(r.costo_merma_unit||0)}</td>
               <td class="td-num">${clp(r.costos_fijos_unit||0)}</td>
@@ -5844,6 +5848,38 @@ async function renderVistaCostos() {
 // proyectado a los días reales del mes) usando la Estimación de demanda ya construida.
 // Devuelve null si el área no tiene estimación (ej. Pastelería aún no la tiene) —
 // en ese caso calcularEC cae de vuelta al criterio anterior (porciones_base).
+// Igual que calcularVolumenMensualArea, pero devuelve el detalle por producto
+// (B2C y B2B por separado), para mostrar y guardar la cantidad estimada de cada uno.
+function calcularVolumenMensualPorProducto(areaCodigo, mesStr) {
+  const est = ESTIMACION_POR_AREA[areaCodigo];
+  if (!est) return {};
+
+  const [anio, mesNum] = mesStr.split('-').map(Number);
+  if (!anio || !mesNum) return {};
+  const diasEnMes = new Date(anio, mesNum, 0).getDate();
+
+  const conteoDia = { Lun:0, Mar:0, Mié:0, Jue:0, Vie:0, Sáb:0, Dom:0 };
+  const nombresDia = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  for (let d = 1; d <= diasEnMes; d++) {
+    const dia = new Date(anio, mesNum - 1, d).getDay();
+    conteoDia[nombresDia[dia]]++;
+  }
+
+  const productos = [...new Set([...Object.keys(est.b2b), ...Object.keys(est.b2c)])];
+  const resultado = {};
+  productos.forEach(prod => {
+    const b2b = est.b2b[prod] || {};
+    const b2c = est.b2c[prod] || {};
+    let totalB2C = 0, totalB2B = 0;
+    Object.keys(conteoDia).forEach(dia => {
+      totalB2C += (parseFloat(b2c[dia]||0)) * conteoDia[dia];
+      totalB2B += (parseFloat(b2b[dia]||0)) * conteoDia[dia];
+    });
+    resultado[prod] = { b2c: Math.round(totalB2C), b2b: Math.round(totalB2B) };
+  });
+  return resultado;
+}
+
 function calcularVolumenMensualArea(areaCodigo, mesStr) {
   const est = ESTIMACION_POR_AREA[areaCodigo];
   if (!est) return null;
@@ -5881,7 +5917,8 @@ async function calcularECUI(btn) {
   bloquearBtn(btn, 'Calculando...');
   try {
     const volumenReal = calcularVolumenMensualArea(area, mes);
-    const payload = encodeURIComponent(JSON.stringify({ accion: 'calcular_ec', area, mes, volumenTotalReal: volumenReal }));
+    const volumenPorProducto = calcularVolumenMensualPorProducto(area, mes);
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'calcular_ec', area, mes, volumenTotalReal: volumenReal, volumenPorProducto }));
     const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
     const data = await res.json();
     if (data.ok) {
