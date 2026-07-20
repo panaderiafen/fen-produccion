@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════
-//  fën — App principal v1.1  
+//  fën — App principal v1.1
 //  Grupo 1: Visual / Grupo 2: Plan semanal
 // ═══════════════════════════════════════════════
 
@@ -5787,8 +5787,8 @@ async function renderVistaCostos() {
               <td class="td-num">${clp((parseFloat(r.costo_MP_unit)||0) + (parseFloat(r.costo_insumos_unit)||0))}</td>
               <td class="td-num">${clp(r.costo_merma_unit||0)}</td>
               <td class="td-num">${clp(r.costos_fijos_unit||0)}</td>
-              <td class="td-num">${clp(r.remuneracion_unit||0)}</td>
-              <td class="td-num" style="font-weight:600">${clp(r.total_costo_produccion||0)}</td>
+              <td class="td-num">${clp(r.remuneraciones_unit||0)}</td>
+              <td class="td-num" style="font-weight:600">${clp(r.total_costo_prod||0)}</td>
               <td class="td-num">${clp(r.precio_B2C)}</td>
               <td class="td-num">${clp(r.precio_B2B)}</td>
               <td class="td-num" style="color:#2E7D32">${parseFloat(r['utilidad_mes_%']||0).toFixed(1)}%</td>
@@ -5812,7 +5812,6 @@ async function calcularECUI(btn) {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'calcular_ec', area, mes }));
     const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
     const data = await res.json();
-    console.log('[fën] Respuesta calcular_ec:', JSON.stringify(data.debug || {}, null, 2));
     if (data.ok) {
       estadoEl.textContent = '✓ ' + data.msg;
       Cache.invalidar('EC_productos');
