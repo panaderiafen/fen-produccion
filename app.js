@@ -1158,18 +1158,23 @@ async function guardarReceta(recetaId, btn) {
       const valorInput = parseFloat(inputs[0]?.value) || 0;
       const unidades = modoInput === 'unidades' ? valorInput : null;
 
-      // Si es unidades, buscar gramos desde sub receta para referencia
+      // Si es unidades, buscar gramos desde sub receta solo para referencia/visualización
+      // (ej. mostrar "peso por pieza") — el COSTO no debe usar este peso, porque
+      // costo_por_gramo de una sub-receta ya representa el costo de la unidad completa,
+      // no un precio por gramo. Multiplicarlo por el peso infla el costo en cientos de veces.
       let gramosCalc = gramos;
+      let esSubRecetaUnidades = false;
       if (modoInput === 'unidades' && valorInput > 0) {
         const nombreSR = opcion.text.replace('⟳ ','');
         const srReceta = App.recetas.find(r =>
           r.nombre === nombreSR && r.estado === 'consolidada'
         );
         if (srReceta) {
+          esSubRecetaUnidades = true;
           let ingsR = [];
           try { ingsR = JSON.parse(srReceta.ingredientes_JSON || '[]'); } catch(e) {}
           const pesoUnitario = ingsR.reduce((s,i) => s+(parseFloat(i.gramos)||0), 0);
-          gramosCalc = pesoUnitario * valorInput;
+          gramosCalc = pesoUnitario * valorInput; // solo para mostrar peso de referencia
         } else {
           gramosCalc = valorInput; // sin sub receta: guardar valor numérico
         }
@@ -1181,7 +1186,7 @@ async function guardarReceta(recetaId, btn) {
         gramos:   gramosCalc,
         unidades: unidades, // null = gramos, número = unidades
         pct:      App.areaCodigo === 'PAN' ? ((parseFloat(inputs[1]?.value) || 0) / 100) : 0,
-        costo:    costoPorGramo * gramosCalc,
+        costo:    esSubRecetaUnidades ? costoPorGramo * valorInput : costoPorGramo * gramosCalc,
       });
     }
   });
@@ -4855,6 +4860,8 @@ function renderVistaAprobaciones() {
       </div>` : pendientes.map(r => {
         let ingredientes = [];
         try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+        let insumos = [];
+        try { insumos = JSON.parse(r.insumos_JSON || '[]'); } catch(e) {}
         const areaInfo = FEN.AREAS[r._area] || {};
         return `
           <div class="card" style="margin-bottom:16px">
@@ -4918,6 +4925,31 @@ function renderVistaAprobaciones() {
                   </tr>
                 </tbody>
               </table>` : ''}
+              ${insumos.length ? `
+              <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px">
+                <thead><tr>
+                  <th style="text-align:left;padding:6px 10px;background:#FFF3E0;border-bottom:1px solid var(--border);color:#E65100;font-weight:600;text-transform:uppercase;letter-spacing:.3px">📦 Insumo</th>
+                  <th style="text-align:right;padding:6px 10px;background:#FFF3E0;border-bottom:1px solid var(--border);color:#E65100;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Cantidad</th>
+                  <th style="text-align:right;padding:6px 10px;background:#FFF3E0;border-bottom:1px solid var(--border);color:#E65100;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Costo</th>
+                </tr></thead>
+                <tbody>
+                  ${insumos.map(ins => `
+                    <tr>
+                      <td style="padding:6px 10px;border-bottom:1px solid var(--border);color:var(--txt);font-weight:500">${ins.nombre}</td>
+                      <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:600">${parseFloat(ins.unidades||0).toFixed(0)} uni</td>
+                      <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2);font-size:11px">$${parseFloat(ins.costo||0).toFixed(0)}</td>
+                    </tr>`).join('')}
+                  <tr style="background:#FFF3E0;font-weight:600">
+                    <td style="padding:6px 10px" colspan="2">Total insumos</td>
+                    <td style="padding:6px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:11px">
+                      $${insumos.reduce((s,i)=>s+(parseFloat(i.costo)||0),0).toFixed(0)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <div style="text-align:right;font-size:13px;font-weight:700;margin-bottom:12px;padding:6px 10px">
+                Costo directo total (MP + insumos): $${(ingredientes.reduce((s,i)=>s+(parseFloat(i.costo)||0),0) + insumos.reduce((s,i)=>s+(parseFloat(i.costo)||0),0)).toFixed(0)}
+              </div>` : ''}
               ${r.observaciones_procedimiento ? `
                 <div style="margin-top:12px">
                   <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);margin-bottom:5px">Procedimiento / observaciones</div>
