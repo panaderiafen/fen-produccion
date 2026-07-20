@@ -5789,6 +5789,13 @@ async function renderVistaCostos() {
       <p style="font-size:11px;color:var(--txt3);padding:0 16px 14px">
         Requiere que ya exista una Config de costeo guardada para esa área/mes (costos fijos, remuneración, %merma, %utilidad).
       </p>
+      ${App._ecVolumenInfo && App._ecVolumenInfo.area === areaActual && App._ecVolumenInfo.mes === mesActual ? `
+        <div style="margin:0 16px 14px;padding:10px 14px;background:${App._ecVolumenInfo.esReal ? '#E8F5E9' : '#FFF3E0'};border-radius:var(--r-md);font-size:12px;color:${App._ecVolumenInfo.esReal ? '#2E7D32' : '#E65100'}">
+          ${App._ecVolumenInfo.esReal
+            ? `📊 Último cálculo usó <strong>${App._ecVolumenInfo.volumen.toLocaleString('es-CL')} unidades/mes</strong> (volumen real, de la Estimación de demanda)`
+            : `⚠ Último cálculo usó <strong>porciones_base</strong> como respaldo — no hay Estimación de demanda para esta área todavía`}
+        </div>
+      ` : ''}
     </div>
     ${!ec.length ? `
       <div class="empty-state">
@@ -5878,7 +5885,7 @@ async function calcularECUI(btn) {
     const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
     const data = await res.json();
     if (data.ok) {
-      estadoEl.textContent = '✓ ' + data.msg + (volumenReal ? ` (volumen real usado: ${volumenReal} uni/mes)` : ' (sin estimación de demanda — se usó porciones_base como respaldo)');
+      App._ecVolumenInfo = { area, mes, volumen: volumenReal, esReal: !!volumenReal, msg: data.msg };
       Cache.invalidar('EC_productos');
       desbloquearBtn(btn, '<i class="ti ti-refresh"></i> Calcular estructuras de costo', true);
       renderVistaCostos();
