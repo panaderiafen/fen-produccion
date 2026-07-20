@@ -5811,7 +5811,9 @@ async function renderVistaCostos() {
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:16px">
         <div class="campo">
           <label>Nombre en la receta</label>
-          <input type="text" id="mp-nombre-receta" placeholder="Ej: Croissant" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+          <select id="mp-nombre-receta" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px;min-width:180px">
+            <option value="">— Seleccionar —</option>
+          </select>
         </div>
         <div class="campo">
           <label>Nombre en Ventas B2C <span style="font-weight:400;color:var(--txt3)">(sistema viejo — el que usa el cálculo hoy)</span></label>
@@ -5877,6 +5879,18 @@ async function renderVistaCostos() {
   `;
   mostrarVista('costos');
   renderListaMapeo();
+  poblarSelectRecetasMapeo();
+}
+
+async function poblarSelectRecetasMapeo() {
+  const sel = document.getElementById('mp-nombre-receta');
+  if (!sel) return;
+  const maestro = await Cache.get('Maestro_recetas', () => leerHoja('Maestro_recetas'));
+  const nombres = [...new Set(
+    maestro.filter(r => r.tipo_receta !== 'sub_receta' && r.nombre).map(r => r.nombre)
+  )].sort();
+  sel.innerHTML = '<option value="">— Seleccionar —</option>' +
+    nombres.map(n => `<option value="${n}">${n}</option>`).join('');
 }
 
 async function renderListaMapeo() {
