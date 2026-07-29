@@ -5421,16 +5421,30 @@ function cerrarModalAccionesMP() {
   document.getElementById('modal-acciones-mp').classList.add('hidden');
 }
 
+// Espejo del parser de webapp.gs — interpreta "kg", "25kg", "un", "10un", "500ml", etc.
+function parsearUnidadCompraJS(unidadStr) {
+  const s = (unidadStr || 'kg').toString().trim().toLowerCase().replace(',', '.');
+  const m = s.match(/^(\d+(?:\.\d+)?)?\s*(kg|g|lt|l|ml|un|unidad|unidades)$/);
+  if (!m) return null;
+  const cantidad = m[1] ? parseFloat(m[1]) : 1;
+  const unidad = m[2];
+  if (unidad === 'un' || unidad === 'unidad' || unidad === 'unidades') return { factorBase: cantidad };
+  if (unidad === 'kg' || unidad === 'lt' || unidad === 'l') return { factorBase: cantidad * 1000 };
+  if (unidad === 'g' || unidad === 'ml') return { factorBase: cantidad };
+  return { factorBase: 1000 };
+}
+
 async function cambiarUnidadCompra(mpId, unidadActual, nombre) {
-  const opciones = { kg: 'Kilogramo (kg)', lt: 'Litro (lt)', un: 'Unidad (un)' };
-  const texto = Object.entries(opciones).map(([k,v]) => `${k} = ${v}`).join('\n');
   const respuesta = prompt(
-    `Unidad de compra actual de "${nombre}": ${unidadActual}\n\nEscribe la nueva unidad:\n${texto}`,
+    `Unidad de compra actual de "${nombre}": ${unidadActual}\n\n` +
+    `Escribe la nueva unidad. Ejemplos válidos:\n` +
+    `kg = por kilo suelto\n25kg = saco de 25 kilos\nlt = por litro\nun = por unidad\n10un = paquete de 10 unidades\n500ml = envase de 500ml`,
     unidadActual
   );
   if (!respuesta) return;
   const nuevaUnidad = respuesta.trim().toLowerCase();
-  if (!opciones[nuevaUnidad]) { toast('Unidad inválida — usa kg, lt o un', 'error'); return; }
+  const parsed = parsearUnidadCompraJS(nuevaUnidad);
+  if (!parsed) { toast('Formato inválido — ej: kg, 25kg, un, 10un, 500ml', 'error'); return; }
 
   const item = App.materiasPrimas.find(m => m.ID_MP === mpId);
   if (!item) return;
@@ -5443,11 +5457,10 @@ async function cambiarUnidadCompra(mpId, unidadActual, nombre) {
 
   item.unidad_compra = nuevaUnidad;
   const bruto = (parseFloat(item.costo_neto) || 0) * 1.19;
-  const esPorUnidad = nuevaUnidad === 'un';
-  item.costo_por_gramo = esPorUnidad ? bruto : bruto / 1000;
+  item.costo_por_gramo = bruto / parsed.factorBase;
   item.costo_por_kg = bruto;
 
-  toast(`"${nombre}" ahora se compra por ${opciones[nuevaUnidad]} — costo recalculado`);
+  toast(`"${nombre}" ahora se compra por "${nuevaUnidad}" — costo recalculado`);
   Cache.invalidar('mp_maestro');
   renderVistaMP();
 }
