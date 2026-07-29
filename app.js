@@ -6284,13 +6284,15 @@ function editarMP(mpId) {
   const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
   if (!mp) return;
   const unidadCompra = (mp.unidad_compra || 'kg').toLowerCase();
-  const etiquetaUnidad = unidadCompra === 'un' || unidadCompra === 'unidad' || unidadCompra === 'unidades'
-    ? 'por unidad'
-    : unidadCompra === 'lt'
-    ? 'por litro'
-    : 'por kilo';
+  const parsed = parsearUnidadCompraJS(unidadCompra);
+  let etiquetaUnidad;
+  if (unidadCompra === 'kg') etiquetaUnidad = 'por kilo';
+  else if (unidadCompra === 'lt' || unidadCompra === 'l') etiquetaUnidad = 'por litro';
+  else if (unidadCompra === 'un' || unidadCompra === 'unidad' || unidadCompra === 'unidades') etiquetaUnidad = 'por unidad';
+  else if (parsed) etiquetaUnidad = `del paquete completo (${unidadCompra})`;
+  else etiquetaUnidad = `(unidad de compra: "${unidadCompra}")`;
   const nuevoPrecio = prompt(
-    `Precio neto ${etiquetaUnidad} de "${mp.nombre}" (solo el producto, sin flete)\nActual: ${clp(mp.costo_neto)}\n\nNuevo precio neto (${etiquetaUnidad}):`,
+    `Precio neto ${etiquetaUnidad} de "${mp.nombre}" (solo el producto, sin flete)\nActual: ${clp(mp.costo_neto)}\n\nNuevo precio neto ${etiquetaUnidad}:`,
     mp.costo_neto
   );
   if (nuevoPrecio === null) return;
