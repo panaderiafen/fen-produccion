@@ -6271,8 +6271,8 @@ async function editarImpuestosMP(mpId) {
   mp['IVA_%'] = ivaPct / 100;
   mp['imp_adicional_%'] = impPct / 100;
   const bruto = (parseFloat(mp.costo_neto) || 0) * (1 + ivaPct/100 + impPct/100);
-  const esPorUnidad = (mp.unidad_compra || 'kg').toLowerCase() === 'un';
-  mp.costo_por_gramo = esPorUnidad ? bruto : bruto / 1000;
+  const parsed = parsearUnidadCompraJS((mp.unidad_compra || 'kg').toLowerCase());
+  mp.costo_por_gramo = bruto / (parsed ? parsed.factorBase : 1000);
   mp.costo_por_kg = bruto;
 
   toast('Impuestos actualizados');
@@ -6386,11 +6386,11 @@ async function crearMPAdmin(btn) {
   if (!nuevoId) { toast('No se pudo crear — revisa la conexión', 'error'); return; }
 
   const bruto = costoNeto * 1.19;
-  const esPorUnidad = unidadCompra === 'un';
+  const parsedNueva = parsearUnidadCompraJS(unidadCompra);
   App.materiasPrimas.push({
     ID_MP: nuevoId, nombre, tipo, categoría: categoria || (tipo === 'insumo' ? 'Insumos' : 'Sin categoría'),
     estado: activa ? 'activa' : 'inactiva', costo_neto: costoNeto, costo_bruto: bruto,
-    costo_por_kg: bruto, costo_por_gramo: esPorUnidad ? bruto : bruto/1000,
+    costo_por_kg: bruto, costo_por_gramo: bruto / (parsedNueva ? parsedNueva.factorBase : 1000),
     unidad_compra: unidadCompra, areas_habilitadas: areasHabilitadas
   });
   Cache.invalidar('mp_maestro');
