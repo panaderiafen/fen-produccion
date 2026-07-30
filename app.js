@@ -426,18 +426,30 @@ async function cargarMP() {
   App.materiasPrimas = await Cache.get('mp_maestro', () => leerHoja('MP_maestro'));
 }
 
+let _cargandoRecetasAdmin = null; // evita disparar el mismo pedido en paralelo si se llama 2+ veces seguidas
+
 async function cargarRecetas(forzar = false) {
   if (!App.areaCodigo) {
-    const todas = [];
-    for (const codigo of Object.keys(FEN.AREAS)) {
-      const r = await leerHoja(FEN.AREAS[codigo].hoja_recetas);
-      r.forEach(rec => rec._area = codigo);
-      todas.push(...r);
-    }
-    App.recetas = todas;
+    if (_cargandoRecetasAdmin) { await _cargandoRecetasAdmin; return; } // ya hay una carga en curso, esperarla en vez de duplicarla
+    _cargandoRecetasAdmin = (async () => {
+      const todas = [];
+      for (const codigo of Object.keys(FEN.AREAS)) {
+        const hoja = FEN.AREAS[codigo].hoja_recetas;
+        const r = forzar
+          ? await leerHoja(hoja)
+          : await Cache.get(hoja, () => leerHoja(hoja));
+        r.forEach(rec => rec._area = codigo);
+        todas.push(...r);
+      }
+      App.recetas = todas;
+    })();
+    await _cargandoRecetasAdmin;
+    _cargandoRecetasAdmin = null;
   } else {
     const hoja = FEN.AREAS[App.areaCodigo].hoja_recetas;
-    const datos = await Cache.get(hoja, () => leerHoja(hoja));
+    const datos = forzar
+      ? await leerHoja(hoja)
+      : await Cache.get(hoja, () => leerHoja(hoja));
     // Aplicar estados locales sobre los datos del Sheet
     App.recetas = aplicarEstadosLocales(datos);
   }
