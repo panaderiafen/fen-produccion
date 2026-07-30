@@ -5265,7 +5265,9 @@ async function confirmarAsignarMP(btn) {
 function renderVistaMP() {
   const mp = App.materiasPrimas;
   const filtro = App._filtroMP || 'todos';
-  const mpFiltrada = filtro === 'todos' ? mp : mp.filter(m => (m.tipo || 'mp') === filtro);
+  const busqueda = (App._busquedaMP || '').trim().toLowerCase();
+  let mpFiltrada = filtro === 'todos' ? mp : mp.filter(m => (m.tipo || 'mp') === filtro);
+  if (busqueda) mpFiltrada = mpFiltrada.filter(m => (m.nombre || '').toLowerCase().includes(busqueda));
   const pendientes = mp.filter(m => m.estado === 'pendiente' || m.estado === 'recibida').filter(m => m.tipo !== 'sub_receta');
   const vista = document.getElementById('vista-mp');
   const tabs = [
@@ -5280,6 +5282,12 @@ function renderVistaMP() {
       <button class="btn-primario" onclick="abrirFormNuevaMP()">
         <i class="ti ti-plus"></i> Nueva MP
       </button>
+    </div>
+    <div class="campo" style="max-width:320px;margin-bottom:12px">
+      <input type="text" id="buscar-mp" placeholder="🔎 Buscar por nombre..." value="${App._busquedaMP || ''}"
+        oninput="App._busquedaMP=this.value;renderVistaMP();"
+        onfocus="App._buscarMPFocused=true" onblur="App._buscarMPFocused=false"
+        style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
     </div>
     ${pendientes.length ? `
       <div class="card" style="margin-bottom:16px;border-color:#FFA726">
@@ -5379,6 +5387,13 @@ function renderVistaMP() {
     </div>
   `;
   mostrarVista('mp');
+  if (App._buscarMPFocused) {
+    const inputBusqueda = document.getElementById('buscar-mp');
+    if (inputBusqueda) {
+      inputBusqueda.focus();
+      inputBusqueda.setSelectionRange(inputBusqueda.value.length, inputBusqueda.value.length);
+    }
+  }
 }
 
 function abrirAccionesMP(mpId) {
@@ -5405,6 +5420,10 @@ function abrirAccionesMP(mpId) {
       accion: `cambiarTipoMP('${mpId}','${tipoActual}','${nombreEscapado}')` });
     botones.push({ icono: 'ti-ruler-2', label: 'Cambiar unidad de compra (actual: ' + unidadActual + ')',
       accion: `cambiarUnidadCompra('${mpId}','${unidadActual}','${nombreEscapado}')` });
+  }
+  if (m.estado !== 'reemplazada') {
+    botones.push({ icono: 'ti-arrows-join', label: 'Fusionar con otra MP (duplicado)', color: '#6A1B9A',
+      accion: `fusionarMPUI('${mpId}','${nombreEscapado}')` });
   }
 
   document.getElementById('acciones-mp-botones').innerHTML = botones.map(b => `
@@ -6237,6 +6256,53 @@ function cerrarModalSolicitarMP() {
   // Resetear select que activó el modal
   const selects = document.querySelectorAll('#tbody-ingr select');
   selects.forEach(s => { if (s.value === '__nueva__') s.value = ''; });
+}
+
+async function fusionarMPUI(mpIdEliminar, nombreActual) {
+  // Buscar candidatos: MP activas con nombre parecido, excluyendo la actual
+  const candidatos = App.materiasPrimas.filter(m =>
+    m.ID_MP !== mpIdEliminar && m.estado === 'activa' &&
+    m.nombre.toLowerCase().includes(nombreActual.toLowerCase().split(' ')[0])
+  );
+
+  let listaTexto = candidatos.length
+    ? candidatos.map(c => `${c.ID_MP} — ${c.nombre} (${c.categoría || 'sin categoría'})`).join('\n')
+    : '(no se encontraron MP con nombre parecido activas)';
+
+  const idMantener = prompt(
+    `Fusionar "${nombreActual}" (${mpIdEliminar}) con otra MP existente.\n\n` +
+    `Escriba el ID de la MP que se debe MANTENER (la duplicada quedará marcada como reemplazada):\n\n${listaTexto}`,
+    candidatos[0]?.ID_MP || ''
+  );
+  if (!idMantener) return;
+
+  const mantener = App.materiasPrimas.find(m => m.ID_MP === idMantener.trim());
+  if (!mantener) { toast('ID no encontrado', 'error'); return; }
+  if (mantener.ID_MP === mpIdEliminar) { toast('No puede fusionar una MP consigo misma', 'error'); return; }
+
+  if (!confirm(
+    `¿Confirma fusionar?\n\n"${nombreActual}" (${mpIdEliminar}) quedará reemplazada por\n"${mantener.nombre}" (${mantener.ID_MP})\n\n` +
+    `Se buscará y corregirá en TODAS las recetas de las 4 áreas. Las recetas afectadas van a necesitar volver a guardarse y aprobarse para que el costo se recalcule.`
+  )) return;
+
+  toast('Fusionando, puede tardar unos segundos...');
+  try {
+    const payload = encodeURIComponent(JSON.stringify({
+      accion: 'fusionar_mp', mp_id_mantener: mantener.ID_MP, mp_id_eliminar: mpIdEliminar
+    }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    if (data.ok) {
+      Cache.invalidar('mp_maestro');
+      const detalle = data.recetas && data.recetas.length ? '\n\nRecetas a re-aprobar:\n' + data.recetas.join('\n') : '';
+      alert('✓ ' + data.msg + detalle);
+      renderVistaMP();
+    } else {
+      toast('Error: ' + (data.msg||''), 'error');
+    }
+  } catch(e) {
+    toast('No se pudo fusionar: ' + e.message, 'error');
+  }
 }
 
 async function editarImpuestosMP(mpId) {
