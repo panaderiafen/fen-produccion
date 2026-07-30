@@ -513,7 +513,16 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
   let ingredientes = [], pasos = [];
   if (receta) {
     try { ingredientes = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
-    pasos = (receta.observaciones_procedimiento || '').split('.').filter(s => s.trim());
+    // Pasos: se leen de su propio campo pasos_JSON. Si una receta vieja no lo tiene
+    // (guardada antes de este cambio), se reconstruye una vez desde la descripción,
+    // partiendo por puntos — solo como respaldo para no perder recetas antiguas.
+    try {
+      const pasosGuardados = JSON.parse(receta.pasos_JSON || '[]');
+      pasos = pasosGuardados.length ? pasosGuardados
+        : (receta.observaciones_procedimiento || '').split('.').filter(s => s.trim());
+    } catch(e) {
+      pasos = (receta.observaciones_procedimiento || '').split('.').filter(s => s.trim());
+    }
   }
 
   // Determinar tipo: receta o sub_receta
@@ -603,9 +612,9 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
         </div>` : ''}
         ${App.areaCodigo === 'BOL' ? `
         <div class="campo">
-          <label>% Merma laminado <span style="color:var(--txt3);font-weight:400;font-size:10px">— recortes de borde</span></label>
+          <label>% Merma</label>
           <input type="number" id="f-merma-laminado" placeholder="Ej: 8" min="0" max="30" step="0.1"
-            value="${receta?.merma_laminado_pct || (cargarConfigSubrecetas().bol?.merma_laminado_ref || 8)}">
+            value="${receta?.merma_laminado_pct !== undefined && receta?.merma_laminado_pct !== '' ? receta.merma_laminado_pct : (esEdicion ? 0 : 8)}">
         </div>
         <div class="campo">
           <label>Peso pastón listo para cortar (g) <span style="color:var(--txt3);font-weight:400;font-size:10px">— calculado</span></label>
@@ -1318,6 +1327,11 @@ async function guardarReceta(recetaId, btn) {
     peso_harina_total_g:         App.areaCodigo === 'PAN' ? (document.getElementById('f-harina')?.value || '') : '',
     ingredientes_JSON:           JSON.stringify(ingredientes),
     insumos_JSON:                JSON.stringify(insumos),
+    pasos_JSON:                  JSON.stringify(
+      Array.from(document.querySelectorAll('#contenedor-pasos .paso-fila textarea'))
+        .map(t => t.value.trim())
+        .filter(t => t)
+    ),
     observaciones_procedimiento: document.getElementById('f-desc').value.trim(),
     'sistematización_notas':     document.getElementById('f-notas').value.trim(),
     merma_laminado_pct:          document.getElementById('f-merma-laminado')?.value || '',
