@@ -332,6 +332,29 @@
   </div>
 </div>
 
+<!-- Modal: Acciones de receta (Editar / Ver / Eliminar) -->
+<div class="modal-fondo hidden" id="modal-acciones-receta">
+  <div class="modal" style="max-width:380px;text-align:left">
+    <h3 id="acciones-receta-titulo" style="text-align:center;margin-bottom:20px">—</h3>
+    <div style="display:flex;flex-direction:column;gap:8px" id="acciones-receta-botones">
+      <!-- Botones inyectados por JS -->
+    </div>
+    <div class="modal-acciones" style="margin-top:20px">
+      <button class="btn-secundario" style="width:100%" onclick="document.getElementById('modal-acciones-receta').classList.add('hidden')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Ver receta rápido -->
+<div class="modal-fondo hidden" id="modal-ver-receta">
+  <div class="modal" style="max-width:640px;max-height:85vh;overflow-y:auto;text-align:left">
+    <div id="ver-receta-modal-contenido"></div>
+    <div class="modal-acciones" style="margin-top:16px">
+      <button class="btn-secundario" style="width:100%" onclick="document.getElementById('modal-ver-receta').classList.add('hidden')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Acciones de MP/Insumo (reemplaza los íconos de fila, mejor para celular) -->
 <div class="modal-fondo hidden" id="modal-acciones-mp">
   <div class="modal" style="max-width:380px;text-align:left">
