@@ -831,7 +831,7 @@ input, select, textarea { font-family: inherit; }
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  background: var(--bg);
+  background: #EFE9E0;
   border-bottom: 1px solid var(--border);
 }
 .elab-card.elab-lista .elab-header { background: #E8F5E9; }
@@ -839,12 +839,13 @@ input, select, textarea { font-family: inherit; }
 .elab-nombre { font-size: 14px; font-weight: 600; }
 .elab-usado-wrap { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 3px; }
 .elab-usado-en {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--txt3);
-  background: var(--surface);
-  padding: 1px 6px;
-  border-radius: 99px;
-  border: 1px solid var(--border);
+}
+.elab-usado-en:not(:last-child)::after {
+  content: '·';
+  margin-left: 6px;
+  color: var(--border);
 }
 .elab-total-badge {
   font-size: 14px;
