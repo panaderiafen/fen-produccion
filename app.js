@@ -6500,12 +6500,11 @@ async function renderVistaMaestroAdmin() {
   const maestro = await Cache.get('Maestro_recetas', () => leerHoja('Maestro_recetas'));
   App._maestroRecetasCache = maestro; // para que el modal pueda encontrar la fila por ID
   const vista = document.getElementById('vista-maestro-admin');
+  const areaFiltro = App._filtroMaestroArea || 'todas';
 
   const filaHtml = r => {
-    const esSubReceta = r.tipo_receta === 'sub_receta';
     return `<tr style="cursor:pointer" onclick="abrirModalCosteoReceta('${r.ID_receta}')">
       <td class="td-nombre">${r.nombre}</td>
-      <td style="font-size:13px;color:var(--txt2)">${r.área}</td>
       <td class="td-num">${formatearRendimiento(r)}</td>
       <td class="td-num">v${r.versión_actual||1}</td>
       <td style="text-align:right;padding:6px 16px">
@@ -6518,12 +6517,11 @@ async function renderVistaMaestroAdmin() {
   };
 
   const tablaGrupo = (titulo, icono, lista) => !lista.length ? '' : `
-    <div class="card" style="margin-bottom:16px">
+    <div class="card" style="margin-bottom:14px">
       <div class="card-head"><i class="ti ${icono}"></i> ${titulo} (${lista.length})</div>
       <table class="tabla-vista">
         <thead><tr>
           <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Nombre</th>
-          <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Área</th>
           <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Rendimiento</th>
           <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Versión</th>
           <th style="padding:9px 16px;background:var(--bg);border-bottom:1px solid var(--border)"></th>
@@ -6532,17 +6530,37 @@ async function renderVistaMaestroAdmin() {
       </table>
     </div>`;
 
-  const recetasNormales = maestro.filter(r => r.tipo_receta !== 'sub_receta');
-  const subRecetas = maestro.filter(r => r.tipo_receta === 'sub_receta');
+  const areasPresentes = [...new Set(maestro.map(r => r.área))].sort();
+  const areasAMostrar = areaFiltro === 'todas' ? areasPresentes : areasPresentes.filter(a => a === areaFiltro);
+
+  const bloqueArea = area => {
+    const deArea = maestro.filter(r => r.área === area);
+    const recetasNormales = deArea.filter(r => r.tipo_receta !== 'sub_receta');
+    const subRecetas = deArea.filter(r => r.tipo_receta === 'sub_receta');
+    return `
+      <div style="margin-bottom:24px">
+        <h2 style="font-size:16px;font-weight:700;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid var(--border)">${area} <span style="font-size:12px;color:var(--txt3);font-weight:400">(${deArea.length})</span></h2>
+        ${tablaGrupo('Recetas', 'ti-clipboard-list', recetasNormales)}
+        ${tablaGrupo('Sub recetas', 'ti-arrows-loop-2', subRecetas)}
+      </div>`;
+  };
 
   vista.innerHTML = `
     <div class="vista-header"><h1 class="vista-titulo">Maestro de recetas</h1></div>
     <p style="font-size:11px;color:var(--txt3);margin-bottom:12px"><i class="ti ti-info-circle"></i> Haga clic en cualquier fila para ver su costeo completo, tal como se vio en Aprobaciones.</p>
+    <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
+      <button class="${areaFiltro==='todas'?'btn-primario':'btn-secundario'}" style="font-size:12px;padding:6px 14px"
+        onclick="App._filtroMaestroArea='todas';renderVistaMaestroAdmin()">Todas las áreas</button>
+      ${areasPresentes.map(a => `
+        <button class="${areaFiltro===a?'btn-primario':'btn-secundario'}" style="font-size:12px;padding:6px 14px"
+          onclick="App._filtroMaestroArea='${a}';renderVistaMaestroAdmin()">${a}</button>
+      `).join('')}
+    </div>
     ${!maestro.length ? `
       <div class="empty-state">
         <i class="ti ti-book-off"></i>
         <h2>Sin recetas consolidadas</h2>
-      </div>` : tablaGrupo('Recetas', 'ti-clipboard-list', recetasNormales) + tablaGrupo('Sub recetas', 'ti-arrows-loop-2', subRecetas)}
+      </div>` : areasAMostrar.map(bloqueArea).join('')}
   `;
   mostrarVista('maestro-admin');
 }
