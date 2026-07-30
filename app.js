@@ -6306,49 +6306,165 @@ async function calcularECUI(btn) {
 }
 
 // ── ADMIN: MAESTRO ────────────────────────────────────────────
+// Reconstruye el detalle de costeo de una receta (ingredientes + insumos + costos) tal
+// como se ve en Aprobaciones — usado en el modal de Maestro de recetas para no perder
+// la trazabilidad de costos una vez que la receta ya fue aprobada.
+function construirDetalleCosteoRecetaHTML(r) {
+  let ingredientes = [], insumos = [];
+  try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+  try { insumos = JSON.parse(r.insumos_JSON || '[]'); } catch(e) {}
+  const esPan = r._area === 'PAN' || r.área === 'Panadería';
+
+  return `
+    <div style="display:flex;gap:16px;font-size:13px;color:var(--txt2);margin-bottom:12px;flex-wrap:wrap">
+      <span><strong>Rendimiento:</strong> ${formatearRendimiento(r)}</span>
+      <span><strong>Ingredientes:</strong> ${ingredientes.length}</span>
+      <span><strong>Versión:</strong> ${r.versión_actual || r.versión || 1}</span>
+      ${r.peso_harina_total_g ? `<span><strong>Harina base:</strong> ${r.peso_harina_total_g}g</span>` : ''}
+    </div>
+    ${ingredientes.length ? `
+    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px">
+      <thead><tr>
+        <th style="text-align:left;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Ingrediente</th>
+        <th style="text-align:right;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Cantidad</th>
+        ${esPan ? `<th style="text-align:right;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border);color:#E65100;font-weight:600;text-transform:uppercase;letter-spacing:.3px">% pan.</th>` : ''}
+        <th style="text-align:right;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border);color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Costo</th>
+      </tr></thead>
+      <tbody>
+        ${ingredientes.map(ing => {
+          const unidadRec = ing.unidad_receta || (ing.unidades !== undefined && ing.unidades !== null ? 'unidades' : 'gramos');
+          const displayVal = unidadRec === 'unidades'
+            ? `${parseFloat(ing.unidades||ing.gramos||0).toFixed(0)} uni`
+            : unidadRec === 'ml'
+            ? `${parseFloat(ing.ml||ing.gramos||0).toFixed(1)} ml`
+            : `${parseFloat(ing.gramos||0).toFixed(1)}g`;
+          return `
+          <tr>
+            <td style="padding:6px 10px;border-bottom:1px solid var(--border);color:var(--txt);font-weight:500">${ing.nombre}</td>
+            <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:600">${displayVal}</td>
+            ${esPan ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:#E65100">${((parseFloat(ing.pct)||0)*100).toFixed(1)}%</td>` : ''}
+            <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2);font-size:11px">$${parseFloat(ing.costo||0).toFixed(0)}</td>
+          </tr>`;
+        }).join('')}
+        <tr style="background:var(--bg);font-weight:600">
+          <td style="padding:6px 10px">Total ingredientes</td>
+          <td style="padding:6px 10px;text-align:right;font-family:'DM Mono',monospace">
+            ${ingredientes.some(i=>i.unidades!=null)
+              ? ingredientes.filter(i=>i.unidades==null).reduce((s,i)=>s+(parseFloat(i.gramos)||0),0).toFixed(1)+'g + sub recetas en uni'
+              : ingredientes.reduce((s,i)=>s+(parseFloat(i.gramos)||0),0).toFixed(1)+'g'}
+          </td>
+          ${esPan ? '<td></td>' : ''}
+          <td style="padding:6px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:11px">
+            $${ingredientes.reduce((s,i)=>s+(parseFloat(i.costo)||0),0).toFixed(0)}
+          </td>
+        </tr>
+      </tbody>
+    </table>` : ''}
+    ${insumos.length ? `
+    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px">
+      <thead><tr>
+        <th style="text-align:left;padding:6px 10px;background:#FFF3E0;border-bottom:1px solid var(--border);color:#E65100;font-weight:600;text-transform:uppercase;letter-spacing:.3px">📦 Insumo</th>
+        <th style="text-align:right;padding:6px 10px;background:#FFF3E0;border-bottom:1px solid var(--border);color:#E65100;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Cantidad</th>
+        <th style="text-align:right;padding:6px 10px;background:#FFF3E0;border-bottom:1px solid var(--border);color:#E65100;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Costo</th>
+      </tr></thead>
+      <tbody>
+        ${insumos.map(ins => `
+          <tr>
+            <td style="padding:6px 10px;border-bottom:1px solid var(--border);color:var(--txt);font-weight:500">${ins.nombre}</td>
+            <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:600">${parseFloat(ins.unidades||0).toFixed(0)} uni</td>
+            <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2);font-size:11px">$${parseFloat(ins.costo||0).toFixed(0)}</td>
+          </tr>`).join('')}
+        <tr style="background:#FFF3E0;font-weight:600">
+          <td style="padding:6px 10px" colspan="2">Total insumos</td>
+          <td style="padding:6px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:11px">
+            $${insumos.reduce((s,i)=>s+(parseFloat(i.costo)||0),0).toFixed(0)}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="text-align:right;font-size:13px;font-weight:700;margin-bottom:12px;padding:6px 10px">
+      Costo directo total (MP + insumos): $${(ingredientes.reduce((s,i)=>s+(parseFloat(i.costo)||0),0) + insumos.reduce((s,i)=>s+(parseFloat(i.costo)||0),0)).toFixed(0)}
+    </div>` : ''}
+    ${r.observaciones_procedimiento ? `
+      <div style="margin-top:12px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);margin-bottom:5px">Procedimiento / observaciones</div>
+        <p style="font-size:13px;color:var(--txt2);line-height:1.6;background:var(--bg);padding:10px 12px;border-radius:var(--r-md)">${r.observaciones_procedimiento}</p>
+      </div>` : ''}
+    ${r['sistematización_notas'] ? `
+      <div style="margin-top:10px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);margin-bottom:5px">Notas de sistematización</div>
+        <p style="font-size:12px;color:var(--txt3);font-style:italic;background:var(--bg);padding:8px 12px;border-radius:var(--r-md)">${r['sistematización_notas']}</p>
+      </div>` : ''}
+  `;
+}
+
 async function renderVistaMaestroAdmin() {
   const maestro = await Cache.get('Maestro_recetas', () => leerHoja('Maestro_recetas'));
+  App._maestroRecetasCache = maestro; // para que el modal pueda encontrar la fila por ID
   const vista = document.getElementById('vista-maestro-admin');
-  vista.innerHTML = `
-    <div class="vista-header"><h1 class="vista-titulo">Maestro de recetas</h1></div>
-    <div class="card">
-      <div class="card-head"><i class="ti ti-book"></i> Todas las recetas consolidadas (${maestro.length})</div>
+
+  const filaHtml = r => {
+    const esSubReceta = r.tipo_receta === 'sub_receta';
+    return `<tr style="cursor:pointer" onclick="abrirModalCosteoReceta('${r.ID_receta}')">
+      <td class="td-nombre">${r.nombre}</td>
+      <td style="font-size:13px;color:var(--txt2)">${r.área}</td>
+      <td class="td-num">${formatearRendimiento(r)}</td>
+      <td class="td-num">v${r.versión_actual||1}</td>
+      <td style="text-align:right;padding:6px 16px">
+        <button class="btn-peligro" style="font-size:12px;padding:4px 10px"
+          onclick="event.stopPropagation();confirmarEliminarReceta('${r.ID_receta}','${r.nombre}','${r.área}')">
+          <i class="ti ti-trash"></i>
+        </button>
+      </td>
+    </tr>`;
+  };
+
+  const tablaGrupo = (titulo, icono, lista) => !lista.length ? '' : `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head"><i class="ti ${icono}"></i> ${titulo} (${lista.length})</div>
       <table class="tabla-vista">
         <thead><tr>
-          <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Receta</th>
+          <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Nombre</th>
           <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Área</th>
-          <th style="text-align:center;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Tipo</th>
           <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Rendimiento</th>
           <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Versión</th>
           <th style="padding:9px 16px;background:var(--bg);border-bottom:1px solid var(--border)"></th>
         </tr></thead>
-        <tbody>
-          ${maestro.map(r => {
-            const esSubReceta = r.tipo_receta === 'sub_receta';
-            return `<tr>
-            <td class="td-nombre">${r.nombre}</td>
-            <td style="font-size:13px;color:var(--txt2)">${r.área}</td>
-            <td style="text-align:center">
-              <span style="font-size:10px;padding:2px 8px;border-radius:99px;font-weight:600;
-                background:${esSubReceta?'#EDE9FE':'#E8F5E9'};
-                color:${esSubReceta?'#5B21B6':'#166534'}">
-                ${esSubReceta?'⟳ Sub receta':'Receta'}
-              </span>
-            </td>
-            <td class="td-num">${formatearRendimiento(r)}</td>
-            <td class="td-num">v${r.versión_actual||1}</td>
-            <td style="text-align:right;padding:6px 16px">
-              <button class="btn-peligro" style="font-size:12px;padding:4px 10px"
-                onclick="confirmarEliminarReceta('${r.ID_receta}','${r.nombre}','${r.área}')">
-                <i class="ti ti-trash"></i>
-              </button>
-            </td>
-          </tr>`;}).join('')}
-        </tbody>
+        <tbody>${lista.map(filaHtml).join('')}</tbody>
       </table>
-    </div>
+    </div>`;
+
+  const recetasNormales = maestro.filter(r => r.tipo_receta !== 'sub_receta');
+  const subRecetas = maestro.filter(r => r.tipo_receta === 'sub_receta');
+
+  vista.innerHTML = `
+    <div class="vista-header"><h1 class="vista-titulo">Maestro de recetas</h1></div>
+    <p style="font-size:11px;color:var(--txt3);margin-bottom:12px"><i class="ti ti-info-circle"></i> Haga clic en cualquier fila para ver su costeo completo, tal como se vio en Aprobaciones.</p>
+    ${!maestro.length ? `
+      <div class="empty-state">
+        <i class="ti ti-book-off"></i>
+        <h2>Sin recetas consolidadas</h2>
+      </div>` : tablaGrupo('Recetas', 'ti-clipboard-list', recetasNormales) + tablaGrupo('Sub recetas', 'ti-arrows-loop-2', subRecetas)}
   `;
   mostrarVista('maestro-admin');
+}
+
+function abrirModalCosteoReceta(recetaId) {
+  const r = (App._maestroRecetasCache || []).find(x => x.ID_receta === recetaId);
+  if (!r) return;
+  const esSubReceta = r.tipo_receta === 'sub_receta';
+  document.getElementById('ver-receta-modal-contenido').innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span style="font-size:11px;padding:2px 8px;border-radius:99px;font-weight:600;
+        background:${esSubReceta?'#EDE9FE':'#E8F5E9'};color:${esSubReceta?'#5B21B6':'#166534'}">
+        ${esSubReceta?'⟳ Sub receta':'Receta'}
+      </span>
+      <span style="font-size:12px;color:var(--txt3)">${r.área}</span>
+    </div>
+    <h2 style="margin-bottom:8px">${r.nombre}</h2>
+    ${construirDetalleCosteoRecetaHTML(r)}
+  `;
+  document.getElementById('modal-ver-receta').classList.remove('hidden');
 }
 
 // ── MP: SOLICITAR Y EDITAR ────────────────────────────────────
