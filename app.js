@@ -5437,12 +5437,19 @@ function renderVistaMP() {
   const mp = App.materiasPrimas;
   const filtro = App._filtroMP || 'todos';
   const busqueda = (App._busquedaMP || '').trim().toLowerCase();
+  // "Sin costo" significa cosas distintas según el tipo: para MP/Insumo es costo_neto=0
+  // (nunca se le puso precio); para sub-recetas es costo_por_gramo=0 (nunca se aprobó,
+  // o sus propios ingredientes también están sin costo) — costo_neto siempre es $0 en
+  // sub-recetas por diseño, no es un indicador válido de "sin costo" para ese tipo.
+  const estaSinCosto = m => m.estado === 'activa' && (
+    m.tipo === 'sub_receta' ? (parseFloat(m.costo_por_gramo)||0) === 0 : (parseFloat(m.costo_neto)||0) === 0
+  );
   let mpFiltrada = filtro === 'todos' ? mp
-    : filtro === 'sin_costo' ? mp.filter(m => (parseFloat(m.costo_neto)||0) === 0 && m.estado === 'activa')
+    : filtro === 'sin_costo' ? mp.filter(estaSinCosto)
     : mp.filter(m => (m.tipo || 'mp') === filtro);
   if (busqueda) mpFiltrada = mpFiltrada.filter(m => (m.nombre || '').toLowerCase().includes(busqueda));
   const pendientes = mp.filter(m => m.estado === 'pendiente' || m.estado === 'recibida').filter(m => m.tipo !== 'sub_receta');
-  const sinCostoCount = mp.filter(m => (parseFloat(m.costo_neto)||0) === 0 && m.estado === 'activa').length;
+  const sinCostoCount = mp.filter(estaSinCosto).length;
   const vista = document.getElementById('vista-mp');
   const tabs = [
     { key: 'todos',       label: 'Todos' },
