@@ -5409,15 +5409,19 @@ function renderVistaMP() {
   const mp = App.materiasPrimas;
   const filtro = App._filtroMP || 'todos';
   const busqueda = (App._busquedaMP || '').trim().toLowerCase();
-  let mpFiltrada = filtro === 'todos' ? mp : mp.filter(m => (m.tipo || 'mp') === filtro);
+  let mpFiltrada = filtro === 'todos' ? mp
+    : filtro === 'sin_costo' ? mp.filter(m => (parseFloat(m.costo_neto)||0) === 0 && m.estado === 'activa')
+    : mp.filter(m => (m.tipo || 'mp') === filtro);
   if (busqueda) mpFiltrada = mpFiltrada.filter(m => (m.nombre || '').toLowerCase().includes(busqueda));
   const pendientes = mp.filter(m => m.estado === 'pendiente' || m.estado === 'recibida').filter(m => m.tipo !== 'sub_receta');
+  const sinCostoCount = mp.filter(m => (parseFloat(m.costo_neto)||0) === 0 && m.estado === 'activa').length;
   const vista = document.getElementById('vista-mp');
   const tabs = [
     { key: 'todos',       label: 'Todos' },
     { key: 'mp',          label: 'Materia Prima' },
     { key: 'insumo',      label: 'Insumos' },
     { key: 'sub_receta',  label: 'Sub recetas' },
+    { key: 'sin_costo',   label: `⚠ Sin costo (${sinCostoCount})` },
   ];
   vista.innerHTML = `
     <div class="vista-header">
@@ -5539,6 +5543,28 @@ function renderVistaMP() {
   }
 }
 
+async function verRecetasQueUsanMP(mpId, nombre) {
+  toast('Buscando en las 4 áreas...');
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'buscar_recetas_usando_mp', mp_id: mpId }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    if (!data.ok) { toast('Error: ' + (data.msg||''), 'error'); return; }
+    if (!data.recetas.length) {
+      alert(`"${nombre}" no está siendo usada en ninguna receta actualmente.`);
+      return;
+    }
+    const estados = { consolidada: 'Aprobada', en_prueba: 'En prueba', pendiente_aprobación: 'Pendiente de aprobación', borrador: 'Borrador' };
+    const lista = data.recetas.map(r => `• [${r.area}] ${r.nombre} — ${estados[r.estado] || r.estado}`).join('\n');
+    alert(
+      `"${nombre}" se usa en ${data.recetas.length} receta(s):\n\n${lista}\n\n` +
+      `Si le acaba de asignar costo a "${nombre}", cada una de estas recetas debe abrirse, guardarse y (si corresponde) volver a enviarse a revisión para que tome el costo actualizado.`
+    );
+  } catch(e) {
+    toast('No se pudo buscar: ' + e.message, 'error');
+  }
+}
+
 function abrirAccionesMP(mpId) {
   const m = App.materiasPrimas.find(x => x.ID_MP === mpId);
   if (!m) return;
@@ -5554,6 +5580,7 @@ function abrirAccionesMP(mpId) {
   const botones = [
     { icono: 'ti-edit', label: 'Editar precio', accion: `editarMP('${mpId}')` },
     { icono: 'ti-receipt-tax', label: 'Editar IVA / impuesto adicional', accion: `editarImpuestosMP('${mpId}')` },
+    { icono: 'ti-search', label: 'Ver recetas que la usan', accion: `verRecetasQueUsanMP('${mpId}','${nombreEscapado}')` },
     { icono: esInactiva ? 'ti-eye' : 'ti-eye-off', label: esInactiva ? 'Activar' : 'Desactivar',
       color: esInactiva ? '#2E7D32' : '#C62828', accion: `toggleEstadoMP('${mpId}','${m.estado}')` },
     { icono: 'ti-layout-grid', label: 'Gestionar áreas', accion: `gestionarAreasMP('${mpId}')` },
