@@ -343,6 +343,7 @@ function renderSidebar() {
       { id: 'costos',         icon: 'ti-chart-bar',             label: 'Estructuras de costo'},
       { id: 'estimacion-bol', icon: 'ti-chart-arrows-vertical', label: 'Estimación de demanda' },
       { id: 'analisis-merma', icon: 'ti-trash',                 label: 'Análisis de $ merma' },
+      { id: 'auditoria-costos', icon: 'ti-shield-check',        label: 'Auditoría de costos' },
       { id: 'config-costeo',  icon: 'ti-settings-dollar',       label: 'Config de costeo (Fase 2)' },
     ].forEach(item => nav.appendChild(crearNavItem(item)));
 
@@ -409,6 +410,7 @@ function navegarA(vistaId) {
     case 'pre-elaboraciones':   renderVistaPreElaboraciones(); break;
     case 'estimacion-bol':      renderVistaEstimacionDemanda();  break;
     case 'analisis-merma':      renderVistaAnalisisMerma();  break;
+    case 'auditoria-costos':    renderVistaAuditoriaCostos(); break;
     case 'config-costeo':       renderVistaConfigCosteo();   break;
     default: mostrarVista('empty');
   }
@@ -5683,6 +5685,102 @@ async function cambiarTipoMP(mpId, tipoActual, nombre) {
 }
 
 // ── ADMIN: COSTOS ─────────────────────────────────────────────
+// ── ADMIN: AUDITORÍA DE COSTOS ────────────────────────────────
+let _auditoriaResultado = null;
+
+function renderVistaAuditoriaCostos() {
+  const vista = document.getElementById('vista-auditoria-costos');
+  vista.innerHTML = `
+    <div class="vista-header"><h1 class="vista-titulo">Auditoría de costos</h1></div>
+    <p style="font-size:12px;color:var(--txt2);margin-bottom:16px">
+      Recalcula, con los precios <strong>actuales</strong> de Materias Primas, cuánto debería costar
+      cada receta consolidada, y lo compara contra lo que quedó guardado la última vez que se aprobó.
+      Útil para detectar recetas que quedaron desactualizadas después de cambiar un precio.
+    </p>
+    <button class="btn-primario" onclick="ejecutarAuditoriaCostos(this)" style="margin-bottom:16px">
+      <i class="ti ti-shield-check"></i> Ejecutar auditoría
+    </button>
+    <div id="auditoria-resultado-contenedor"></div>
+  `;
+  mostrarVista('auditoria-costos');
+}
+
+async function ejecutarAuditoriaCostos(btn) {
+  bloquearBtn(btn, 'Auditando...');
+  const contenedor = document.getElementById('auditoria-resultado-contenedor');
+  contenedor.innerHTML = '<div style="padding:20px;text-align:center;color:var(--txt3)"><div class="spinner"></div> Revisando todas las recetas...</div>';
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'auditar_costos_recetas' }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    desbloquearBtn(btn, '<i class="ti ti-shield-check"></i> Ejecutar auditoría', true);
+    if (!data.ok) { contenedor.innerHTML = `<p style="color:#C62828">Error: ${data.msg||''}</p>`; return; }
+    _auditoriaResultado = data;
+    renderResultadoAuditoria();
+  } catch(e) {
+    desbloquearBtn(btn, '<i class="ti ti-shield-check"></i> Ejecutar auditoría', true);
+    contenedor.innerHTML = `<p style="color:#C62828">No se pudo ejecutar: ${e.message}</p>`;
+  }
+}
+
+function renderResultadoAuditoria() {
+  const contenedor = document.getElementById('auditoria-resultado-contenedor');
+  const data = _auditoriaResultado;
+  if (!data) return;
+
+  if (!data.recetas.length) {
+    contenedor.innerHTML = `
+      <div class="empty-state">
+        <i class="ti ti-circle-check" style="color:#2E7D32"></i>
+        <h2>Todo al día</h2>
+        <p>Se revisaron ${data.total_revisadas} recetas y ninguna tiene diferencias relevantes entre el costo guardado y el actual.</p>
+      </div>`;
+    return;
+  }
+
+  contenedor.innerHTML = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      <div style="background:#FFEBEE;border-radius:var(--r-md);padding:10px 16px">
+        <div style="font-size:11px;color:#C62828">Con diferencias</div>
+        <div style="font-size:20px;font-weight:700;color:#C62828;font-family:'DM Mono',monospace">${data.con_diferencias}</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 16px">
+        <div style="font-size:11px;color:var(--txt3)">Total revisadas</div>
+        <div style="font-size:20px;font-weight:700;font-family:'DM Mono',monospace">${data.total_revisadas}</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><i class="ti ti-list"></i> Recetas a revisar</div>
+      <table class="tabla-vista">
+        <thead><tr>
+          <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Receta</th>
+          <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Área</th>
+          <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Guardado</th>
+          <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Actual</th>
+          <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Diferencia</th>
+          <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Alertas</th>
+        </tr></thead>
+        <tbody>
+          ${data.recetas.map(r => `
+            <tr>
+              <td class="td-nombre">${r.nombre} ${r.tipo === 'sub_receta' ? '<span style="font-size:10px;color:#5B21B6">⟳ sub</span>' : ''}</td>
+              <td style="font-size:13px;color:var(--txt2)">${r.área}</td>
+              <td class="td-num">${clp(r.costo_guardado)}</td>
+              <td class="td-num" style="font-weight:600">${clp(r.costo_actual)}</td>
+              <td class="td-num" style="color:${r.diferencia_pct > 0 ? '#C62828' : r.diferencia_pct < 0 ? '#2E7D32' : 'var(--txt2)'};font-weight:600">
+                ${r.diferencia_pct > 0 ? '+' : ''}${r.diferencia_pct}%
+              </td>
+              <td style="font-size:11px;color:#C62828">${r.problemas.join('; ')}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:11px;color:var(--txt3);margin-top:10px">
+      <i class="ti ti-info-circle"></i> Para corregir una receta: ábrala, guárdela (recalcula con los precios actuales) y vuelva a aprobarla.
+    </p>
+  `;
+}
+
 // ── ADMIN: ANÁLISIS DE $ MERMA ────────────────────────────────
 let _mermaTodasAreas = [];
 
