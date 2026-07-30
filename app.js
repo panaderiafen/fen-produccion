@@ -5171,6 +5171,7 @@ async function rechazarReceta() {
     fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso).catch(() => {});
 
     document.getElementById('modal-devolver-receta').classList.add('hidden');
+    desbloquearBtn(btn, '<i class="ti ti-check"></i> Confirmar devolución', true);
     toast('Receta devuelta a prueba');
     setTimeout(() => renderVistaAprobaciones(), 1200);
   } catch(e) {
@@ -5343,7 +5344,7 @@ async function confirmarAsignarMP(btn) {
   const recetaId      = document.getElementById('asignar-mp-receta').value;
   const nombreExist   = document.getElementById('asignar-mp-select').selectedOptions[0]?.dataset.nombre || '';
 
-  if (!mpExistId) { toast('Selecciona una MP existente'); return; }
+  if (!mpExistId) { toast('Selecciona una MP existente'); desbloquearBtn(btn, '<i class="ti ti-check"></i> Confirmar asignación', false); return; }
 
   // 1. Marcar solicitud como reemplazada + guardar cuál MP la reemplaza (dato persistente)
   const r1 = await escribirEnSheet('editar_campo_mp', { ID_MP: mpSolicitudId, campo: 'estado', valor: 'reemplazada' });
@@ -5398,6 +5399,7 @@ async function confirmarAsignarMP(btn) {
   }
 
   toast(`Asignado "${nombreExist}" — aviso enviado a la jefa`);
+  desbloquearBtn(btn, '<i class="ti ti-check"></i> Confirmar asignación', true);
   Cache.invalidar('mp_maestro');
   renderVistaMP();
 }
