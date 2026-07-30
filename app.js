@@ -1422,45 +1422,50 @@ function renderVistaMisRecetas() {
         <i class="ti ti-clipboard-list"></i>
         <h2>Sin recetas aún</h2>
         <p>Crea tu primera receta para empezar</p>
-      </div>` : `
-      <div class="card">
-        <div class="card-head"><i class="ti ti-clipboard-list"></i> Todas las recetas (${recetas.length})</div>
-        <table class="tabla-vista">
-          <thead><tr>
-            <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Receta</th>
-            <th style="text-align:center;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Estado</th>
-            <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Acciones</th>
-          </tr></thead>
-          <tbody>
-            ${recetas.map(r => {
-              const est = FEN.ESTADOS[r.estado] || FEN.ESTADOS.borrador;
-              const esConsolidada = r.estado === 'consolidada';
-              return `<tr>
-                <td class="td-nombre">
-                  ${r.nombre || r.ID_receta}
-                  <span style="font-size:10px;padding:1px 6px;border-radius:99px;margin-left:6px;font-weight:600;
-                    background:${r.tipo_receta==='sub_receta'?'#EDE9FE':'#E8F5E9'};
-                    color:${r.tipo_receta==='sub_receta'?'#5B21B6':'#166534'}">
-                    ${r.tipo_receta==='sub_receta'?'⟳ Sub receta':'Receta'}
-                  </span>
-                  ${esConsolidada ? '<span style="font-size:10px;color:#2E7D32;margin-left:4px"><i class="ti ti-lock"></i></span>' : ''}
-                </td>
-                <td style="text-align:center">
-                  <span class="estado-badge" style="color:${est.color};background:${est.bg}">${est.label}</span>
-                </td>
-                <td style="text-align:right;padding:6px 16px">
-                  <button class="btn-secundario" style="font-size:12px;padding:5px 12px"
-                    onclick="verReceta('${r.ID_receta}')"><i class="ti ti-eye"></i> Ver</button>
-                  <button class="btn-secundario" style="font-size:12px;padding:5px 12px;margin-left:6px"
-                    onclick="renderVistaFormReceta('${r.ID_receta}');mostrarVista('form-receta')">
-                    <i class="ti ti-edit"></i> Editar${esConsolidada ? '*' : ''}</button>
-                </td>
-              </tr>`;
-            }).join('')}
-            ${recetas.some(r => r.estado === 'consolidada') ? '<tr><td colspan="3" style="padding:8px 16px;font-size:11px;color:var(--txt3)">* Editar una receta consolidada la enviará a re-aprobación.</td></tr>' : ''}
-          </tbody>
-        </table>
-      </div>`}
+      </div>` : (() => {
+        const recetasNormales = recetas.filter(r => r.tipo_receta !== 'sub_receta');
+        const subRecetas = recetas.filter(r => r.tipo_receta === 'sub_receta');
+
+        const filaHtml = r => {
+          const est = FEN.ESTADOS[r.estado] || FEN.ESTADOS.borrador;
+          const esConsolidada = r.estado === 'consolidada';
+          return `<tr>
+            <td class="td-nombre">
+              ${r.nombre || r.ID_receta}
+              ${esConsolidada ? '<span style="font-size:10px;color:#2E7D32;margin-left:4px"><i class="ti ti-lock"></i></span>' : ''}
+            </td>
+            <td style="text-align:center">
+              <span class="estado-badge" style="color:${est.color};background:${est.bg}">${est.label}</span>
+            </td>
+            <td style="text-align:right;padding:6px 16px">
+              <button class="btn-secundario" style="font-size:12px;padding:5px 12px"
+                onclick="verReceta('${r.ID_receta}')"><i class="ti ti-eye"></i> Ver</button>
+              <button class="btn-secundario" style="font-size:12px;padding:5px 12px;margin-left:6px"
+                onclick="renderVistaFormReceta('${r.ID_receta}');mostrarVista('form-receta')">
+                <i class="ti ti-edit"></i> Editar${esConsolidada ? '*' : ''}</button>
+            </td>
+          </tr>`;
+        };
+
+        const tablaGrupo = (titulo, icono, lista) => !lista.length ? '' : `
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-head"><i class="ti ${icono}"></i> ${titulo} (${lista.length})</div>
+            <table class="tabla-vista">
+              <thead><tr>
+                <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Nombre</th>
+                <th style="text-align:center;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Estado</th>
+                <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Acciones</th>
+              </tr></thead>
+              <tbody>
+                ${lista.map(filaHtml).join('')}
+                ${lista.some(r => r.estado === 'consolidada') ? '<tr><td colspan="3" style="padding:8px 16px;font-size:11px;color:var(--txt3)">* Editar una receta consolidada la enviará a re-aprobación.</td></tr>' : ''}
+              </tbody>
+            </table>
+          </div>`;
+
+        return tablaGrupo('Recetas', 'ti-clipboard-list', recetasNormales) +
+               tablaGrupo('Sub recetas', 'ti-arrows-loop-2', subRecetas);
+      })()}
   `;
   mostrarVista('mis-recetas');
 }
