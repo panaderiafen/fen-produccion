@@ -5321,11 +5321,43 @@ async function aprobarMP(mpId, btn) {
   if (!mp) return;
 
   const sinCosto = !mp.costo_neto || parseFloat(mp.costo_neto) === 0;
+  let costoNeto = null, unidadCompra = null;
+
   if (sinCosto) {
-    if (!confirm(`"${mp.nombre}" no tiene costo. ¿Agregar igual? Aparecerá en rojo hasta costearse.`)) return;
+    const quiereCostear = confirm(
+      `"${mp.nombre}" no tiene costo cargado.\n\n` +
+      `Aceptar = ingresar costo y unidad de compra ahora\n` +
+      `Cancelar = agregarla igual, sin costo (queda marcada en rojo hasta que la costee más adelante)`
+    );
+    if (quiereCostear) {
+      const precio = prompt(`Costo neto de "${mp.nombre}" (deje vacío para omitir):`);
+      if (precio !== null && precio.trim() !== '' && !isNaN(parseFloat(precio)) && parseFloat(precio) > 0) {
+        const unidad = prompt(
+          `Unidad de compra de "${mp.nombre}"\nEjemplos: kg, 25kg, lt, un, 10un, 500ml`,
+          'kg'
+        );
+        if (unidad && unidad.trim()) {
+          costoNeto = parseFloat(precio);
+          unidadCompra = unidad.trim().toLowerCase();
+        }
+      }
+    }
+    if (costoNeto === null) {
+      if (!confirm(`"${mp.nombre}" quedará agregada sin costo. ¿Continuar?`)) {
+        if (btn) desbloquearBtn(btn, '<i class="ti ti-check"></i> Agregar al maestro', false);
+        return;
+      }
+    }
   }
 
   await escribirEnSheet('editar_campo_mp', { ID_MP: mpId, campo: 'estado', valor: 'activa' });
+
+  if (costoNeto !== null) {
+    await escribirEnSheet('editar_campo_mp', { ID_MP: mpId, campo: 'unidad_compra', valor: unidadCompra });
+    await escribirEnSheet('editar_mp', { ID_MP: mpId, costo_neto: costoNeto });
+    mp.unidad_compra = unidadCompra;
+    mp.costo_neto = costoNeto;
+  }
 
   const areaCode = mp.area_codigo || mp.areas_habilitadas?.split(',')?.[0] || '';
   if (areaCode) {
