@@ -5285,8 +5285,8 @@ function renderVistaMP() {
     </div>
     <div class="campo" style="max-width:320px;margin-bottom:12px">
       <input type="text" id="buscar-mp" placeholder="🔎 Buscar por nombre..." value="${App._busquedaMP || ''}"
-        oninput="App._busquedaMP=this.value;renderVistaMP();"
-        onfocus="App._buscarMPFocused=true" onblur="App._buscarMPFocused=false"
+        oninput="App._buscarMPFocused=true;App._busquedaMP=this.value;renderVistaMP();"
+        onfocus="App._buscarMPFocused=true"
         style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
     </div>
     ${pendientes.length ? `
