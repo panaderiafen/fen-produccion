@@ -594,12 +594,13 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
           <label>Área</label>
           <input type="text" readonly value="${FEN.AREAS[App.areaCodigo]?.nombre || ''}">
         </div>`}
+        ${(receta?.porciones_base_unidad || 'un') !== 'g' ? `
         <div class="campo">
           <label>Peso por pieza cruda (g) <span style="color:var(--txt3);font-weight:400;font-size:10px">— calculado</span></label>
           <input type="number" id="f-peso-crudo" placeholder="Auto" readonly
             style="color:var(--txt3);background:var(--bg)"
             value="${receta?.ingredientes_JSON ? (() => { try { const ings = JSON.parse(receta.ingredientes_JSON); const total = ings.reduce((s,i)=>s+(parseFloat(i.gramos)||0),0); return (total/(parseInt(receta.porciones_base)||1)).toFixed(1); } catch(e) { return ''; } })() : ''}">
-        </div>
+        </div>` : ''}
         ${App.areaCodigo === 'BOL' ? `
         <div class="campo">
           <label>% Merma laminado <span style="color:var(--txt3);font-weight:400;font-size:10px">— recortes de borde</span></label>
@@ -1438,11 +1439,14 @@ function renderVistaMisRecetas() {
               <span class="estado-badge" style="color:${est.color};background:${est.bg}">${est.label}</span>
             </td>
             <td style="text-align:right;padding:6px 16px">
-              <button class="btn-secundario" style="font-size:12px;padding:5px 12px"
-                onclick="verReceta('${r.ID_receta}')"><i class="ti ti-eye"></i> Ver</button>
-              <button class="btn-secundario" style="font-size:12px;padding:5px 12px;margin-left:6px"
-                onclick="renderVistaFormReceta('${r.ID_receta}');mostrarVista('form-receta')">
-                <i class="ti ti-edit"></i> Editar${esConsolidada ? '*' : ''}</button>
+              ${r.estado === 'en_prueba' ? `
+              <button class="btn-primario" style="font-size:12px;padding:5px 12px;margin-right:6px"
+                onclick="enviarARevision('${r.ID_receta}')">
+                <i class="ti ti-send"></i> Enviar a revisión</button>` : ''}
+              <button class="btn-secundario" style="font-size:14px;padding:5px 12px"
+                onclick="abrirAccionesReceta('${r.ID_receta}')" title="Acciones">
+                <i class="ti ti-dots-vertical"></i>
+              </button>
             </td>
           </tr>`;
         };
@@ -1470,14 +1474,152 @@ function renderVistaMisRecetas() {
   mostrarVista('mis-recetas');
 }
 
+function abrirModalVerReceta(recetaId) {
+  const r = App.recetas.find(x => x.ID_receta === recetaId);
+  if (!r) return;
+  const esPan = App.areaCodigo === 'PAN';
+  const est   = FEN.ESTADOS[r.estado] || FEN.ESTADOS.borrador;
+
+  document.getElementById('ver-receta-modal-contenido').innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span class="estado-badge" style="color:${est.color};background:${est.bg}">${est.label}</span>
+    </div>
+    <h2 style="margin-bottom:8px">${r.nombre}</h2>
+    <div class="meta-chips" style="margin-bottom:16px">
+      <span class="chip"><i class="ti ti-box"></i>${formatearRendimiento(r)}</span>
+      ${esPan && r.peso_harina_total_g ? `<span class="chip"><i class="ti ti-weight"></i>${r.peso_harina_total_g}g harina base</span>` : ''}
+      <span class="chip"><i class="ti ti-versions"></i>v${r.versión || 1}</span>
+    </div>
+    ${construirDetalleRecetaHTML(r)}
+  `;
+  document.getElementById('modal-ver-receta').classList.remove('hidden');
+}
+
+function abrirAccionesReceta(recetaId) {
+  const r = App.recetas.find(x => x.ID_receta === recetaId);
+  if (!r) return;
+
+  document.getElementById('acciones-receta-titulo').textContent = r.nombre;
+
+  const botones = [
+    { icono: 'ti-edit', label: 'Editar receta',
+      accion: `cerrarModalAccionesReceta();renderVistaFormReceta('${recetaId}');mostrarVista('form-receta')` },
+    { icono: 'ti-eye', label: 'Ver receta',
+      accion: `cerrarModalAccionesReceta();abrirModalVerReceta('${recetaId}')` },
+  ];
+  if (r.estado === 'borrador' || r.estado === 'en_prueba') {
+    botones.push({ icono: 'ti-trash', label: 'Eliminar receta', color: '#C62828',
+      accion: `cerrarModalAccionesReceta();confirmarEliminarReceta('${recetaId}','${(r.nombre||'').replace(/'/g,"\\'")}','${App.area?.nombre||''}')` });
+  }
+
+  document.getElementById('acciones-receta-botones').innerHTML = botones.map(b => `
+    <button class="btn-secundario" style="width:100%;justify-content:flex-start;gap:10px;padding:12px 14px;font-size:14px;${b.color?'color:'+b.color:''}"
+      onclick="${b.accion}">
+      <i class="ti ${b.icono}" style="font-size:18px"></i> ${b.label}
+    </button>
+  `).join('') + (r.estado === 'consolidada' || r.estado === 'pendiente_aprobación'
+    ? `<p style="font-size:11px;color:var(--txt3);text-align:center;margin-top:4px">
+        <i class="ti ti-lock"></i> Receta aprobada o en revisión — solo Admin puede eliminarla.
+      </p>` : '');
+
+  document.getElementById('modal-acciones-receta').classList.remove('hidden');
+}
+
+function cerrarModalAccionesReceta() {
+  document.getElementById('modal-acciones-receta').classList.add('hidden');
+}
+
 // ── VER RECETA ────────────────────────────────────────────────
+// Contenido de detalle de una receta (stats + ingredientes + notas) — reutilizado
+// tanto en la vista completa (verReceta) como en el modal rápido (abrirModalVerReceta).
+function construirDetalleRecetaHTML(r) {
+  let ingredientes = [];
+  try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+  const esPan = App.areaCodigo === 'PAN';
+
+  const statsHtml = (() => {
+    const totalIngr = ingredientes.reduce((s,i)=>s+(parseFloat(i.gramos)||0),0);
+    const porciones = parseInt(r.porciones_base)||1;
+    const pesoCrudoPieza = (totalIngr/porciones).toFixed(1);
+    const esBOL = App.areaCodigo === 'BOL';
+    const esRendGramos = (r.porciones_base_unidad || 'un') === 'g';
+    const mermaLaminado = esBOL ? parseFloat(r.merma_laminado_pct||8) : 0;
+    const pesoPaston = esBOL ? (totalIngr * (1 - mermaLaminado/100)).toFixed(0) : null;
+    const pesoPastonPieza = esBOL ? (pesoPaston / porciones).toFixed(1) : null;
+    return `
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-val azul">${formatearRendimiento(r)}</div>
+        <div class="stat-lbl">Rendimiento</div>
+      </div>
+      ${!esRendGramos ? `
+      <div class="stat-card">
+        <div class="stat-val">${pesoCrudoPieza}g</div>
+        <div class="stat-lbl">Peso crudo por pieza</div>
+      </div>` : ''}
+      ${esBOL ? `
+      <div class="stat-card">
+        <div class="stat-val" style="color:#6A1B9A">${esRendGramos ? pesoPaston : pesoPastonPieza}g</div>
+        <div class="stat-lbl">Peso pastón listo${esRendGramos ? '' : '/pieza'}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" style="color:#C62828">${mermaLaminado}%</div>
+        <div class="stat-lbl">Merma laminado</div>
+      </div>` : `
+      <div class="stat-card">
+        <div class="stat-val">${ingredientes.length}</div>
+        <div class="stat-lbl">Ingredientes</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val">${r.versión||1}</div>
+        <div class="stat-lbl">Versión</div>
+      </div>`}
+    </div>`;
+  })();
+
+  return `
+    ${r.observaciones_procedimiento ? `
+      <div style="background:var(--bg);border-radius:var(--r-md);padding:12px 16px;margin-bottom:16px;
+        font-size:13px;color:var(--txt2);line-height:1.65">${r.observaciones_procedimiento}</div>` : ''}
+    ${statsHtml}
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head"><i class="ti ti-basket"></i> Ingredientes</div>
+      <table class="tabla-vista">
+        <thead><tr>
+          <th style="text-align:left;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Ingrediente</th>
+          <th style="text-align:right;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Gramos</th>
+          ${esPan ? `<th style="text-align:right;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">% panadero</th>` : ''}
+        </tr></thead>
+        <tbody>
+          ${ingredientes.map(ing => `
+            <tr>
+              <td class="td-nombre">${ing.nombre}</td>
+              <td class="td-num">${parseFloat(ing.gramos||0).toFixed(0)}g</td>
+              ${esPan ? `<td class="td-pct">${((parseFloat(ing.pct)||0)*100).toFixed(1)}%</td>` : ''}
+            </tr>`).join('')}
+          <tr style="background:var(--bg);font-weight:600">
+            <td style="padding:8px 16px">Total ingredientes</td>
+            <td class="td-num" style="padding:8px 16px">
+              ${ingredientes.reduce((s,i)=>s+(parseFloat(i.gramos)||0),0).toFixed(0)}g</td>
+            ${esPan ? '<td></td>' : ''}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    ${r['sistematización_notas'] ? `
+      <div class="card">
+        <div class="card-head"><i class="ti ti-notes"></i> Notas de sistematización</div>
+        <div class="card-body" style="font-size:13px;color:var(--txt2);line-height:1.7">
+          ${r['sistematización_notas']}</div>
+      </div>` : ''}
+  `;
+}
+
 function verReceta(recetaId) {
   // Cancelar navegación automática pendiente
   if (App._navTimer) { clearTimeout(App._navTimer); App._navTimer = null; }
   const r = App.recetas.find(x => x.ID_receta === recetaId);
   if (!r) return;
-  let ingredientes = [];
-  try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
   const esPan = App.areaCodigo === 'PAN';
   const est   = FEN.ESTADOS[r.estado] || FEN.ESTADOS.borrador;
 
@@ -1506,81 +1648,7 @@ function verReceta(recetaId) {
           </button>` : ''}
       </div>
     </div>
-
-    ${r.observaciones_procedimiento ? `
-      <div style="background:var(--bg);border-radius:var(--r-md);padding:12px 16px;margin-bottom:16px;
-        font-size:13px;color:var(--txt2);line-height:1.65">${r.observaciones_procedimiento}</div>` : ''}
-
-    ${(() => {
-      const totalIngr = ingredientes.reduce((s,i)=>s+(parseFloat(i.gramos)||0),0);
-      const porciones = parseInt(r.porciones_base)||1;
-      const pesoCrudoTotal = totalIngr;
-      const pesoCrudoPieza = (totalIngr/porciones).toFixed(1);
-      const esBOL = App.areaCodigo === 'BOL';
-      const mermaLaminado = esBOL ? parseFloat(r.merma_laminado_pct||8) : 0;
-      const pesoPaston = esBOL ? (totalIngr * (1 - mermaLaminado/100)).toFixed(0) : null;
-      const pesoPastonPieza = esBOL ? (pesoPaston / porciones).toFixed(1) : null;
-      return `
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-val azul">${r.porciones_base}</div>
-          <div class="stat-lbl">Rendimiento (unidades)</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-val">${pesoCrudoPieza}g</div>
-          <div class="stat-lbl">Peso crudo por pieza</div>
-        </div>
-        ${esBOL ? `
-        <div class="stat-card">
-          <div class="stat-val" style="color:#6A1B9A">${pesoPastonPieza}g</div>
-          <div class="stat-lbl">Peso pastón listo/pieza</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-val" style="color:#C62828">${mermaLaminado}%</div>
-          <div class="stat-lbl">Merma laminado</div>
-        </div>` : `
-        <div class="stat-card">
-          <div class="stat-val">${ingredientes.length}</div>
-          <div class="stat-lbl">Ingredientes</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-val">${r.versión||1}</div>
-          <div class="stat-lbl">Versión</div>
-        </div>`}
-      </div>`;
-    })()}
-
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-head"><i class="ti ti-basket"></i> Ingredientes</div>
-      <table class="tabla-vista">
-        <thead><tr>
-          <th style="text-align:left;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Ingrediente</th>
-          <th style="text-align:right;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Gramos</th>
-          ${esPan ? `<th style="text-align:right;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">% panadero</th>` : ''}
-        </tr></thead>
-        <tbody>
-          ${ingredientes.map(ing => `
-            <tr>
-              <td class="td-nombre">${ing.nombre}</td>
-              <td class="td-num">${parseFloat(ing.gramos||0).toFixed(0)}g</td>
-              ${esPan ? `<td class="td-pct">${((parseFloat(ing.pct)||0)*100).toFixed(1)}%</td>` : ''}
-            </tr>`).join('')}
-          <tr style="background:var(--bg);font-weight:600">
-            <td style="padding:8px 16px">Total ingredientes</td>
-            <td class="td-num" style="padding:8px 16px">
-              ${ingredientes.reduce((s,i)=>s+(parseFloat(i.gramos)||0),0).toFixed(0)}g</td>
-            ${esPan ? '<td></td>' : ''}
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    ${r['sistematización_notas'] ? `
-      <div class="card">
-        <div class="card-head"><i class="ti ti-notes"></i> Notas de sistematización</div>
-        <div class="card-body" style="font-size:13px;color:var(--txt2);line-height:1.7">
-          ${r['sistematización_notas']}</div>
-      </div>` : ''}
+    ${construirDetalleRecetaHTML(r)}
   `;
   mostrarVista('ver-receta');
 }
