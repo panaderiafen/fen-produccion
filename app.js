@@ -42,6 +42,14 @@ function clp(valor) {
   return '$' + n.toLocaleString('es-CL');
 }
 
+// Muestra el rendimiento de una receta respetando si es en gramos o en unidades
+function formatearRendimiento(r) {
+  const cantidad = parseFloat(r.porciones_base) || 0;
+  const esGramos = r.porciones_base_unidad === 'g';
+  if (esGramos) return `${cantidad.toLocaleString('es-CL')}g`;
+  return `${cantidad.toLocaleString('es-CL')} unidad${cantidad !== 1 ? 'es' : ''}`;
+}
+
 // ── INIT ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   renderLoginCards();
@@ -562,8 +570,18 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
           ${esEdicion && receta?.estado==='pendiente_aprobación' ? '<p style="font-size:11px;color:#1565C0;margin-top:4px"><i class="ti ti-info-circle"></i> Al guardar cambios volverá a "en prueba" — deberás enviarla de nuevo a revisión.</p>' : ''}
         </div>
         <div class="campo">
-          <label>Rendimiento / unidades <span class="req">*</span></label>
-          <input type="number" id="f-porciones" placeholder="Ej: 1 (hogaza), 12 (marraquetas)" min="1" value="${receta?.porciones_base || ''}">
+          <label>Rendimiento <span class="req">*</span></label>
+          <div style="display:flex;gap:8px">
+            <input type="number" id="f-porciones" placeholder="Ej: 12, 190" min="1" step="0.1" style="flex:1" value="${receta?.porciones_base || ''}">
+            <select id="f-porciones-unidad" style="max-width:110px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+              <option value="un" ${(receta?.porciones_base_unidad || 'un') === 'un' ? 'selected' : ''}>unidades</option>
+              <option value="g" ${receta?.porciones_base_unidad === 'g' ? 'selected' : ''}>gramos</option>
+            </select>
+          </div>
+          <p style="font-size:11px;color:var(--txt3);margin-top:4px">
+            Use <strong>unidades</strong> si el lote rinde piezas contables (ej: 12 marraquetas, 1 hogaza).
+            Use <strong>gramos</strong> si se consume en porciones variables de un lote (ej: 190g de masa madre).
+          </p>
         </div>
         ${esPan ? `
         <div class="campo">
@@ -632,6 +650,9 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
           </td></tr></tfoot>` : ''}
           <tbody id="tbody-ingr"></tbody>
         </table>
+      </div>
+      <div id="total-ingredientes-preview" style="padding:8px 16px;border-top:1px solid var(--border);text-align:right;font-size:12px;color:var(--txt2)">
+        Total: <strong style="font-family:'DM Mono',monospace">0g</strong>
       </div>
     </div>
 
@@ -705,6 +726,7 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
   if (pasos.length > 0) pasos.forEach(p => agregarPaso(typeof p === 'string' ? p : ''));
   else { agregarPaso(); agregarPaso(); }
 
+  actualizarTotalIngredientesPreview();
   mostrarVista('form-receta');
 }
 
@@ -1012,7 +1034,7 @@ function agregarIngrediente(data = {}) {
     <td><input type="number" placeholder="${usaUnidades?'1':'0'}"
       value="${usaUnidades ? (data.unidades||'') : usaMl ? (data.ml||data.gramos||'') : (data.gramos ? parseFloat(data.gramos).toFixed(1) : '')}"
       min="0" step="${usaUnidades?'1':'0.01'}"
-      oninput="${esPan ? 'desdeGramos(this)' : ''}"
+      oninput="${esPan ? 'desdeGramos(this)' : 'actualizarTotalIngredientesPreview()'}"
       style="max-width:90px"
       data-modo="${usaUnidades ? 'unidades' : usaMl ? 'ml' : 'gramos'}"
       data-unidad="${data.unidad_receta || (usaUnidades ? 'unidades' : 'gramos')}">
@@ -1021,16 +1043,57 @@ function agregarIngrediente(data = {}) {
       value="${data.pct ? (data.pct*100).toFixed(2) : ''}"
       step="0.01" style="max-width:70px;color:var(--area-color);font-weight:500"
       oninput="desdePct(this)" title="% relativo al peso de harina"></td>` : ''}
-    <td><button class="btn-fila-del" onclick="this.closest('tr').remove()"
+    <td><button class="btn-fila-del" onclick="this.closest('tr').remove();actualizarTotalIngredientesPreview();"
       aria-label="Eliminar"><i class="ti ti-x"></i></button></td>
   `;
   tbody.appendChild(tr);
+  actualizarTotalIngredientesPreview();
 }
 
 function calcularCostoFila(el) {
   const tr = el.closest('tr');
   const select = tr.querySelector('select');
   if (select.value === '__nueva__') { solicitarNuevaMP(); select.value = ''; return; }
+}
+
+// Calcula y muestra el total de gramos de la tabla de ingredientes, convirtiendo
+// sub-recetas agregadas en "Unidades" a su peso equivalente (solo para mostrar,
+// igual que se hace al guardar — no afecta el costo).
+function actualizarTotalIngredientesPreview() {
+  const el = document.getElementById('total-ingredientes-preview');
+  if (!el) return;
+  let total = 0;
+  let hayUnidadesSinConvertir = false;
+
+  document.querySelectorAll('#tbody-ingr tr').forEach(tr => {
+    const select = tr.querySelector('select');
+    const inputs = tr.querySelectorAll('input[type="number"]');
+    if (!select || select.disabled) return; // filas pendientes: no se pueden convertir a peso aún
+    if (!select.value || select.value === '__nueva__') return;
+
+    const opcion = select.options[select.selectedIndex];
+    const tipoSel = tr.querySelector('.sel-unidad-tipo');
+    const modoInput = tipoSel ? tipoSel.value : (tr.querySelector('input[type="number"]')?.dataset.modo || 'gramos');
+    const valorInput = parseFloat(inputs[0]?.value) || 0;
+
+    if (modoInput === 'unidades' && valorInput > 0) {
+      const nombreSR = opcion.text.replace('⟳ ', '');
+      const srReceta = App.recetas?.find(r => r.nombre === nombreSR && r.estado === 'consolidada');
+      if (srReceta) {
+        let ingsR = [];
+        try { ingsR = JSON.parse(srReceta.ingredientes_JSON || '[]'); } catch(e) {}
+        const pesoUnitario = ingsR.reduce((s,i) => s+(parseFloat(i.gramos)||0), 0);
+        total += pesoUnitario * valorInput;
+      } else {
+        hayUnidadesSinConvertir = true;
+      }
+    } else if (modoInput !== 'unidades') {
+      total += valorInput;
+    }
+  });
+
+  const nota = hayUnidadesSinConvertir ? ' <span style="color:var(--txt3)">(algunas unidades sin peso de referencia)</span>' : '';
+  el.innerHTML = `Total: <strong style="font-family:'DM Mono',monospace">${total.toLocaleString('es-CL', {maximumFractionDigits:1})}g</strong>${nota}`;
 }
 
 function onChangeIngredienteSelect(sel) {
@@ -1044,6 +1107,7 @@ function onChangeIngredienteSelect(sel) {
     toggleUnidadTipo(tipoSel);
   }
   if (App.areaCodigo === 'PAN') desdeGramos(sel.closest('tr').querySelector('input[type="number"]'));
+  actualizarTotalIngredientesPreview();
 }
 
 function toggleUnidadTipo(sel) {
@@ -1056,10 +1120,12 @@ function toggleUnidadTipo(sel) {
   input.placeholder = modo === 'unidades' ? '1' : '0';
   input.step = modo === 'unidades' ? '1' : '0.01';
   input.value = '';
+  actualizarTotalIngredientesPreview();
 }
 
 // Ingresa gramos → calcula %
 function desdeGramos(inputGr) {
+  actualizarTotalIngredientesPreview();
   if (App.areaCodigo !== 'PAN') return;
   const tr       = inputGr.closest('tr');
   const inputPct = tr.querySelectorAll('input[type="number"]')[1];
@@ -1072,6 +1138,7 @@ function desdeGramos(inputGr) {
 
 // Ingresa % → calcula gramos
 function desdePct(inputPct) {
+  actualizarTotalIngredientesPreview();
   if (App.areaCodigo !== 'PAN') return;
   const tr       = inputPct.closest('tr');
   const inputGr  = tr.querySelectorAll('input[type="number"]')[0];
@@ -1245,7 +1312,8 @@ async function guardarReceta(recetaId, btn) {
       return sel || 'borrador';
     })(),
     área:                        App.area.nombre,
-    porciones_base:              parseInt(porciones),
+    porciones_base:              parseFloat(porciones),
+    porciones_base_unidad:       document.getElementById('f-porciones-unidad')?.value || 'un',
     peso_harina_total_g:         App.areaCodigo === 'PAN' ? (document.getElementById('f-harina')?.value || '') : '',
     ingredientes_JSON:           JSON.stringify(ingredientes),
     insumos_JSON:                JSON.stringify(insumos),
@@ -1417,7 +1485,7 @@ function verReceta(recetaId) {
         </div>
         <h1 class="vista-titulo">${r.nombre}</h1>
         <div class="meta-chips">
-          <span class="chip"><i class="ti ti-box"></i>${r.porciones_base} unidad${parseInt(r.porciones_base)>1?'es':''}</span>
+          <span class="chip"><i class="ti ti-box"></i>${formatearRendimiento(r)}</span>
           ${esPan && r.peso_harina_total_g ? `<span class="chip"><i class="ti ti-weight"></i>${r.peso_harina_total_g}g harina base</span>` : ''}
           <span class="chip"><i class="ti ti-versions"></i>v${r.versión || 1}</span>
         </div>
@@ -2521,7 +2589,7 @@ async function renderVistaMaestro() {
                   ${esSubReceta?'⟳ Sub receta':'Receta'}
                 </span>
               </td>
-              <td class="td-num">${r.porciones_base} unid.</td>
+              <td class="td-num">${formatearRendimiento(r)}</td>
               <td class="td-num">v${r.versión_actual||1}</td>
             </tr>`;}).join('')}
           </tbody>
@@ -4882,7 +4950,7 @@ function renderVistaAprobaciones() {
             </div>
             <div class="card-body">
               <div style="display:flex;gap:16px;font-size:13px;color:var(--txt2);margin-bottom:12px">
-                <span><strong>Rendimiento:</strong> ${r.porciones_base} unid.</span>
+                <span><strong>Rendimiento:</strong> ${formatearRendimiento(r)}</span>
                 <span><strong>Ingredientes:</strong> ${ingredientes.length}</span>
                 <span><strong>Versión:</strong> ${r.versión||1}</span>
                 ${r.peso_harina_total_g ? `<span><strong>Harina base:</strong> ${r.peso_harina_total_g}g</span>` : ''}
@@ -6151,7 +6219,7 @@ async function renderVistaMaestroAdmin() {
                 ${esSubReceta?'⟳ Sub receta':'Receta'}
               </span>
             </td>
-            <td class="td-num">${r.porciones_base} unid.</td>
+            <td class="td-num">${formatearRendimiento(r)}</td>
             <td class="td-num">v${r.versión_actual||1}</td>
             <td style="text-align:right;padding:6px 16px">
               <button class="btn-peligro" style="font-size:12px;padding:4px 10px"
@@ -6259,15 +6327,15 @@ function cerrarModalSolicitarMP() {
 }
 
 async function fusionarMPUI(mpIdEliminar, nombreActual) {
-  // Buscar candidatos: MP activas con nombre parecido, excluyendo la actual
+  // Buscar candidatos: cualquier MP con nombre parecido (activa o inactiva), excluyendo la actual y las ya reemplazadas
   const candidatos = App.materiasPrimas.filter(m =>
-    m.ID_MP !== mpIdEliminar && m.estado === 'activa' &&
+    m.ID_MP !== mpIdEliminar && m.estado !== 'reemplazada' &&
     m.nombre.toLowerCase().includes(nombreActual.toLowerCase().split(' ')[0])
   );
 
   let listaTexto = candidatos.length
-    ? candidatos.map(c => `${c.ID_MP} — ${c.nombre} (${c.categoría || 'sin categoría'})`).join('\n')
-    : '(no se encontraron MP con nombre parecido activas)';
+    ? candidatos.map(c => `${c.ID_MP} — ${c.nombre} (${c.estado}${c.categoría ? ', '+c.categoría : ''})`).join('\n')
+    : '(no se encontraron MP con nombre parecido — puede escribir el ID igual si lo conoce)';
 
   const idMantener = prompt(
     `Fusionar "${nombreActual}" (${mpIdEliminar}) con otra MP existente.\n\n` +
