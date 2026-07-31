@@ -7157,8 +7157,13 @@ async function toggleEstadoMP(mpId, estadoActual) {
 
 // ── UTILIDADES ────────────────────────────────────────────────
 function generarId(areaCodigo) {
-  const existing = App.recetas.filter(r => r.ID_receta?.startsWith(areaCodigo));
-  return `${areaCodigo}${String(existing.length + 1).padStart(3,'0')}`;
+  // Antes: contaba recetas existentes y sumaba 1 — colisionaba si alguna vez se
+  // eliminó una receta, o si el listado cargado no reflejaba el 100% del Sheet
+  // (recetas y sub-recetas comparten el mismo contador). Ahora es imposible de
+  // colisionar: timestamp (único al milisegundo) + 3 caracteres aleatorios.
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const random = Math.random().toString(36).substring(2, 5).toUpperCase();
+  return `${areaCodigo}${timestamp}${random}`;
 }
 
 function obtenerSemanaActual() {
