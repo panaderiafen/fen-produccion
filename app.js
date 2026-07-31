@@ -322,6 +322,7 @@ function renderSidebar() {
       const rdIdx = items.findIndex(i => i.id === 'recetas-del-dia');
       if (rdIdx >= 0) items[rdIdx] = { id: 'recetas-del-dia', icon: 'ti-flame', label: 'Plan de horneado del día' };
       items.splice(3, 0, { id: 'pre-elaboraciones', icon: 'ti-clock-play', label: 'Pre-elaboraciones y tareas' });
+      items.splice(4, 0, { id: 'rellenos-otras-recetas', icon: 'ti-egg', label: 'Recetas del día' });
     }
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL') {
       items.push({ id: 'resumen-semanal',     icon: 'ti-chart-grid-dots', label: 'Resumen semanal' });
@@ -408,6 +409,7 @@ function navegarA(vistaId) {
     case 'registros-caf':       renderVistaRegistrosCAF();    break;
     case 'registro-merma':      renderVistaRegistroMerma();   break;
     case 'pre-elaboraciones':   renderVistaPreElaboraciones(); break;
+    case 'rellenos-otras-recetas': renderVistaRellenosOtrasRecetas(); break;
     case 'estimacion-bol':      renderVistaEstimacionDemanda();  break;
     case 'analisis-merma':      renderVistaAnalisisMerma();  break;
     case 'auditoria-costos':    renderVistaAuditoriaCostos(); break;
@@ -606,6 +608,19 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
             Use <strong>gramos</strong> si se consume en porciones variables de un lote (ej: 190g de masa madre).
           </p>
         </div>
+        ${App.areaCodigo === 'BOL' ? `
+        <div class="campo">
+          <label>Tipo de preparación</label>
+          <select id="f-tipo-preparacion" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+            <option value="elaboracion_previa" ${(receta?.tipo_preparacion||'elaboracion_previa')==='elaboracion_previa'?'selected':''}>Elaboración previa (se calcula sola según el plan diario)</option>
+            <option value="relleno" ${receta?.tipo_preparacion==='relleno'?'selected':''}>Relleno (dura varios días, se planifica aparte)</option>
+            <option value="masa" ${receta?.tipo_preparacion==='masa'?'selected':''}>Otra masa (ritmo de elaboración propio)</option>
+          </select>
+          <p style="font-size:11px;color:var(--txt3);margin-top:4px">
+            "Elaboración previa" se calcula automáticamente cada día según lo que planificó (ej: Masa Base Pastón).
+            "Relleno" y "Otra masa" aparecen en <strong>Recetas del día</strong> para planificarlas usted mismo, en la cantidad y el día que le convenga.
+          </p>
+        </div>` : ''}
         ${esPan ? `
         <div class="campo">
           <label>Peso total de harina base (g) <span class="req">*</span></label>
@@ -1338,6 +1353,7 @@ async function guardarReceta(recetaId, btn) {
     área:                        App.area.nombre,
     porciones_base:              parseFloat(porciones),
     porciones_base_unidad:       document.getElementById('f-porciones-unidad')?.value || 'un',
+    tipo_preparacion:            document.getElementById('f-tipo-preparacion')?.value || 'elaboracion_previa',
     peso_harina_total_g:         App.areaCodigo === 'PAN' ? (document.getElementById('f-harina')?.value || '') : '',
     ingredientes_JSON:           JSON.stringify(ingredientes),
     insumos_JSON:                JSON.stringify(insumos),
@@ -5736,6 +5752,180 @@ async function cambiarTipoMP(mpId, tipoActual, nombre) {
 }
 
 // ── ADMIN: COSTOS ─────────────────────────────────────────────
+// ── BOL: RECETAS DEL DÍA (rellenos y otras preparaciones) ─────
+let _planRellenosCache = null;
+
+async function renderVistaRellenosOtrasRecetas() {
+  const vista = document.getElementById('vista-rellenos-otras-recetas');
+  vista.innerHTML = '<div class="vista-header"><h1 class="vista-titulo">Recetas del día</h1></div><p style="color:var(--txt3)">Cargando...</p>';
+  mostrarVista('rellenos-otras-recetas');
+
+  // Cargar plan guardado
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_rellenos' }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    _planRellenosCache = data.filas || [];
+  } catch(e) {
+    _planRellenosCache = [];
+  }
+
+  const candidatas = App.recetas.filter(r =>
+    r.estado === 'consolidada' && (r.tipo_preparacion === 'relleno' || r.tipo_preparacion === 'masa')
+  );
+
+  if (!candidatas.length) {
+    vista.innerHTML = `
+      <div class="vista-header"><h1 class="vista-titulo">Recetas del día</h1></div>
+      <div class="empty-state">
+        <i class="ti ti-egg"></i>
+        <h2>Sin rellenos u otras masas configuradas</h2>
+        <p>Marque una receta o sub-receta como "Relleno" u "Otra masa" en su formulario para que aparezca acá.</p>
+      </div>`;
+    return;
+  }
+
+  const filasHtml = candidatas.map(r => {
+    const guardado = _planRellenosCache.find(p => p.ID_receta === r.ID_receta);
+    const cantidadGuardada = guardado ? parseFloat(guardado.cantidad_planificada) || 0 : 0;
+    const esGramos = (r.porciones_base_unidad || 'un') === 'g';
+    const unidadLabel = esGramos ? 'g' : 'uni';
+
+    // Sugerencia: buscar en qué recetas finales se usa esta preparación como ingrediente,
+    // y multiplicar por lo planificado esa semana para cada una
+    let sugerenciaGramos = 0;
+    App.recetas.forEach(final => {
+      if (final.ID_receta === r.ID_receta || final.tipo_receta === 'sub_receta') return;
+      let ings = [];
+      try { ings = JSON.parse(final.ingredientes_JSON || '[]'); } catch(e) {}
+      const usoEnEsta = ings.find(i => i.id === r.ID_receta);
+      if (!usoEnEsta) return;
+      const porcionesFinal = parseFloat(final.porciones_base) || 1;
+      const gramosPorUnidadFinal = (parseFloat(usoEnEsta.gramos) || 0) / porcionesFinal;
+      const planificadoSemana = (App.planSemana[final.ID_receta] || []).reduce((s,v) => s + (parseFloat(v)||0), 0);
+      sugerenciaGramos += gramosPorUnidadFinal * planificadoSemana;
+    });
+
+    const tipoLabel = r.tipo_preparacion === 'relleno' ? '🧁 Relleno' : '🍞 Otra masa';
+
+    return `
+      <div class="card" style="margin-bottom:14px" data-receta-id="${r.ID_receta}">
+        <div class="card-head">
+          <span style="font-size:12px;font-weight:600;color:var(--txt3)">${tipoLabel}</span>
+          <span style="margin-left:8px;font-weight:700">${r.nombre}</span>
+          <button class="btn-secundario" style="margin-left:auto;font-size:11px;padding:4px 10px"
+            onclick="toggleDetalleRelleno('${r.ID_receta}')">
+            <i class="ti ti-list-details"></i> Ver detalle escalado
+          </button>
+        </div>
+        <div style="padding:12px 16px">
+          ${sugerenciaGramos > 0 ? `
+            <p style="font-size:12px;color:#1565C0;background:#E3F2FD;padding:6px 10px;border-radius:var(--r-sm);margin-bottom:10px">
+              <i class="ti ti-bulb"></i> Sugerido según el plan semanal: <strong>${Math.round(sugerenciaGramos).toLocaleString('es-CL')}g</strong>
+            </p>` : `
+            <p style="font-size:11px;color:var(--txt3);margin-bottom:10px">Sin productos planificados esta semana que la usen — puede igual planificar la cantidad que necesite.</p>`}
+          <div style="display:flex;gap:8px;align-items:center">
+            <label style="font-size:12px;color:var(--txt2)">Planificar para esta semana:</label>
+            <input type="number" min="0" step="0.1" style="max-width:120px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-sm)"
+              id="cant-relleno-${r.ID_receta}" value="${cantidadGuardada || ''}" placeholder="0">
+            <span style="font-size:12px;color:var(--txt3)">${unidadLabel}</span>
+            <button class="btn-primario" style="font-size:12px;padding:6px 14px"
+              onclick="guardarCantidadRelleno('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}')">
+              <i class="ti ti-device-floppy"></i> Guardar
+            </button>
+            ${guardado?.hecho === true || guardado?.hecho === 'true' ? `
+              <span style="font-size:11px;color:#2E7D32"><i class="ti ti-check"></i> Hecho</span>` : `
+              <button class="btn-secundario" style="font-size:11px;padding:6px 10px"
+                onclick="marcarRellenoHecho('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}')">Marcar hecho</button>`}
+          </div>
+          <div id="detalle-relleno-${r.ID_receta}" class="hidden" style="margin-top:12px"></div>
+        </div>
+      </div>`;
+  }).join('');
+
+  vista.innerHTML = `
+    <div class="vista-header">
+      <div>
+        <div class="vista-eyebrow">Bollería</div>
+        <h1 class="vista-titulo">Recetas del día</h1>
+      </div>
+    </div>
+    <p style="font-size:12px;color:var(--txt2);margin-bottom:16px">
+      Rellenos y otras masas que usted elabora con su propio ritmo — planifique la cantidad que va a preparar esta semana.
+    </p>
+    ${filasHtml}
+  `;
+}
+
+function toggleDetalleRelleno(recetaId) {
+  const cont = document.getElementById('detalle-relleno-' + recetaId);
+  if (!cont) return;
+  if (!cont.classList.contains('hidden')) { cont.classList.add('hidden'); return; }
+
+  const r = App.recetas.find(x => x.ID_receta === recetaId);
+  if (!r) return;
+  const cantidadInput = parseFloat(document.getElementById('cant-relleno-' + recetaId)?.value) || 0;
+  const porciones = parseFloat(r.porciones_base) || 1;
+  const factor = cantidadInput > 0 ? cantidadInput / porciones : 1;
+
+  let ingredientes = [];
+  try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+
+  cont.classList.remove('hidden');
+  cont.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr>
+        <th style="text-align:left;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border)">Ingrediente</th>
+        <th style="text-align:right;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border)">
+          ${cantidadInput > 0 ? 'Cantidad escalada' : 'Cantidad receta base'}
+        </th>
+      </tr></thead>
+      <tbody>
+        ${ingredientes.map(ing => `
+          <tr>
+            <td style="padding:5px 10px;border-bottom:1px solid var(--border)">${ing.nombre}</td>
+            <td style="padding:5px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace">
+              ${(parseFloat(ing.gramos||0) * factor).toFixed(1)}g
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    ${cantidadInput > 0 ? `<p style="font-size:11px;color:var(--txt3);margin-top:6px">Receta base rinde ${porciones}${r.porciones_base_unidad==='g'?'g':' uni'} — escalado ×${factor.toFixed(2)}</p>` : ''}
+  `;
+}
+
+async function guardarCantidadRelleno(recetaId, nombre) {
+  const cantidad = parseFloat(document.getElementById('cant-relleno-' + recetaId)?.value) || 0;
+  const r = App.recetas.find(x => x.ID_receta === recetaId);
+  const unidad = (r?.porciones_base_unidad || 'un') === 'g' ? 'g' : 'uni';
+  try {
+    await escribirEnSheet('guardar_plan_relleno', {
+      registro: { ID_receta: recetaId, nombre, cantidad_planificada: cantidad, unidad, hecho: false }
+    });
+    toast(`Plan de "${nombre}" guardado`);
+    const idx = _planRellenosCache.findIndex(p => p.ID_receta === recetaId);
+    const nuevo = { ID_receta: recetaId, nombre, cantidad_planificada: cantidad, unidad, hecho: false };
+    if (idx >= 0) _planRellenosCache[idx] = nuevo; else _planRellenosCache.push(nuevo);
+  } catch(e) {
+    toast('Error al guardar', 'error');
+  }
+}
+
+async function marcarRellenoHecho(recetaId, nombre) {
+  const cantidad = parseFloat(document.getElementById('cant-relleno-' + recetaId)?.value) || 0;
+  const r = App.recetas.find(x => x.ID_receta === recetaId);
+  const unidad = (r?.porciones_base_unidad || 'un') === 'g' ? 'g' : 'uni';
+  try {
+    await escribirEnSheet('guardar_plan_relleno', {
+      registro: { ID_receta: recetaId, nombre, cantidad_planificada: cantidad, unidad, hecho: true }
+    });
+    toast(`"${nombre}" marcado como hecho`);
+    renderVistaRellenosOtrasRecetas();
+  } catch(e) {
+    toast('Error al guardar', 'error');
+  }
+}
+
 // ── ADMIN: AUDITORÍA DE COSTOS ────────────────────────────────
 let _auditoriaResultado = null;
 
