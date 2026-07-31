@@ -1477,6 +1477,7 @@ function renderVistaMisRecetas() {
           return `<tr>
             <td class="td-nombre">
               ${r.nombre || r.ID_receta}
+              <span style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:6px">${r.ID_receta}</span>
               ${esConsolidada ? '<span style="font-size:10px;color:#2E7D32;margin-left:4px"><i class="ti ti-lock"></i></span>' : ''}
             </td>
             <td style="text-align:center">
@@ -6745,7 +6746,10 @@ async function renderVistaMaestroAdmin() {
 
   const filaHtml = r => {
     return `<tr style="cursor:pointer" onclick="abrirModalCosteoReceta('${r.ID_receta}')">
-      <td class="td-nombre">${r.nombre}</td>
+      <td class="td-nombre">
+        ${r.nombre}
+        <span style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:6px">${r.ID_receta}</span>
+      </td>
       <td class="td-num">${formatearRendimiento(r)}</td>
       <td class="td-num">v${r.versión_actual||1}</td>
       <td style="text-align:right;padding:6px 16px">
@@ -6817,6 +6821,7 @@ function abrirModalCosteoReceta(recetaId) {
         ${esSubReceta?'⟳ Sub receta':'Receta'}
       </span>
       <span style="font-size:12px;color:var(--txt3)">${r.área}</span>
+      <span style="font-size:11px;color:var(--txt3);font-family:'DM Mono',monospace">${r.ID_receta}</span>
     </div>
     <h2 style="margin-bottom:8px">${r.nombre}</h2>
     ${construirDetalleCosteoRecetaHTML(r)}
