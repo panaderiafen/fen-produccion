@@ -6403,9 +6403,13 @@ async function renderVistaPlanMasaBase() {
                   <i class="ti ${totalKgDia > maxPorTanda ? 'ti-alert-triangle' : 'ti-circle-check'}"></i>
                   ${numTandas} tanda${numTandas!==1?'s':''} necesaria${numTandas!==1?'s':''} (máx. ${maxPorTanda}kg c/u — usted decide cómo repartirlas)
                 </p>
-                ${Object.keys(sugerenciasHermanas).map(n => `
-                  <p style="font-size:12px;color:#1565C0;margin-top:4px"><i class="ti ti-bulb"></i> ${Math.round(sugerenciasHermanas[n])} ${n} — revise tamaño según peso de masa base</p>
-                `).join('')}
+                ${Object.keys(sugerenciasHermanas).map(n => {
+                  const s = sugerenciasHermanas[n];
+                  const display = s.gramos > 0
+                    ? (s.gramos >= 1000 ? `${(s.gramos/1000).toFixed(2)}kg` : `${Math.round(s.gramos)}g`)
+                    : `${Math.round(s.unidades)} unidades (⚠️ sin "Peso por unidad" configurado, no se pudo pasar a gramos)`;
+                  return `<p style="font-size:12px;color:#1565C0;margin-top:4px"><i class="ti ti-bulb"></i> ${display} de ${n} necesarios (misma cantidad de unidades que la masa base)</p>`;
+                }).join('')}
                 <p style="font-size:11px;color:var(--txt3);margin-top:4px">${totalUnidadesDia} unidades pasan a congelación este día</p>
               </div>` : ''}
             ${bloquesAnidados.length ? `
@@ -6430,11 +6434,12 @@ async function renderVistaPlanMasaBase() {
 // Para un conjunto de entradas planificadas de un mismo día, encuentra otras
 // preparaciones "Masa Base" (ej. Empaste) que se usan JUNTO a esa masa dentro de
 // una misma receta final (ej. Croissant usa Masa Base Pastón + Empaste como
-// ingredientes hermanos, no uno dentro del otro) y calcula cuánto se necesitaría
-// según la proporción entre ambos en esa receta.
+// ingredientes hermanos, no uno dentro del otro). Relación 1:1 — misma cantidad
+// de unidades que la masa base planificada — expresado en gramos usando el peso
+// por unidad que cada una tenga configurado (el peso final lo define la jefa).
 function calcularSugerenciasHermanasDia(items) {
   const masasBaseTodas = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_preparacion === 'masa_base');
-  const sugerencias = {}; // nombre_hermana -> unidades sugeridas
+  const sugerencias = {}; // nombre_hermana -> gramos sugeridos
 
   items.forEach(entrada => {
     const unidadesPlanificadas = parseFloat(entrada.cantidad_unidades) || 0;
@@ -6446,7 +6451,6 @@ function calcularSugerenciasHermanasDia(items) {
       if (!mpDeMasaBase) return;
       const usoMasaBase = ings.find(i => i.id === mpDeMasaBase.ID_MP);
       if (!usoMasaBase) return;
-      const cantidadMasaBaseEnReceta = parseFloat(usoMasaBase.unidades) || parseFloat(usoMasaBase.gramos) || 1;
 
       ings.forEach(ing => {
         if (ing.id === mpDeMasaBase.ID_MP) return;
@@ -6455,10 +6459,10 @@ function calcularSugerenciasHermanasDia(items) {
           return mpHermana && mpHermana.ID_MP === ing.id;
         });
         if (!hermana) return;
-        const cantidadHermanaEnReceta = parseFloat(ing.unidades) || parseFloat(ing.gramos) || 1;
-        const proporcion = cantidadHermanaEnReceta / cantidadMasaBaseEnReceta;
-        const sugerido = proporcion * unidadesPlanificadas;
-        sugerencias[hermana.nombre] = (sugerencias[hermana.nombre] || 0) + sugerido;
+        const pesoHermanaG = parseFloat(hermana.peso_unidad_mb_g) || 0;
+        if (!sugerencias[hermana.nombre]) sugerencias[hermana.nombre] = { unidades: 0, gramos: 0 };
+        sugerencias[hermana.nombre].unidades += unidadesPlanificadas;
+        sugerencias[hermana.nombre].gramos += pesoHermanaG * unidadesPlanificadas;
       });
     });
   });
@@ -6623,7 +6627,8 @@ async function agregarTanda(fila, recetaId, cantidadUnidades) {
   tandas.push({ kg });
 
   await guardarTandasEnSheet(fila, tandas);
-  renderEditorTandas(fila, recetaId, cantidadUnidades, tandas);
+  await renderVistaPlanMasaBase(); // re-render completo, para que la sección de sub-recetas anidadas vea la tanda nueva
+  toggleDetalleMasaBase(fila, recetaId, cantidadUnidades); // reabrir el panel que quedó cerrado por el re-render
 }
 
 async function quitarTanda(fila, recetaId, cantidadUnidades, index) {
@@ -6633,7 +6638,8 @@ async function quitarTanda(fila, recetaId, cantidadUnidades, index) {
   tandas.splice(index, 1);
 
   await guardarTandasEnSheet(fila, tandas);
-  renderEditorTandas(fila, recetaId, cantidadUnidades, tandas);
+  await renderVistaPlanMasaBase();
+  toggleDetalleMasaBase(fila, recetaId, cantidadUnidades);
 }
 
 async function guardarTandasEnSheet(fila, tandas) {
