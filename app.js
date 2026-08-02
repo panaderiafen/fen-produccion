@@ -321,6 +321,7 @@ function renderSidebar() {
       const rdIdx = items.findIndex(i => i.id === 'recetas-del-dia');
       if (rdIdx >= 0) items[rdIdx] = { id: 'recetas-del-dia', icon: 'ti-flame', label: 'Plan de horneado del día' };
       items.splice(3, 0, { id: 'rellenos-otras-recetas', icon: 'ti-egg', label: 'Recetas del día' });
+      items.splice(3, 0, { id: 'plan-ps-pc', icon: 'ti-layout-grid', label: 'Planificación PS/PC' });
     }
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL') {
       items.push({ id: 'resumen-semanal',     icon: 'ti-chart-grid-dots', label: 'Resumen semanal' });
@@ -408,6 +409,7 @@ function navegarA(vistaId) {
     case 'registro-merma':      renderVistaRegistroMerma();   break;
     case 'pre-elaboraciones':   renderVistaPreElaboraciones(); break;
     case 'rellenos-otras-recetas': renderVistaRellenosOtrasRecetas(); break;
+    case 'plan-ps-pc':          renderVistaPlanPSPC(); break;
     case 'estimacion-bol':      renderVistaEstimacionDemanda();  break;
     case 'analisis-merma':      renderVistaAnalisisMerma();  break;
     case 'auditoria-costos':    renderVistaAuditoriaCostos(); break;
@@ -5938,6 +5940,123 @@ async function marcarRellenoHecho(recetaId, nombre) {
     renderVistaRellenosOtrasRecetas();
   } catch(e) {
     toast('Error al guardar', 'error');
+  }
+}
+
+// ── BOL: PLANIFICACIÓN PS/PC (grilla estilo stock B2C) ─────────
+let _planPSPCCache = null;
+let _seleccionPSPC = null;
+
+async function renderVistaPlanPSPC() {
+  const vista = document.getElementById('vista-plan-ps-pc');
+  vista.innerHTML = '<div class="vista-header"><h1 class="vista-titulo">Planificación PS/PC</h1></div><p style="color:var(--txt3)">Cargando...</p>';
+  mostrarVista('plan-ps-pc');
+
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_ps_pc' }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    _planPSPCCache = data.filas || [];
+  } catch(e) {
+    _planPSPCCache = [];
+  }
+
+  const filtro = App._filtroPSPC || 'todos';
+  const productos = App.recetas.filter(r =>
+    r.estado === 'consolidada' && (r.tipo_preparacion === 'producto_simple' || r.tipo_preparacion === 'producto_compuesto')
+  );
+  const productosFiltrados = filtro === 'todos' ? productos : productos.filter(r => r.tipo_preparacion === filtro);
+  const dias = ['Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+  vista.innerHTML = `
+    <div class="vista-header"><h1 class="vista-titulo">Planificación PS/PC</h1></div>
+
+    <div style="display:flex;gap:6px;margin-bottom:14px">
+      <button class="${filtro==='todos'?'btn-primario':'btn-secundario'}" style="font-size:12px;padding:6px 14px" onclick="App._filtroPSPC='todos';renderVistaPlanPSPC()">Todos</button>
+      <button class="${filtro==='producto_simple'?'btn-primario':'btn-secundario'}" style="font-size:12px;padding:6px 14px" onclick="App._filtroPSPC='producto_simple';renderVistaPlanPSPC()">Producto Simple</button>
+      <button class="${filtro==='producto_compuesto'?'btn-primario':'btn-secundario'}" style="font-size:12px;padding:6px 14px" onclick="App._filtroPSPC='producto_compuesto';renderVistaPlanPSPC()">Producto Compuesto</button>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head"><i class="ti ti-grid-dots"></i> Seleccionar producto</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;padding:16px">
+        ${productosFiltrados.map(r => `
+          <button data-id="${r.ID_receta}"
+            style="padding:10px 6px;border-radius:var(--r-md);border:2px solid ${_seleccionPSPC?.ID_receta===r.ID_receta?'var(--area-color, #1565C0)':'var(--border)'};
+              background:${_seleccionPSPC?.ID_receta===r.ID_receta?'var(--area-bg, #E3F2FD)':'var(--surface)'};cursor:pointer;text-align:center;font-size:12px"
+            onclick="seleccionarProductoPSPC('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}')">
+            ${r.nombre}
+          </button>
+        `).join('')}
+        ${!productosFiltrados.length ? '<p style="color:var(--txt3);grid-column:1/-1">Sin productos clasificados como Producto Simple/Compuesto todavía — clasifíquelos desde el formulario de receta.</p>' : ''}
+      </div>
+      ${_seleccionPSPC ? `
+      <div style="padding:0 16px 16px;border-top:1px solid var(--border);padding-top:16px">
+        <p style="font-size:13px;font-weight:600;margin-bottom:10px">Seleccionado: ${_seleccionPSPC.nombre}</p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+          <label style="font-size:12px">Cantidad:</label>
+          <input type="number" id="cant-pspc" min="1" step="1" style="max-width:100px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-sm)" placeholder="0">
+        </div>
+        <p style="font-size:11px;color:var(--txt3);margin-bottom:6px">Presione el día para ingresar al plan semanal:</p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${dias.map(d => `<button class="btn-secundario" style="font-size:12px;padding:6px 14px" onclick="ingresarPlanPSPC('${d}')">${d}</button>`).join('')}
+        </div>
+      </div>` : ''}
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+      ${dias.map(d => {
+        const items = _planPSPCCache.filter(p => p.dia === d);
+        return `
+        <div class="card">
+          <div class="card-head" style="font-size:13px">${d}</div>
+          <div style="padding:10px 14px">
+            ${!items.length ? '<p style="color:var(--txt3);font-size:12px">Sin productos</p>' : items.map(it => `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+                <div>
+                  <div style="font-size:12px;font-weight:600">${it.nombre}</div>
+                  <div style="font-size:11px;color:var(--txt3)">${it.cantidad} uni · ${it.tipo_preparacion==='producto_simple'?'PS':'PC'}</div>
+                </div>
+                <button class="btn-fila-del" onclick="eliminarPlanPSPCUI(${it._fila})" aria-label="Eliminar"><i class="ti ti-x"></i></button>
+              </div>
+            `).join('')}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+}
+
+function seleccionarProductoPSPC(id, nombre) {
+  _seleccionPSPC = { ID_receta: id, nombre };
+  renderVistaPlanPSPC();
+}
+
+async function ingresarPlanPSPC(dia) {
+  if (!_seleccionPSPC) return;
+  const cantidad = parseFloat(document.getElementById('cant-pspc')?.value) || 0;
+  if (cantidad <= 0) { toast('Ingresa una cantidad', 'error'); return; }
+  const r = App.recetas.find(x => x.ID_receta === _seleccionPSPC.ID_receta);
+  try {
+    await escribirEnSheet('guardar_entrada_plan_ps_pc', {
+      registro: { ID_receta: _seleccionPSPC.ID_receta, nombre: _seleccionPSPC.nombre, tipo_preparacion: r?.tipo_preparacion||'', dia, cantidad }
+    });
+    toast(`${_seleccionPSPC.nombre} agregado al ${dia}`);
+    _seleccionPSPC = null;
+    renderVistaPlanPSPC();
+  } catch(e) {
+    toast('Error al guardar', 'error');
+  }
+}
+
+async function eliminarPlanPSPCUI(fila) {
+  if (!confirm('¿Eliminar esta entrada del plan?')) return;
+  try {
+    await escribirEnSheet('eliminar_entrada_plan_ps_pc', { fila });
+    toast('Eliminado');
+    renderVistaPlanPSPC();
+  } catch(e) {
+    toast('Error al eliminar', 'error');
   }
 }
 
