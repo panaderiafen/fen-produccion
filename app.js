@@ -6024,7 +6024,65 @@ async function renderVistaPlanPSPC() {
         </div>`;
       }).join('')}
     </div>
+
+    ${construirListaCompraPS()}
   `;
+}
+
+// Suma, a través de todos los Productos Simples planificados en la semana, cuánta
+// MP se necesita en total — ingredientes directos, sin pasar por sub-recetas
+// (los PS por definición no las llevan).
+function construirListaCompraPS() {
+  const entradasPS = (_planPSPCCache || []).filter(p => p.tipo_preparacion === 'producto_simple');
+  if (!entradasPS.length) return '';
+
+  const totalesMP = {}; // id -> { nombre, gramos, unidad_compra }
+  entradasPS.forEach(entrada => {
+    const r = App.recetas.find(x => x.ID_receta === entrada.ID_receta);
+    if (!r) return;
+    let ingredientes = [];
+    try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+    const porciones = parseFloat(r.porciones_base) || 1;
+    const cantidadSemana = parseFloat(entrada.cantidad) || 0;
+
+    ingredientes.forEach(ing => {
+      const gramosPorUnidad = (parseFloat(ing.gramos) || 0) / porciones;
+      const totalGramos = gramosPorUnidad * cantidadSemana;
+      if (!totalesMP[ing.id]) {
+        const mp = App.materiasPrimas.find(m => m.ID_MP === ing.id);
+        totalesMP[ing.id] = { nombre: ing.nombre, gramos: 0, unidadCompra: (mp?.unidad_compra || 'kg').toLowerCase() };
+      }
+      totalesMP[ing.id].gramos += totalGramos;
+    });
+  });
+
+  const lista = Object.values(totalesMP).sort((a,b) => b.gramos - a.gramos);
+
+  return `
+    <div class="card" style="margin-top:16px">
+      <div class="card-head"><i class="ti ti-shopping-cart"></i> Lista de compra — Productos Simples (semana)</div>
+      <table class="tabla-vista">
+        <thead><tr>
+          <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Materia Prima</th>
+          <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Cantidad necesaria</th>
+        </tr></thead>
+        <tbody>
+          ${lista.map(it => {
+            const esPorUnidad = it.unidadCompra === 'un' || it.unidadCompra === 'unidad' || it.unidadCompra === 'unidades';
+            const display = esPorUnidad
+              ? `${Math.ceil(it.gramos)} un`
+              : it.gramos >= 1000 ? `${(it.gramos/1000).toFixed(2)} kg` : `${Math.round(it.gramos)} g`;
+            return `<tr>
+              <td class="td-nombre">${it.nombre}</td>
+              <td class="td-num" style="font-weight:600">${display}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      <p style="font-size:11px;color:var(--txt3);padding:10px 16px">
+        Suma de todos los Productos Simples planificados esta semana (Lun–Sáb), según sus recetas activas.
+      </p>
+    </div>`;
 }
 
 function seleccionarProductoPSPC(id, nombre) {
