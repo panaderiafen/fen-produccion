@@ -316,12 +316,11 @@ function renderSidebar() {
       { id: 'registro-merma',  icon: 'ti-trash', label: 'Registro de merma' },
     ];
     if (App.areaCodigo === 'CAF') items.splice(2, 2);
-    // BOL: rename recetas-del-dia and add pre-elaboraciones
+    // BOL: rename recetas-del-dia (pasa a "Plan de horneado del día") y agregar "Recetas del día" (rellenos/preparaciones)
     if (App.areaCodigo === 'BOL') {
       const rdIdx = items.findIndex(i => i.id === 'recetas-del-dia');
       if (rdIdx >= 0) items[rdIdx] = { id: 'recetas-del-dia', icon: 'ti-flame', label: 'Plan de horneado del día' };
-      items.splice(3, 0, { id: 'pre-elaboraciones', icon: 'ti-clock-play', label: 'Pre-elaboraciones y tareas' });
-      items.splice(4, 0, { id: 'rellenos-otras-recetas', icon: 'ti-egg', label: 'Recetas del día' });
+      items.splice(3, 0, { id: 'rellenos-otras-recetas', icon: 'ti-egg', label: 'Recetas del día' });
     }
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL') {
       items.push({ id: 'resumen-semanal',     icon: 'ti-chart-grid-dots', label: 'Resumen semanal' });
@@ -617,14 +616,12 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
             </optgroup>
             <optgroup label="Preparaciones internas">
               <option value="masa_base" ${receta?.tipo_preparacion==='masa_base'?'selected':''}>Masa Base (laminado, congelación, escalado por peso)</option>
-              <option value="elaboracion_previa" ${(receta?.tipo_preparacion||(tipoActual==='sub_receta'?'elaboracion_previa':''))==='elaboracion_previa'?'selected':''}>Elaboración previa (se calcula sola según el plan diario)</option>
-              <option value="relleno" ${receta?.tipo_preparacion==='relleno'?'selected':''}>Relleno (dura varios días, se planifica aparte)</option>
-              <option value="masa" ${receta?.tipo_preparacion==='masa'?'selected':''}>Otra masa (ritmo de elaboración propio)</option>
+              <option value="relleno" ${!['producto_simple','producto_compuesto','masa_base'].includes(receta?.tipo_preparacion)?'selected':''}>Relleno / preparación (se planifica en Recetas del día, sugerencia + ajuste libre)</option>
             </optgroup>
           </select>
           <p style="font-size:11px;color:var(--txt3);margin-top:4px">
             Define qué tipo de planificación aplica: <strong>Producto Simple/Compuesto</strong> van a la grilla de planificación semanal;
-            <strong>Masa Base</strong> tiene su propia planificación de tandas y stock congelado; el resto aparece en <strong>Recetas del día</strong>.
+            <strong>Masa Base</strong> tiene su propia planificación de tandas y stock congelado; <strong>Relleno/preparación</strong> aparece en <strong>Recetas del día</strong>.
           </p>
         </div>` : ''}
         ${esPan ? `
@@ -5783,9 +5780,14 @@ async function renderVistaRellenosOtrasRecetas() {
     _planRellenosCache = [];
   }
 
-  const candidatas = App.recetas.filter(r =>
-    r.estado === 'consolidada' && (r.tipo_preparacion === 'relleno' || r.tipo_preparacion === 'masa')
-  );
+  const candidatas = App.recetas.filter(r => {
+    if (r.estado !== 'consolidada') return false;
+    if (r.tipo_preparacion === 'relleno') return true; // clasificación nueva, explícita
+    if (['producto_simple','producto_compuesto','masa_base'].includes(r.tipo_preparacion)) return false; // ya clasificada como otra cosa
+    // Sin clasificar o con valor viejo (masa/elaboracion_previa): solo cuenta si es sub-receta,
+    // nunca una receta final sin clasificar (para no mostrarla acá por error)
+    return r.tipo_receta === 'sub_receta';
+  });
 
   if (!candidatas.length) {
     vista.innerHTML = `
