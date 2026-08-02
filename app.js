@@ -1180,6 +1180,12 @@ function toggleCampoPesoMB(sel) {
 // nada todavía — solo actualiza los campos en pantalla, el usuario revisa y
 // presiona Guardar cuando esté conforme.
 function recalcularRecetaPorPeso() {
+  const unidadRendimiento = document.getElementById('f-porciones-unidad')?.value;
+  if (unidadRendimiento === 'g') {
+    toast('El "Rendimiento" está en gramos — cámbielo a "unidades" (ej. 1) antes de usar Peso por unidad. Son dos formas distintas de definir el peso, no se combinan.', 'error');
+    return;
+  }
+
   const pesoUnidad = parseFloat(document.getElementById('f-peso-unidad-mb')?.value) || 0;
   const porciones = parseFloat(document.getElementById('f-porciones')?.value) || 0;
   if (!pesoUnidad || !porciones) { toast('Complete "Rendimiento" y "Peso por unidad" primero', 'error'); return; }
@@ -1197,6 +1203,11 @@ function recalcularRecetaPorPeso() {
   });
 
   if (!totalActual) { toast('No hay ingredientes en gramos para escalar', 'error'); return; }
+
+  const factorPreview = totalObjetivo / totalActual;
+  if (factorPreview > 5 || factorPreview < 0.2) {
+    if (!confirm(`Esto va a multiplicar los ingredientes ×${factorPreview.toFixed(2)} (de ${totalActual.toLocaleString('es-CL')}g a ${totalObjetivo.toLocaleString('es-CL')}g). ¿Es correcto? Revise "Rendimiento" y "Peso por unidad" si no esperaba un cambio tan grande.`)) return;
+  }
 
   const factor = totalObjetivo / totalActual;
   inputs.forEach(input => {
