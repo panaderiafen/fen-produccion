@@ -316,14 +316,16 @@ function renderSidebar() {
       { id: 'registro-merma',  icon: 'ti-trash', label: 'Registro de merma' },
     ];
     if (App.areaCodigo === 'CAF') items.splice(2, 2);
-    // BOL: quitar "recetas-del-dia" (Plan de horneado del día, ya no se usa) y agregar
-    // "Recetas del día" (rellenos/preparaciones), Planificación PS/PC y Planificación Masas Base
+    // BOL: quitar "recetas-del-dia" (Plan de horneado del día, ya no se usa) y "planificacion"
+    // (Plan semanal viejo, reemplazado por Planificación PS/PC y Planificación Masas Base)
     if (App.areaCodigo === 'BOL') {
       const rdIdx = items.findIndex(i => i.id === 'recetas-del-dia');
       if (rdIdx >= 0) items.splice(rdIdx, 1);
-      items.splice(3, 0, { id: 'rellenos-otras-recetas', icon: 'ti-egg', label: 'Recetas del día' });
-      items.splice(3, 0, { id: 'plan-ps-pc', icon: 'ti-layout-grid', label: 'Planificación PS/PC' });
-      items.splice(4, 0, { id: 'plan-masa-base', icon: 'ti-bread', label: 'Planificación Masas Base' });
+      const planIdx = items.findIndex(i => i.id === 'planificacion');
+      if (planIdx >= 0) items.splice(planIdx, 1);
+      items.splice(2, 0, { id: 'rellenos-otras-recetas', icon: 'ti-egg', label: 'Recetas del día' });
+      items.splice(2, 0, { id: 'plan-ps-pc', icon: 'ti-layout-grid', label: 'Planificación PS/PC' });
+      items.splice(3, 0, { id: 'plan-masa-base', icon: 'ti-bread', label: 'Planificación Masas Base' });
     }
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL') {
       items.push({ id: 'resumen-semanal',     icon: 'ti-chart-grid-dots', label: 'Resumen semanal' });
@@ -1101,13 +1103,15 @@ function agregarIngrediente(data = {}) {
         <option value="unidades" ${usaUnidades?'selected':''}>Unidades</option>
       </select>
     </td>` : ''}
-    <td><input type="number" placeholder="${usaUnidades?'1':'0'}"
+    <td style="display:flex;gap:4px;align-items:center">
+      <input type="number" placeholder="${usaUnidades?'1':'0'}"
       value="${usaUnidades ? (data.unidades||'') : usaMl ? (data.ml||data.gramos||'') : (data.gramos ? parseFloat(data.gramos).toFixed(1) : '')}"
-      min="0" step="${usaUnidades?'1':'0.01'}"
+      min="0" step="${usaUnidades?'0.001':'0.01'}"
       oninput="${esPan ? 'desdeGramos(this)' : 'actualizarTotalIngredientesPreview()'}"
       style="max-width:90px"
       data-modo="${usaUnidades ? 'unidades' : usaMl ? 'ml' : 'gramos'}"
       data-unidad="${data.unidad_receta || (usaUnidades ? 'unidades' : 'gramos')}">
+      ${esBOL && esSubRecetaIngr ? `<button type="button" class="btn-secundario" style="font-size:11px;padding:4px 6px" title="Calcular fracción (ej: 1 de cada 12)" onclick="calcularFraccionIngrediente(this)"><i class="ti ti-calculator"></i></button>` : ''}
     </td>
     ${esPan ? `<td><input type="number" placeholder="0.00"
       value="${data.pct ? (data.pct*100).toFixed(2) : ''}"
@@ -1129,6 +1133,25 @@ function calcularCostoFila(el) {
 // Calcula y muestra el total de gramos de la tabla de ingredientes, convirtiendo
 // sub-recetas agregadas en "Unidades" a su peso equivalente (solo para mostrar,
 // igual que se hace al guardar — no afecta el costo).
+function calcularFraccionIngrediente(btn) {
+  const tr = btn.closest('tr');
+  const input = tr.querySelector('input[type="number"]');
+  if (!input) return;
+
+  const necesita = prompt('¿Cuántas unidades de esta sub-receta necesita para SU receta?\n(Ej: 1 croissant necesita 1 masa base)', '1');
+  if (necesita === null) return;
+  const rinde = prompt('¿De cuántas unidades rinde el lote completo de esa sub-receta?\n(Ej: 1 lote de Masa Base Pastón rinde para 12 croissants)', '12');
+  if (rinde === null) return;
+
+  const n = parseFloat(necesita), r = parseFloat(rinde);
+  if (!n || !r || r <= 0) { toast('Valores inválidos', 'error'); return; }
+
+  const fraccion = n / r;
+  input.value = fraccion.toFixed(4);
+  actualizarTotalIngredientesPreview();
+  toast(`Calculado: ${n} de ${r} = ${fraccion.toFixed(4)}`);
+}
+
 function actualizarTotalIngredientesPreview() {
   const el = document.getElementById('total-ingredientes-preview');
   if (!el) return;
@@ -5180,7 +5203,7 @@ function renderVistaAprobaciones() {
                   ${ingredientes.map(ing => {
                     const unidadRec = ing.unidad_receta || (ing.unidades !== undefined && ing.unidades !== null ? 'unidades' : 'gramos');
                     const displayVal = unidadRec === 'unidades'
-                      ? `${parseFloat(ing.unidades||ing.gramos||0).toFixed(0)} uni`
+                      ? `${formatearUnidadesIngrediente(ing.unidades||ing.gramos||0)} uni`
                       : unidadRec === 'ml'
                       ? `${parseFloat(ing.ml||ing.gramos||0).toFixed(1)} ml`
                       : `${parseFloat(ing.gramos||0).toFixed(1)}g`;
@@ -5728,6 +5751,30 @@ function renderVistaMP() {
   }
 }
 
+async function renombrarMPUI(mpId, nombreActual) {
+  const nuevoNombre = prompt(`Nuevo nombre para "${nombreActual}":`, nombreActual);
+  if (!nuevoNombre || !nuevoNombre.trim() || nuevoNombre.trim() === nombreActual) return;
+
+  if (!confirm(`¿Renombrar "${nombreActual}" a "${nuevoNombre.trim()}"?\n\nSe actualizará automáticamente en todas las recetas que la usan. Las que estaban aprobadas volverán a "en prueba" para revisión (el costo no cambia, solo el nombre).`)) return;
+
+  toast('Renombrando, puede tardar unos segundos...');
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'renombrar_mp', mp_id: mpId, nuevo_nombre: nuevoNombre.trim() }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    if (data.ok) {
+      Cache.invalidar('mp_maestro');
+      const detalle = data.recetas && data.recetas.length ? '\n\nRecetas actualizadas:\n' + data.recetas.join('\n') : '\n\n(no estaba siendo usada en ninguna receta)';
+      alert('✓ ' + data.msg + detalle);
+      renderVistaMP();
+    } else {
+      toast('Error: ' + (data.msg||''), 'error');
+    }
+  } catch(e) {
+    toast('No se pudo renombrar: ' + e.message, 'error');
+  }
+}
+
 async function verRecetasQueUsanMP(mpId, nombre) {
   toast('Buscando en las 4 áreas...');
   try {
@@ -5766,6 +5813,7 @@ function abrirAccionesMP(mpId) {
     { icono: 'ti-edit', label: 'Editar precio', accion: `editarMP('${mpId}')` },
     { icono: 'ti-receipt-tax', label: 'Editar IVA / impuesto adicional', accion: `editarImpuestosMP('${mpId}')` },
     { icono: 'ti-search', label: 'Ver recetas que la usan', accion: `verRecetasQueUsanMP('${mpId}','${nombreEscapado}')` },
+    { icono: 'ti-pencil', label: 'Editar nombre', accion: `renombrarMPUI('${mpId}','${nombreEscapado}')` },
     { icono: esInactiva ? 'ti-eye' : 'ti-eye-off', label: esInactiva ? 'Activar' : 'Desactivar',
       color: esInactiva ? '#2E7D32' : '#C62828', accion: `toggleEstadoMP('${mpId}','${m.estado}')` },
     { icono: 'ti-layout-grid', label: 'Gestionar áreas', accion: `gestionarAreasMP('${mpId}')` },
@@ -6182,7 +6230,7 @@ async function renderVistaPlanPSPC() {
         </div>
         <p style="font-size:11px;color:var(--txt3);margin-bottom:6px">Presione el día para ingresar al plan semanal:</p>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${dias.map(d => `<button class="btn-secundario" style="font-size:12px;padding:6px 14px" onclick="ingresarPlanPSPC('${d}')">${d}</button>`).join('')}
+          ${dias.map(d => `<button id="btn-dia-pspc-${d}" class="btn-secundario" style="font-size:12px;padding:6px 14px" onclick="ingresarPlanPSPC('${d}')">${d}</button>`).join('')}
         </div>
       </div>` : ''}
     </div>
@@ -6278,6 +6326,8 @@ async function ingresarPlanPSPC(dia) {
   const cantidad = parseFloat(document.getElementById('cant-pspc')?.value) || 0;
   if (cantidad <= 0) { toast('Ingresa una cantidad', 'error'); return; }
   const r = App.recetas.find(x => x.ID_receta === _seleccionPSPC.ID_receta);
+  const btnDia = document.getElementById('btn-dia-pspc-' + dia);
+  if (btnDia) { btnDia.style.background = '#EDE7F6'; btnDia.style.borderColor = '#4A148C'; btnDia.style.color = '#4A148C'; }
   try {
     await escribirEnSheet('guardar_entrada_plan_ps_pc', {
       registro: { ID_receta: _seleccionPSPC.ID_receta, nombre: _seleccionPSPC.nombre, tipo_preparacion: r?.tipo_preparacion||'', dia, cantidad }
@@ -6287,6 +6337,7 @@ async function ingresarPlanPSPC(dia) {
     renderVistaPlanPSPC();
   } catch(e) {
     toast('Error al guardar', 'error');
+    if (btnDia) { btnDia.style.background = ''; btnDia.style.borderColor = ''; btnDia.style.color = ''; }
   }
 }
 
@@ -6389,7 +6440,7 @@ async function renderVistaPlanMasaBase() {
         </div>
         <p style="font-size:11px;color:var(--txt3);margin-bottom:6px">Presione el día para ingresar al plan:</p>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${dias.map(d => `<button class="btn-secundario" style="font-size:12px;padding:6px 14px" onclick="ingresarPlanMasaBase('${d}')">${d}</button>`).join('')}
+          ${dias.map(d => `<button id="btn-dia-mb-${d}" class="btn-secundario" style="font-size:12px;padding:6px 14px" onclick="ingresarPlanMasaBase('${d}')">${d}</button>`).join('')}
         </div>
       </div>` : ''}
     </div>
@@ -6587,6 +6638,8 @@ async function ingresarPlanMasaBase(dia) {
   const cantidad = parseFloat(document.getElementById('cant-masa-base')?.value) || 0;
   if (cantidad <= 0) { toast('Ingresa una cantidad', 'error'); return; }
   const pesoTotal = cantidad * _seleccionMasaBase.pesoUnidad;
+  const btnDia = document.getElementById('btn-dia-mb-' + dia);
+  if (btnDia) { btnDia.style.background = '#EDE7F6'; btnDia.style.borderColor = '#4A148C'; btnDia.style.color = '#4A148C'; }
   try {
     await escribirEnSheet('guardar_entrada_plan_masa_base', {
       registro: {
@@ -6599,6 +6652,7 @@ async function ingresarPlanMasaBase(dia) {
     renderVistaPlanMasaBase();
   } catch(e) {
     toast('Error al guardar', 'error');
+    if (btnDia) { btnDia.style.background = ''; btnDia.style.borderColor = ''; btnDia.style.color = ''; }
   }
 }
 
@@ -7462,6 +7516,14 @@ async function calcularECUI(btn) {
 // como se ve en Aprobaciones — usado en el modal de Maestro de recetas para no perder
 // la trazabilidad de costos una vez que la receta ya fue aprobada.
 // Traduce el valor guardado de tipo_preparacion a un texto legible
+// Formatea una cantidad en "unidades" mostrando decimales solo si los tiene —
+// evita que fracciones como 0.083 (1 de cada 12) se vean como "0" y confundan.
+function formatearUnidadesIngrediente(valor) {
+  const n = parseFloat(valor) || 0;
+  if (Number.isInteger(n)) return n.toFixed(0);
+  return n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+}
+
 function formatearClasificacionBOL(valor) {
   const mapa = {
     producto_simple: 'Producto Simple',
@@ -7499,7 +7561,7 @@ function construirDetalleCosteoRecetaHTML(r) {
         ${ingredientes.map(ing => {
           const unidadRec = ing.unidad_receta || (ing.unidades !== undefined && ing.unidades !== null ? 'unidades' : 'gramos');
           const displayVal = unidadRec === 'unidades'
-            ? `${parseFloat(ing.unidades||ing.gramos||0).toFixed(0)} uni`
+            ? `${formatearUnidadesIngrediente(ing.unidades||ing.gramos||0)} uni`
             : unidadRec === 'ml'
             ? `${parseFloat(ing.ml||ing.gramos||0).toFixed(1)} ml`
             : `${parseFloat(ing.gramos||0).toFixed(1)}g`;
