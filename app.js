@@ -5825,22 +5825,24 @@ async function renderVistaRellenosOtrasRecetas() {
     const unidadLabel = esGramos ? 'g' : 'uni';
 
     // Sugerencia: buscar en qué Productos Compuestos planificados esta semana (BOL_plan_ps_pc)
-    // se usa esta preparación como ingrediente, y sumar según la cantidad planificada de cada uno
+    // se usa esta preparación como ingrediente. IMPORTANTE: el ID de la receta (ej. BOL008) y
+    // el ID que tiene esa misma sub-receta en MP_maestro (ej. SR008) son DISTINTOS por diseño
+    // — hay que resolver primero cuál es su ID real en el catálogo, buscando por nombre.
+    const mpDeEstaReceta = App.materiasPrimas.find(m => m.nombre === r.nombre && m.tipo === 'sub_receta');
     let sugerenciaGramos = 0;
-    (_planPSPCCache || []).filter(p => p.tipo_preparacion === 'producto_compuesto').forEach(entrada => {
-      const final = App.recetas.find(x => x.ID_receta === entrada.ID_receta);
-      if (!final) { console.log('[DEBUG sugerencia]', r.nombre, '- no se encontró la receta del plan:', entrada.ID_receta, entrada.nombre); return; }
-      let ings = [];
-      try { ings = JSON.parse(final.ingredientes_JSON || '[]'); } catch(e) {}
-      const usoEnEsta = ings.find(i => i.id === r.ID_receta);
-      if (!usoEnEsta) {
-        console.log('[DEBUG sugerencia]', r.nombre, `(ID:${r.ID_receta}) — no encontrada entre los ingredientes de "${final.nombre}". IDs de sus ingredientes:`, ings.map(i => `${i.nombre}:${i.id}`));
-        return;
-      }
-      const porcionesFinal = parseFloat(final.porciones_base) || 1;
-      const gramosPorUnidadFinal = (parseFloat(usoEnEsta.gramos) || 0) / porcionesFinal;
-      sugerenciaGramos += gramosPorUnidadFinal * (parseFloat(entrada.cantidad) || 0);
-    });
+    if (mpDeEstaReceta) {
+      (_planPSPCCache || []).filter(p => p.tipo_preparacion === 'producto_compuesto').forEach(entrada => {
+        const final = App.recetas.find(x => x.ID_receta === entrada.ID_receta);
+        if (!final) return;
+        let ings = [];
+        try { ings = JSON.parse(final.ingredientes_JSON || '[]'); } catch(e) {}
+        const usoEnEsta = ings.find(i => i.id === mpDeEstaReceta.ID_MP);
+        if (!usoEnEsta) return;
+        const porcionesFinal = parseFloat(final.porciones_base) || 1;
+        const gramosPorUnidadFinal = (parseFloat(usoEnEsta.gramos) || 0) / porcionesFinal;
+        sugerenciaGramos += gramosPorUnidadFinal * (parseFloat(entrada.cantidad) || 0);
+      });
+    }
 
     const tipoLabel = r.tipo_preparacion === 'relleno' ? '🧁 Relleno' : '⚠️ Sin clasificar';
 
