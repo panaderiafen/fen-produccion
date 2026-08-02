@@ -5090,7 +5090,10 @@ function renderVistaAprobaciones() {
                       : `${parseFloat(ing.gramos||0).toFixed(1)}g`;
                     return `
                     <tr>
-                      <td style="padding:6px 10px;border-bottom:1px solid var(--border);color:var(--txt);font-weight:500">${ing.nombre}</td>
+                      <td style="padding:6px 10px;border-bottom:1px solid var(--border);color:var(--txt);font-weight:500">
+                        ${ing.nombre}
+                        <span style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:6px">${ing.id||''}</span>
+                      </td>
                       <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:600">${displayVal}</td>
                       ${r._area === 'PAN' || r.área === 'Panadería' ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:#E65100">${((parseFloat(ing.pct)||0)*100).toFixed(1)}%</td>` : ''}
                       <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2);font-size:11px">$${parseFloat(ing.costo||0).toFixed(0)}</td>
@@ -5120,7 +5123,10 @@ function renderVistaAprobaciones() {
                 <tbody>
                   ${insumos.map(ins => `
                     <tr>
-                      <td style="padding:6px 10px;border-bottom:1px solid var(--border);color:var(--txt);font-weight:500">${ins.nombre}</td>
+                      <td style="padding:6px 10px;border-bottom:1px solid var(--border);color:var(--txt);font-weight:500">
+                        ${ins.nombre}
+                        <span style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:6px">${ins.id||''}</span>
+                      </td>
                       <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:600">${parseFloat(ins.unidades||0).toFixed(0)} uni</td>
                       <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2);font-size:11px">$${parseFloat(ins.costo||0).toFixed(0)}</td>
                     </tr>`).join('')}
@@ -6679,7 +6685,10 @@ function construirDetalleCosteoRecetaHTML(r) {
             : `${parseFloat(ing.gramos||0).toFixed(1)}g`;
           return `
           <tr>
-            <td style="padding:6px 10px;border-bottom:1px solid var(--border);color:var(--txt);font-weight:500">${ing.nombre}</td>
+            <td style="padding:6px 10px;border-bottom:1px solid var(--border);color:var(--txt);font-weight:500">
+              ${ing.nombre}
+              <span style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:6px">${ing.id||''}</span>
+            </td>
             <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:600">${displayVal}</td>
             ${esPan ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:#E65100">${((parseFloat(ing.pct)||0)*100).toFixed(1)}%</td>` : ''}
             <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2);font-size:11px">$${parseFloat(ing.costo||0).toFixed(0)}</td>
@@ -6709,7 +6718,10 @@ function construirDetalleCosteoRecetaHTML(r) {
       <tbody>
         ${insumos.map(ins => `
           <tr>
-            <td style="padding:6px 10px;border-bottom:1px solid var(--border);color:var(--txt);font-weight:500">${ins.nombre}</td>
+            <td style="padding:6px 10px;border-bottom:1px solid var(--border);color:var(--txt);font-weight:500">
+              ${ins.nombre}
+              <span style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:6px">${ins.id||''}</span>
+            </td>
             <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:600">${parseFloat(ins.unidades||0).toFixed(0)} uni</td>
             <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2);font-size:11px">$${parseFloat(ins.costo||0).toFixed(0)}</td>
           </tr>`).join('')}
