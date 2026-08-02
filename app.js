@@ -5060,6 +5060,7 @@ function renderVistaAprobaciones() {
               <span style="background:${areaInfo.bg};color:${areaInfo.color};
                 padding:2px 8px;border-radius:99px;font-size:11px">${areaInfo.nombre || r.área}</span>
               <strong style="margin-left:6px">${r.nombre}</strong>
+              <span style="font-size:11px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:8px">${r.ID_receta}</span>
               <div style="margin-left:auto;display:flex;gap:8px">
                 <button id="btn-devolver-${r.ID_receta}" class="btn-peligro" style="font-size:12px;padding:5px 12px"
                   onclick="abrirModalDevolverReceta('${r.ID_receta}','${r._area}','${(r.nombre||'').replace(/'/g,"\\'")}')">
