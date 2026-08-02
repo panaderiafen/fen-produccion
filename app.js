@@ -322,6 +322,7 @@ function renderSidebar() {
       if (rdIdx >= 0) items[rdIdx] = { id: 'recetas-del-dia', icon: 'ti-flame', label: 'Plan de horneado del día' };
       items.splice(3, 0, { id: 'rellenos-otras-recetas', icon: 'ti-egg', label: 'Recetas del día' });
       items.splice(3, 0, { id: 'plan-ps-pc', icon: 'ti-layout-grid', label: 'Planificación PS/PC' });
+      items.splice(4, 0, { id: 'plan-masa-base', icon: 'ti-bread', label: 'Planificación Masas Base' });
     }
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL') {
       items.push({ id: 'resumen-semanal',     icon: 'ti-chart-grid-dots', label: 'Resumen semanal' });
@@ -410,6 +411,7 @@ function navegarA(vistaId) {
     case 'pre-elaboraciones':   renderVistaPreElaboraciones(); break;
     case 'rellenos-otras-recetas': renderVistaRellenosOtrasRecetas(); break;
     case 'plan-ps-pc':          renderVistaPlanPSPC(); break;
+    case 'plan-masa-base':      renderVistaPlanMasaBase(); break;
     case 'estimacion-bol':      renderVistaEstimacionDemanda();  break;
     case 'analisis-merma':      renderVistaAnalisisMerma();  break;
     case 'auditoria-costos':    renderVistaAuditoriaCostos(); break;
@@ -6284,6 +6286,147 @@ async function eliminarPlanPSPCUI(fila) {
     await escribirEnSheet('eliminar_entrada_plan_ps_pc', { fila });
     toast('Eliminado');
     renderVistaPlanPSPC();
+  } catch(e) {
+    toast('Error al eliminar', 'error');
+  }
+}
+
+// ── BOL: PLANIFICACIÓN DIARIA DE MASA BASE ──────────────────────
+let _planMasaBaseCache = null;
+let _seleccionMasaBase = null;
+
+async function renderVistaPlanMasaBase() {
+  const vista = document.getElementById('vista-plan-masa-base');
+  vista.innerHTML = '<div class="vista-header"><h1 class="vista-titulo">Planificación Masas Base</h1></div><p style="color:var(--txt3)">Cargando...</p>';
+  mostrarVista('plan-masa-base');
+
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_masa_base' }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    _planMasaBaseCache = data.filas || [];
+  } catch(e) {
+    _planMasaBaseCache = [];
+  }
+
+  const masasBase = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_preparacion === 'masa_base');
+  const dias = ['Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const cfg = cargarConfigSubrecetas();
+  const bolCfg = cfg.bol || {};
+  const maxPorTanda = bolCfg.amasadora_max_por_tanda || 16;
+
+  vista.innerHTML = `
+    <div class="vista-header"><h1 class="vista-titulo">Planificación Masas Base</h1></div>
+    <p style="font-size:12px;color:var(--txt2);margin-bottom:14px">
+      Capacidad máxima de amasadora por tanda: <strong>${maxPorTanda}kg</strong> (se ajusta en "Config sub recetas")
+    </p>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head"><i class="ti ti-bread"></i> Seleccionar masa base</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;padding:16px">
+        ${masasBase.map(r => `
+          <button data-id="${r.ID_receta}"
+            style="padding:10px 6px;border-radius:var(--r-md);border:2px solid ${_seleccionMasaBase?.ID_receta===r.ID_receta?'var(--area-color, #1565C0)':'var(--border)'};
+              background:${_seleccionMasaBase?.ID_receta===r.ID_receta?'var(--area-bg, #E3F2FD)':'var(--surface)'};cursor:pointer;text-align:center;font-size:12px"
+            onclick="seleccionarMasaBase('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}',${parseFloat(r.peso_unidad_mb_g)||0})">
+            ${r.nombre}<br><span style="font-size:10px;color:var(--txt3)">${r.peso_unidad_mb_g ? (parseFloat(r.peso_unidad_mb_g)/1000).toFixed(2)+'kg/uni' : '⚠️ sin peso configurado'}</span>
+          </button>
+        `).join('')}
+        ${!masasBase.length ? '<p style="color:var(--txt3);grid-column:1/-1">Sin recetas clasificadas como "Masa Base" todavía.</p>' : ''}
+      </div>
+      ${_seleccionMasaBase ? `
+      <div style="padding:0 16px 16px;border-top:1px solid var(--border);padding-top:16px">
+        <p style="font-size:13px;font-weight:600;margin-bottom:10px">Seleccionado: ${_seleccionMasaBase.nombre} (${(_seleccionMasaBase.pesoUnidad/1000).toFixed(2)}kg/unidad)</p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+          <label style="font-size:12px">Cantidad de unidades:</label>
+          <input type="number" id="cant-masa-base" min="1" step="1" style="max-width:100px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-sm)" placeholder="0" oninput="previewPesoMasaBase()">
+          <span id="preview-peso-masa-base" style="font-size:12px;color:var(--txt3)"></span>
+        </div>
+        <p style="font-size:11px;color:var(--txt3);margin-bottom:6px">Presione el día para ingresar al plan:</p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${dias.map(d => `<button class="btn-secundario" style="font-size:12px;padding:6px 14px" onclick="ingresarPlanMasaBase('${d}')">${d}</button>`).join('')}
+        </div>
+      </div>` : ''}
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+      ${dias.map(d => {
+        const items = _planMasaBaseCache.filter(p => p.dia === d);
+        const totalKgDia = items.reduce((s,it) => s + (parseFloat(it.peso_total_g)||0), 0) / 1000;
+        const totalUnidadesDia = items.reduce((s,it) => s + (parseFloat(it.cantidad_unidades)||0), 0);
+        const numTandas = totalKgDia > 0 ? Math.ceil(totalKgDia / maxPorTanda) : 0;
+        return `
+        <div class="card">
+          <div class="card-head" style="font-size:13px">${d}</div>
+          <div style="padding:10px 14px">
+            ${!items.length ? '<p style="color:var(--txt3);font-size:12px">Sin masas planificadas</p>' : items.map(it => `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+                <div>
+                  <div style="font-size:12px;font-weight:600">${it.nombre}</div>
+                  <div style="font-size:11px;color:var(--txt3)">${it.cantidad_unidades} uni · ${(parseFloat(it.peso_total_g)/1000).toFixed(2)}kg</div>
+                </div>
+                <button class="btn-fila-del" onclick="eliminarPlanMasaBaseUI(${it._fila})" aria-label="Eliminar"><i class="ti ti-x"></i></button>
+              </div>
+            `).join('')}
+            ${items.length ? `
+              <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--border)">
+                <p style="font-size:13px;font-weight:700">Total: ${totalKgDia.toFixed(2)}kg</p>
+                <p style="font-size:12px;color:${totalKgDia > maxPorTanda ? '#C62828' : '#2E7D32'}">
+                  <i class="ti ${totalKgDia > maxPorTanda ? 'ti-alert-triangle' : 'ti-circle-check'}"></i>
+                  ${numTandas} tanda${numTandas!==1?'s':''} necesaria${numTandas!==1?'s':''} (máx. ${maxPorTanda}kg c/u — usted decide cómo repartirlas)
+                </p>
+                <p style="font-size:11px;color:var(--txt3);margin-top:4px">${totalUnidadesDia} unidades pasan a congelación este día</p>
+              </div>` : ''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+}
+
+function seleccionarMasaBase(id, nombre, pesoUnidad) {
+  if (!pesoUnidad) {
+    alert(`"${nombre}" no tiene "Peso por unidad" configurado todavía.\n\nVaya a Mis recetas → edite esta receta → complete el campo "Peso por unidad (g)" antes de planificarla.`);
+    return;
+  }
+  _seleccionMasaBase = { ID_receta: id, nombre, pesoUnidad };
+  renderVistaPlanMasaBase();
+}
+
+function previewPesoMasaBase() {
+  const cantidad = parseFloat(document.getElementById('cant-masa-base')?.value) || 0;
+  const el = document.getElementById('preview-peso-masa-base');
+  if (!el || !_seleccionMasaBase) return;
+  const totalKg = (cantidad * _seleccionMasaBase.pesoUnidad) / 1000;
+  el.textContent = cantidad > 0 ? `= ${totalKg.toFixed(2)}kg` : '';
+}
+
+async function ingresarPlanMasaBase(dia) {
+  if (!_seleccionMasaBase) return;
+  const cantidad = parseFloat(document.getElementById('cant-masa-base')?.value) || 0;
+  if (cantidad <= 0) { toast('Ingresa una cantidad', 'error'); return; }
+  const pesoTotal = cantidad * _seleccionMasaBase.pesoUnidad;
+  try {
+    await escribirEnSheet('guardar_entrada_plan_masa_base', {
+      registro: {
+        ID_receta: _seleccionMasaBase.ID_receta, nombre: _seleccionMasaBase.nombre, dia,
+        cantidad_unidades: cantidad, peso_unidad_g: _seleccionMasaBase.pesoUnidad, peso_total_g: pesoTotal
+      }
+    });
+    toast(`${_seleccionMasaBase.nombre} agregado al ${dia}`);
+    _seleccionMasaBase = null;
+    renderVistaPlanMasaBase();
+  } catch(e) {
+    toast('Error al guardar', 'error');
+  }
+}
+
+async function eliminarPlanMasaBaseUI(fila) {
+  if (!confirm('¿Eliminar esta entrada del plan?')) return;
+  try {
+    await escribirEnSheet('eliminar_entrada_plan_masa_base', { fila });
+    toast('Eliminado');
+    renderVistaPlanMasaBase();
   } catch(e) {
     toast('Error al eliminar', 'error');
   }
