@@ -6360,12 +6360,20 @@ async function renderVistaPlanMasaBase() {
           <div class="card-head" style="font-size:13px">${d}</div>
           <div style="padding:10px 14px">
             ${!items.length ? '<p style="color:var(--txt3);font-size:12px">Sin masas planificadas</p>' : items.map(it => `
-              <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
-                <div>
-                  <div style="font-size:12px;font-weight:600">${it.nombre}</div>
-                  <div style="font-size:11px;color:var(--txt3)">${it.cantidad_unidades} uni · ${(parseFloat(it.peso_total_g)/1000).toFixed(2)}kg</div>
+              <div style="padding:6px 0;border-bottom:1px solid var(--border)">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <div>
+                    <div style="font-size:12px;font-weight:600">${it.nombre}</div>
+                    <div style="font-size:11px;color:var(--txt3)">${it.cantidad_unidades} uni · ${(parseFloat(it.peso_total_g)/1000).toFixed(2)}kg</div>
+                  </div>
+                  <div style="display:flex;gap:4px">
+                    <button class="btn-secundario" style="font-size:10px;padding:4px 8px" onclick="toggleDetalleMasaBase(${it._fila},'${it.ID_receta}',${it.cantidad_unidades})">
+                      <i class="ti ti-list-details"></i>
+                    </button>
+                    <button class="btn-fila-del" onclick="eliminarPlanMasaBaseUI(${it._fila})" aria-label="Eliminar"><i class="ti ti-x"></i></button>
+                  </div>
                 </div>
-                <button class="btn-fila-del" onclick="eliminarPlanMasaBaseUI(${it._fila})" aria-label="Eliminar"><i class="ti ti-x"></i></button>
+                <div id="detalle-masa-base-${it._fila}" class="hidden" style="margin-top:8px"></div>
               </div>
             `).join('')}
             ${items.length ? `
@@ -6419,6 +6427,40 @@ async function ingresarPlanMasaBase(dia) {
   } catch(e) {
     toast('Error al guardar', 'error');
   }
+}
+
+function toggleDetalleMasaBase(fila, recetaId, cantidadUnidades) {
+  const cont = document.getElementById('detalle-masa-base-' + fila);
+  if (!cont) return;
+  if (!cont.classList.contains('hidden')) { cont.classList.add('hidden'); return; }
+
+  const r = App.recetas.find(x => x.ID_receta === recetaId);
+  if (!r) return;
+  const porciones = parseFloat(r.porciones_base) || 1;
+  const factor = cantidadUnidades / porciones;
+
+  let ingredientes = [];
+  try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+
+  cont.classList.remove('hidden');
+  cont.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:11px">
+      <thead><tr>
+        <th style="text-align:left;padding:4px 8px;background:var(--bg);border-bottom:1px solid var(--border)">Ingrediente</th>
+        <th style="text-align:right;padding:4px 8px;background:var(--bg);border-bottom:1px solid var(--border)">Cantidad escalada</th>
+      </tr></thead>
+      <tbody>
+        ${ingredientes.map(ing => `
+          <tr>
+            <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${ing.nombre}</td>
+            <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace">
+              ${(parseFloat(ing.gramos||0) * factor).toFixed(1)}g
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <p style="font-size:10px;color:var(--txt3);margin-top:4px">Receta base (1 unidad) escalada ×${factor.toFixed(2)} → ${cantidadUnidades} unidades</p>
+  `;
 }
 
 async function eliminarPlanMasaBaseUI(fila) {
