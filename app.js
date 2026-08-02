@@ -6327,9 +6327,41 @@ async function renderVistaPlanMasaBase() {
   const cfg = cargarConfigSubrecetas();
   const bolCfg = cfg.bol || {};
   const maxPorTanda = bolCfg.amasadora_max_por_tanda || 16;
+  const capacidadCongelador = bolCfg.capacidad_congelacion_masas || 40;
+  const stockActual = bolCfg.stock_masas || {};
+  const salidasMasas = bolCfg.salidas_masas || {};
+  const stockTotalActual = masasBase.reduce((s,r) => s + (parseInt(stockActual[r.ID_receta]) || 0), 0);
 
   vista.innerHTML = `
     <div class="vista-header"><h1 class="vista-titulo">Planificación Masas Base</h1></div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head" style="background:#F3E5F5;color:#4A148C">
+        <i class="ti ti-snowflake" style="color:#6A1B9A"></i> Stock congelado
+      </div>
+      <div style="padding:14px 16px">
+        <p style="font-size:13px;font-weight:700;margin-bottom:10px;color:${stockTotalActual > capacidadCongelador ? '#C62828' : '#2E7D32'}">
+          ${stockTotalActual} / ${capacidadCongelador} espacios ocupados
+          ${stockTotalActual > capacidadCongelador ? ' — ⚠️ sobre capacidad' : ''}
+        </p>
+        ${masasBase.map(r => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+            <span style="font-size:12px">${r.nombre}</span>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="number" id="stock-actual-${r.ID_receta}" min="0" step="1" value="${stockActual[r.ID_receta] || 0}"
+                style="max-width:70px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px" placeholder="0">
+              <button class="btn-secundario" style="font-size:10px;padding:4px 8px" onclick="guardarStockActualMasa('${r.ID_receta}')">
+                <i class="ti ti-device-floppy"></i>
+              </button>
+            </div>
+          </div>
+        `).join('')}
+        <p style="font-size:11px;color:var(--txt3);margin-top:8px">
+          Ajuste "Stock actual" manualmente cuando corresponda (ej. conteo físico). La capacidad máxima se configura en "Config sub recetas".
+        </p>
+      </div>
+    </div>
+
     <p style="font-size:12px;color:var(--txt2);margin-bottom:14px">
       Capacidad máxima de amasadora por tanda: <strong>${maxPorTanda}kg</strong> (se ajusta en "Config sub recetas")
     </p>
@@ -6417,6 +6449,27 @@ async function renderVistaPlanMasaBase() {
                 </p>
                 <p style="font-size:11px;color:var(--txt3);margin-top:4px">${totalUnidadesDia} unidades pasan a congelación este día</p>
               </div>` : ''}
+            ${(() => {
+              const salidaHoy = parseInt(salidasMasas[d]) || 0;
+              const proyectado = stockTotalActual + totalUnidadesDia - salidaHoy;
+              const hayEspacio = proyectado <= capacidadCongelador;
+              return `
+              <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--border)">
+                <label style="font-size:11px;color:var(--txt2)">¿Cuántas masas va a sacar a descongelar este día?</label>
+                <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+                  <input type="number" id="salida-masa-${d}" min="0" step="1" value="${salidaHoy || ''}" placeholder="0"
+                    style="max-width:70px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px">
+                  <button class="btn-secundario" style="font-size:10px;padding:4px 8px" onclick="guardarSalidaMasaDia('${d}')">
+                    <i class="ti ti-device-floppy"></i> Guardar
+                  </button>
+                </div>
+                ${items.length || salidaHoy ? `
+                  <p style="font-size:11px;margin-top:6px;color:${hayEspacio ? '#2E7D32' : '#C62828'}">
+                    <i class="ti ${hayEspacio ? 'ti-circle-check' : 'ti-alert-triangle'}"></i>
+                    ${hayEspacio ? 'Hay espacio' : 'No hay espacio suficiente'} — proyectado: ${proyectado}/${capacidadCongelador}
+                  </p>` : ''}
+              </div>`;
+            })()}
             ${bloquesAnidados.length ? `
               <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--border)">
                 ${bloquesAnidados.map(b => b.tandas.map((t,i) => b.subRecetasAnidadas.map(subIng => `
@@ -6488,6 +6541,28 @@ function toggleSubRecetaAnidada(contenedorId, recetaId, subRecetaMpId, tandaKg, 
       </table>
     </div>
   `;
+}
+
+function guardarSalidaMasaDia(dia) {
+  const valor = parseInt(document.getElementById('salida-masa-' + dia)?.value) || 0;
+  const cfg = cargarConfigSubrecetas();
+  if (!cfg.bol) cfg.bol = {};
+  if (!cfg.bol.salidas_masas) cfg.bol.salidas_masas = {};
+  cfg.bol.salidas_masas[dia] = valor;
+  guardarConfigSubrecetas(cfg);
+  toast('Salida guardada');
+  renderVistaPlanMasaBase();
+}
+
+function guardarStockActualMasa(recetaId) {
+  const valor = parseInt(document.getElementById('stock-actual-' + recetaId)?.value) || 0;
+  const cfg = cargarConfigSubrecetas();
+  if (!cfg.bol) cfg.bol = {};
+  if (!cfg.bol.stock_masas) cfg.bol.stock_masas = {};
+  cfg.bol.stock_masas[recetaId] = valor;
+  guardarConfigSubrecetas(cfg);
+  toast('Stock actualizado');
+  renderVistaPlanMasaBase();
 }
 
 function seleccionarMasaBase(id, nombre, pesoUnidad) {
