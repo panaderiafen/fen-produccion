@@ -1485,6 +1485,7 @@ function renderVistaMisRecetas() {
               ${r.nombre || r.ID_receta}
               <span style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:6px">${r.ID_receta}</span>
               ${esConsolidada ? '<span style="font-size:10px;color:#2E7D32;margin-left:4px"><i class="ti ti-lock"></i></span>' : ''}
+              ${App.areaCodigo === 'BOL' ? `<span style="font-size:10px;color:${r.tipo_preparacion?'var(--txt3)':'#C62828'};margin-left:6px">· ${formatearClasificacionBOL(r.tipo_preparacion)}</span>` : ''}
             </td>
             <td style="text-align:center">
               <span class="estado-badge" style="color:${est.color};background:${est.bg}">${est.label}</span>
@@ -6912,11 +6913,23 @@ async function calcularECUI(btn) {
 // Reconstruye el detalle de costeo de una receta (ingredientes + insumos + costos) tal
 // como se ve en Aprobaciones — usado en el modal de Maestro de recetas para no perder
 // la trazabilidad de costos una vez que la receta ya fue aprobada.
+// Traduce el valor guardado de tipo_preparacion a un texto legible
+function formatearClasificacionBOL(valor) {
+  const mapa = {
+    producto_simple: 'Producto Simple',
+    producto_compuesto: 'Producto Compuesto',
+    masa_base: 'Masa Base',
+    relleno: 'Relleno / preparación',
+  };
+  return mapa[valor] || '⚠️ Sin clasificar';
+}
+
 function construirDetalleCosteoRecetaHTML(r) {
   let ingredientes = [], insumos = [];
   try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
   try { insumos = JSON.parse(r.insumos_JSON || '[]'); } catch(e) {}
   const esPan = r._area === 'PAN' || r.área === 'Panadería';
+  const esBol = r._area === 'BOL' || r.área === 'Bollería';
 
   return `
     <div style="display:flex;gap:16px;font-size:13px;color:var(--txt2);margin-bottom:12px;flex-wrap:wrap">
@@ -6924,6 +6937,7 @@ function construirDetalleCosteoRecetaHTML(r) {
       <span><strong>Ingredientes:</strong> ${ingredientes.length}</span>
       <span><strong>Versión:</strong> ${r.versión_actual || r.versión || 1}</span>
       ${r.peso_harina_total_g ? `<span><strong>Harina base:</strong> ${r.peso_harina_total_g}g</span>` : ''}
+      ${esBol ? `<span><strong>Clasificación:</strong> ${formatearClasificacionBOL(r.tipo_preparacion)}</span>` : ''}
     </div>
     ${ingredientes.length ? `
     <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px">
@@ -7014,10 +7028,12 @@ async function renderVistaMaestroAdmin() {
   const areaFiltro = App._filtroMaestroArea || 'todas';
 
   const filaHtml = r => {
+    const esBol = r.área === 'Bollería';
     return `<tr style="cursor:pointer" onclick="abrirModalCosteoReceta('${r.ID_receta}')">
       <td class="td-nombre">
         ${r.nombre}
         <span style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:6px">${r.ID_receta}</span>
+        ${esBol ? `<span style="font-size:10px;color:${r.tipo_preparacion?'var(--txt3)':'#C62828'};margin-left:6px">· ${formatearClasificacionBOL(r.tipo_preparacion)}</span>` : ''}
       </td>
       <td class="td-num">${formatearRendimiento(r)}</td>
       <td class="td-num">v${r.versión_actual||1}</td>
