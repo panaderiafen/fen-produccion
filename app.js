@@ -630,7 +630,7 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
           </p>
         </div>
         <div class="campo ${receta?.tipo_preparacion==='masa_base'?'':'hidden'}" id="campo-peso-unidad-mb">
-          <label>Peso por unidad (g) <span style="color:var(--txt3);font-weight:400;font-size:10px">— versatilidad de rendimiento</span></label>
+          <label>Peso por unidad (g) <span style="color:var(--txt3);font-weight:400;font-size:10px">— si tiene unidades discretas (ej. Masa Base)</span></label>
           <div style="display:flex;gap:8px;align-items:center">
             <input type="number" id="f-peso-unidad-mb" min="1" step="1" style="max-width:140px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm)"
               value="${receta?.peso_unidad_mb_g || ''}" placeholder="Ej: 1500">
@@ -641,6 +641,14 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
           <p style="font-size:11px;color:var(--txt3);margin-top:4px">
             Si cambia este valor (ej. de 1.500g a 1.250g), presione "Recalcular" para que todos los ingredientes se ajusten
             proporcionalmente antes de guardar — la receta base no se toca hasta que confirme.
+          </p>
+          <label style="margin-top:10px;display:block">Proporción respecto a la masa base (g por cada 1kg de masa) <span style="color:var(--txt3);font-weight:400;font-size:10px">— si NO tiene unidades discretas (ej. Empaste)</span></label>
+          <input type="number" id="f-ratio-masa-base" min="0" step="1" style="max-width:140px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm)"
+            value="${receta?.ratio_g_por_kg_masa || ''}" placeholder="Ej: 200">
+          <p style="font-size:11px;color:var(--txt3);margin-top:4px">
+            Ej: si para 1.250g de masa necesita 250g de empaste, la proporción es 200 (g por cada kg de masa).
+            Use este campo <strong>en vez de</strong> "Peso por unidad" cuando la preparación no se cuenta en unidades — el sistema calcula
+            la sugerencia según cuánta masa base planifique ese día, no según cuántas unidades.
           </p>
         </div>` : ''}
         ${esPan ? `
@@ -1432,6 +1440,7 @@ async function guardarReceta(recetaId, btn) {
     porciones_base_unidad:       document.getElementById('f-porciones-unidad')?.value || 'un',
     tipo_preparacion:            document.getElementById('f-tipo-preparacion')?.value ?? '',
     peso_unidad_mb_g:            document.getElementById('f-peso-unidad-mb')?.value || '',
+    ratio_g_por_kg_masa:         document.getElementById('f-ratio-masa-base')?.value || '',
     peso_harina_total_g:         App.areaCodigo === 'PAN' ? (document.getElementById('f-harina')?.value || '') : '',
     ingredientes_JSON:           JSON.stringify(ingredientes),
     insumos_JSON:                JSON.stringify(insumos),
@@ -6443,6 +6452,7 @@ function calcularSugerenciasHermanasDia(items) {
 
   items.forEach(entrada => {
     const unidadesPlanificadas = parseFloat(entrada.cantidad_unidades) || 0;
+    const pesoTotalKgEntrada = (parseFloat(entrada.peso_total_g) || 0) / 1000;
     App.recetas.forEach(final => {
       let ings = [];
       try { ings = JSON.parse(final.ingredientes_JSON || '[]'); } catch(e) {}
@@ -6459,10 +6469,18 @@ function calcularSugerenciasHermanasDia(items) {
           return mpHermana && mpHermana.ID_MP === ing.id;
         });
         if (!hermana) return;
-        const pesoHermanaG = parseFloat(hermana.peso_unidad_mb_g) || 0;
         if (!sugerencias[hermana.nombre]) sugerencias[hermana.nombre] = { unidades: 0, gramos: 0 };
-        sugerencias[hermana.nombre].unidades += unidadesPlanificadas;
-        sugerencias[hermana.nombre].gramos += pesoHermanaG * unidadesPlanificadas;
+
+        const ratioGPorKg = parseFloat(hermana.ratio_g_por_kg_masa) || 0;
+        if (ratioGPorKg > 0) {
+          // Preparación sin unidades discretas (ej. Empaste) — proporcional al peso total de masa
+          sugerencias[hermana.nombre].gramos += ratioGPorKg * pesoTotalKgEntrada;
+        } else {
+          // Preparación con unidades discretas — 1:1 con la masa base
+          const pesoHermanaG = parseFloat(hermana.peso_unidad_mb_g) || 0;
+          sugerencias[hermana.nombre].unidades += unidadesPlanificadas;
+          sugerencias[hermana.nombre].gramos += pesoHermanaG * unidadesPlanificadas;
+        }
       });
     });
   });
