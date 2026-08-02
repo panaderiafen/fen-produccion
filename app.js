@@ -316,10 +316,11 @@ function renderSidebar() {
       { id: 'registro-merma',  icon: 'ti-trash', label: 'Registro de merma' },
     ];
     if (App.areaCodigo === 'CAF') items.splice(2, 2);
-    // BOL: rename recetas-del-dia (pasa a "Plan de horneado del día") y agregar "Recetas del día" (rellenos/preparaciones)
+    // BOL: quitar "recetas-del-dia" (Plan de horneado del día, ya no se usa) y agregar
+    // "Recetas del día" (rellenos/preparaciones), Planificación PS/PC y Planificación Masas Base
     if (App.areaCodigo === 'BOL') {
       const rdIdx = items.findIndex(i => i.id === 'recetas-del-dia');
-      if (rdIdx >= 0) items[rdIdx] = { id: 'recetas-del-dia', icon: 'ti-flame', label: 'Plan de horneado del día' };
+      if (rdIdx >= 0) items.splice(rdIdx, 1);
       items.splice(3, 0, { id: 'rellenos-otras-recetas', icon: 'ti-egg', label: 'Recetas del día' });
       items.splice(3, 0, { id: 'plan-ps-pc', icon: 'ti-layout-grid', label: 'Planificación PS/PC' });
       items.splice(4, 0, { id: 'plan-masa-base', icon: 'ti-bread', label: 'Planificación Masas Base' });
