@@ -612,13 +612,14 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
         <div class="campo">
           <label>Clasificación</label>
           <select id="f-tipo-preparacion" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+            <option value="" ${!receta?.tipo_preparacion?'selected':''}>⚠️ Sin clasificar aún</option>
             <optgroup label="Productos terminados">
               <option value="producto_simple" ${receta?.tipo_preparacion==='producto_simple'?'selected':''}>Producto Simple (base + ingredientes sueltos, sin sub-receta)</option>
               <option value="producto_compuesto" ${receta?.tipo_preparacion==='producto_compuesto'?'selected':''}>Producto Compuesto (base + relleno u otra sub-receta)</option>
             </optgroup>
             <optgroup label="Preparaciones internas">
               <option value="masa_base" ${receta?.tipo_preparacion==='masa_base'?'selected':''}>Masa Base (laminado, congelación, escalado por peso)</option>
-              <option value="relleno" ${!['producto_simple','producto_compuesto','masa_base'].includes(receta?.tipo_preparacion)?'selected':''}>Relleno / preparación (se planifica en Recetas del día, sugerencia + ajuste libre)</option>
+              <option value="relleno" ${receta?.tipo_preparacion==='relleno'?'selected':''}>Relleno / preparación (se planifica en Recetas del día, sugerencia + ajuste libre)</option>
             </optgroup>
           </select>
           <p style="font-size:11px;color:var(--txt3);margin-top:4px">
@@ -1358,7 +1359,7 @@ async function guardarReceta(recetaId, btn) {
     área:                        App.area.nombre,
     porciones_base:              parseFloat(porciones),
     porciones_base_unidad:       document.getElementById('f-porciones-unidad')?.value || 'un',
-    tipo_preparacion:            document.getElementById('f-tipo-preparacion')?.value || 'elaboracion_previa',
+    tipo_preparacion:            document.getElementById('f-tipo-preparacion')?.value ?? '',
     peso_harina_total_g:         App.areaCodigo === 'PAN' ? (document.getElementById('f-harina')?.value || '') : '',
     ingredientes_JSON:           JSON.stringify(ingredientes),
     insumos_JSON:                JSON.stringify(insumos),
