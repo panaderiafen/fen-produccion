@@ -1748,12 +1748,18 @@ function construirDetalleRecetaHTML(r) {
           ${esPan ? `<th style="text-align:right;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">% panadero</th>` : ''}
         </tr></thead>
         <tbody>
-          ${ingredientes.map(ing => `
+          ${ingredientes.map(ing => {
+            const esUnidades = ing.unidades !== undefined && ing.unidades !== null && ing.unidades !== '';
+            const valorMostrado = esUnidades
+              ? `${formatearUnidadesIngrediente(ing.unidades)} uni <span style="color:var(--txt3);font-weight:400">(≈${parseFloat(ing.gramos||0).toFixed(0)}g)</span>`
+              : `${parseFloat(ing.gramos||0).toFixed(0)}g`;
+            return `
             <tr>
               <td class="td-nombre">${ing.nombre}</td>
-              <td class="td-num">${parseFloat(ing.gramos||0).toFixed(0)}g</td>
+              <td class="td-num">${valorMostrado}</td>
               ${esPan ? `<td class="td-pct">${((parseFloat(ing.pct)||0)*100).toFixed(1)}%</td>` : ''}
-            </tr>`).join('')}
+            </tr>`;
+          }).join('')}
           <tr style="background:var(--bg);font-weight:600">
             <td style="padding:8px 16px">Total ingredientes</td>
             <td class="td-num" style="padding:8px 16px">
@@ -5203,7 +5209,7 @@ function renderVistaAprobaciones() {
                   ${ingredientes.map(ing => {
                     const unidadRec = ing.unidad_receta || (ing.unidades !== undefined && ing.unidades !== null ? 'unidades' : 'gramos');
                     const displayVal = unidadRec === 'unidades'
-                      ? `${formatearUnidadesIngrediente(ing.unidades||ing.gramos||0)} uni`
+                      ? `${formatearUnidadesIngrediente(ing.unidades||ing.gramos||0)} uni <span style="color:var(--txt3);font-weight:400;font-size:10px">(≈${parseFloat(ing.gramos||0).toFixed(0)}g)</span>`
                       : unidadRec === 'ml'
                       ? `${parseFloat(ing.ml||ing.gramos||0).toFixed(1)} ml`
                       : `${parseFloat(ing.gramos||0).toFixed(1)}g`;
@@ -7561,7 +7567,7 @@ function construirDetalleCosteoRecetaHTML(r) {
         ${ingredientes.map(ing => {
           const unidadRec = ing.unidad_receta || (ing.unidades !== undefined && ing.unidades !== null ? 'unidades' : 'gramos');
           const displayVal = unidadRec === 'unidades'
-            ? `${formatearUnidadesIngrediente(ing.unidades||ing.gramos||0)} uni`
+            ? `${formatearUnidadesIngrediente(ing.unidades||ing.gramos||0)} uni <span style="color:var(--txt3);font-weight:400;font-size:10px">(≈${parseFloat(ing.gramos||0).toFixed(0)}g)</span>`
             : unidadRec === 'ml'
             ? `${parseFloat(ing.ml||ing.gramos||0).toFixed(1)} ml`
             : `${parseFloat(ing.gramos||0).toFixed(1)}g`;
