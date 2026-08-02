@@ -5872,7 +5872,9 @@ async function renderVistaRellenosOtrasRecetas() {
               <i class="ti ti-device-floppy"></i> Guardar
             </button>
             ${guardado?.hecho === true || guardado?.hecho === 'true' ? `
-              <span style="font-size:11px;color:#2E7D32"><i class="ti ti-check"></i> Hecho</span>` : `
+              <span style="font-size:11px;color:#2E7D32"><i class="ti ti-check"></i> Hecho</span>
+              <button class="btn-secundario" style="font-size:11px;padding:6px 10px"
+                onclick="desmarcarRellenoHecho('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}')">Desmarcar</button>` : `
               <button class="btn-secundario" style="font-size:11px;padding:6px 10px"
                 onclick="marcarRellenoHecho('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}')">Marcar hecho</button>`}
           </div>
@@ -6020,6 +6022,22 @@ async function marcarRellenoHecho(recetaId, nombre) {
       registro: { ID_receta: recetaId, nombre, cantidad_planificada: cantidad, unidad, hecho: true }
     });
     toast(`"${nombre}" marcado como hecho`);
+    renderVistaRellenosOtrasRecetas();
+  } catch(e) {
+    toast('Error al guardar', 'error');
+  }
+}
+
+async function desmarcarRellenoHecho(recetaId, nombre) {
+  const guardado = (_planRellenosCache || []).find(p => p.ID_receta === recetaId);
+  const cantidad = guardado ? parseFloat(guardado.cantidad_planificada) || 0 : 0;
+  const r = App.recetas.find(x => x.ID_receta === recetaId);
+  const unidad = (r?.porciones_base_unidad || 'un') === 'g' ? 'g' : 'uni';
+  try {
+    await escribirEnSheet('guardar_plan_relleno', {
+      registro: { ID_receta: recetaId, nombre, cantidad_planificada: cantidad, unidad, hecho: false }
+    });
+    toast(`"${nombre}" desmarcado`);
     renderVistaRellenosOtrasRecetas();
   } catch(e) {
     toast('Error al guardar', 'error');
