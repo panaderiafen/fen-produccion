@@ -611,7 +611,7 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
         ${App.areaCodigo === 'BOL' ? `
         <div class="campo">
           <label>Clasificación</label>
-          <select id="f-tipo-preparacion" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+          <select id="f-tipo-preparacion" onchange="toggleCampoPesoMB(this)" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
             <option value="" ${!receta?.tipo_preparacion?'selected':''}>⚠️ Sin clasificar aún</option>
             <optgroup label="Productos terminados">
               <option value="producto_simple" ${receta?.tipo_preparacion==='producto_simple'?'selected':''}>Producto Simple (base + ingredientes sueltos, sin sub-receta)</option>
@@ -625,6 +625,20 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
           <p style="font-size:11px;color:var(--txt3);margin-top:4px">
             Define qué tipo de planificación aplica: <strong>Producto Simple/Compuesto</strong> van a la grilla de planificación semanal;
             <strong>Masa Base</strong> tiene su propia planificación de tandas y stock congelado; <strong>Relleno/preparación</strong> aparece en <strong>Recetas del día</strong>.
+          </p>
+        </div>
+        <div class="campo ${receta?.tipo_preparacion==='masa_base'?'':'hidden'}" id="campo-peso-unidad-mb">
+          <label>Peso por unidad (g) <span style="color:var(--txt3);font-weight:400;font-size:10px">— versatilidad de rendimiento</span></label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="number" id="f-peso-unidad-mb" min="1" step="1" style="max-width:140px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm)"
+              value="${receta?.peso_unidad_mb_g || ''}" placeholder="Ej: 1500">
+            <button type="button" class="btn-secundario" style="font-size:12px;padding:8px 12px" onclick="recalcularRecetaPorPeso()">
+              <i class="ti ti-refresh"></i> Recalcular ingredientes a este peso
+            </button>
+          </div>
+          <p style="font-size:11px;color:var(--txt3);margin-top:4px">
+            Si cambia este valor (ej. de 1.500g a 1.250g), presione "Recalcular" para que todos los ingredientes se ajusten
+            proporcionalmente antes de guardar — la receta base no se toca hasta que confirme.
           </p>
         </div>` : ''}
         ${esPan ? `
@@ -1155,6 +1169,45 @@ function onChangeIngredienteSelect(sel) {
   actualizarTotalIngredientesPreview();
 }
 
+function toggleCampoPesoMB(sel) {
+  const campo = document.getElementById('campo-peso-unidad-mb');
+  if (!campo) return;
+  campo.classList.toggle('hidden', sel.value !== 'masa_base');
+}
+
+// Escala todos los ingredientes de la receta (ya en el formulario) para que el
+// total coincida con: porciones_base × peso_por_unidad configurado. No guarda
+// nada todavía — solo actualiza los campos en pantalla, el usuario revisa y
+// presiona Guardar cuando esté conforme.
+function recalcularRecetaPorPeso() {
+  const pesoUnidad = parseFloat(document.getElementById('f-peso-unidad-mb')?.value) || 0;
+  const porciones = parseFloat(document.getElementById('f-porciones')?.value) || 0;
+  if (!pesoUnidad || !porciones) { toast('Complete "Rendimiento" y "Peso por unidad" primero', 'error'); return; }
+
+  const totalObjetivo = pesoUnidad * porciones;
+  let totalActual = 0;
+  const inputs = [];
+  document.querySelectorAll('#tbody-ingr tr').forEach(tr => {
+    const input = tr.querySelector('input[type="number"]');
+    const modo = input?.dataset.modo;
+    if (!input || modo === 'unidades') return; // no escalar sub-recetas usadas "por unidad completa"
+    const val = parseFloat(input.value) || 0;
+    totalActual += val;
+    inputs.push(input);
+  });
+
+  if (!totalActual) { toast('No hay ingredientes en gramos para escalar', 'error'); return; }
+
+  const factor = totalObjetivo / totalActual;
+  inputs.forEach(input => {
+    const nuevoValor = (parseFloat(input.value) || 0) * factor;
+    input.value = nuevoValor.toFixed(1);
+  });
+
+  actualizarTotalIngredientesPreview();
+  toast(`Ingredientes escalados ×${factor.toFixed(3)} — total nuevo: ${totalObjetivo.toLocaleString('es-CL')}g. Revise y guarde.`);
+}
+
 function toggleUnidadTipo(sel) {
   if (!sel) return;
   const tr = sel.closest('tr');
@@ -1360,6 +1413,7 @@ async function guardarReceta(recetaId, btn) {
     porciones_base:              parseFloat(porciones),
     porciones_base_unidad:       document.getElementById('f-porciones-unidad')?.value || 'un',
     tipo_preparacion:            document.getElementById('f-tipo-preparacion')?.value ?? '',
+    peso_unidad_mb_g:            document.getElementById('f-peso-unidad-mb')?.value || '',
     peso_harina_total_g:         App.areaCodigo === 'PAN' ? (document.getElementById('f-harina')?.value || '') : '',
     ingredientes_JSON:           JSON.stringify(ingredientes),
     insumos_JSON:                JSON.stringify(insumos),
