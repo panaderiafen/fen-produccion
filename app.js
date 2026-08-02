@@ -6389,7 +6389,66 @@ async function renderVistaPlanMasaBase() {
         </div>`;
       }).join('')}
     </div>
+
+    ${construirSugerenciasHermanasMasaBase(dias)}
   `;
+}
+
+// Para cada día, encuentra otras preparaciones "Masa Base" (ej. Empaste) que se
+// usan JUNTO a la masa planificada dentro de una misma receta final (ej. Croissant
+// usa Masa Base Pastón + Empaste como ingredientes hermanos, no uno dentro del otro)
+// y calcula cuánto necesitaría según la proporción entre ambos en esa receta.
+function construirSugerenciasHermanasMasaBase(dias) {
+  const masasBaseTodas = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_preparacion === 'masa_base');
+  const bloques = dias.map(d => {
+    const planificadasHoy = (_planMasaBaseCache || []).filter(p => p.dia === d);
+    if (!planificadasHoy.length) return '';
+
+    const sugerencias = {}; // nombre_hermana -> unidades sugeridas
+
+    planificadasHoy.forEach(entrada => {
+      const unidadesPlanificadas = parseFloat(entrada.cantidad_unidades) || 0;
+      // Buscar recetas finales donde esta masa base se usa junto a otra preparación "masa_base"
+      App.recetas.forEach(final => {
+        let ings = [];
+        try { ings = JSON.parse(final.ingredientes_JSON || '[]'); } catch(e) {}
+        if (!ings.length) return;
+        const mpDeMasaBase = App.materiasPrimas.find(m => m.nombre === entrada.nombre && m.tipo === 'sub_receta');
+        if (!mpDeMasaBase) return;
+        const usoMasaBase = ings.find(i => i.id === mpDeMasaBase.ID_MP);
+        if (!usoMasaBase) return;
+        const cantidadMasaBaseEnReceta = parseFloat(usoMasaBase.unidades) || parseFloat(usoMasaBase.gramos) || 1;
+
+        ings.forEach(ing => {
+          if (ing.id === mpDeMasaBase.ID_MP) return;
+          const hermana = masasBaseTodas.find(mb => {
+            const mpHermana = App.materiasPrimas.find(m => m.nombre === mb.nombre && m.tipo === 'sub_receta');
+            return mpHermana && mpHermana.ID_MP === ing.id;
+          });
+          if (!hermana) return;
+          const cantidadHermanaEnReceta = parseFloat(ing.unidades) || parseFloat(ing.gramos) || 1;
+          const proporcion = cantidadHermanaEnReceta / cantidadMasaBaseEnReceta;
+          const sugerido = proporcion * unidadesPlanificadas;
+          sugerencias[hermana.nombre] = (sugerencias[hermana.nombre] || 0) + sugerido;
+        });
+      });
+    });
+
+    const nombres = Object.keys(sugerencias);
+    if (!nombres.length) return '';
+
+    return `
+      <div class="card" style="margin-top:12px">
+        <div class="card-head" style="font-size:13px">${d} — otras preparaciones necesarias</div>
+        <div style="padding:10px 14px">
+          ${nombres.map(n => `
+            <p style="font-size:12px"><i class="ti ti-bulb" style="color:#1565C0"></i> <strong>${n}:</strong> ~${Math.round(sugerencias[n])} unidades sugeridas</p>
+          `).join('')}
+        </div>
+      </div>`;
+  }).filter(b => b).join('');
+
+  return bloques ? `<div style="margin-top:16px">${bloques}</div>` : '';
 }
 
 function seleccionarMasaBase(id, nombre, pesoUnidad) {
@@ -6433,33 +6492,123 @@ function toggleDetalleMasaBase(fila, recetaId, cantidadUnidades) {
   const cont = document.getElementById('detalle-masa-base-' + fila);
   if (!cont) return;
   if (!cont.classList.contains('hidden')) { cont.classList.add('hidden'); return; }
+  cont.classList.remove('hidden');
 
+  const entrada = (_planMasaBaseCache || []).find(p => p._fila === fila);
+  let tandas = [];
+  try { tandas = JSON.parse(entrada?.tandas_JSON || '[]'); } catch(e) {}
+  if (!Array.isArray(tandas)) tandas = [];
+
+  renderEditorTandas(fila, recetaId, cantidadUnidades, tandas);
+}
+
+function renderEditorTandas(fila, recetaId, cantidadUnidades, tandas) {
+  const cont = document.getElementById('detalle-masa-base-' + fila);
+  if (!cont) return;
   const r = App.recetas.find(x => x.ID_receta === recetaId);
   if (!r) return;
   const porciones = parseFloat(r.porciones_base) || 1;
-  const factor = cantidadUnidades / porciones;
+  const entrada = (_planMasaBaseCache || []).find(p => p._fila === fila);
+  const pesoTotalKg = (parseFloat(entrada?.peso_total_g) || 0) / 1000;
+  const sumaTandasKg = tandas.reduce((s,t) => s + (parseFloat(t.kg)||0), 0);
+  const diferencia = pesoTotalKg - sumaTandasKg;
 
   let ingredientes = [];
   try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
 
-  cont.classList.remove('hidden');
   cont.innerHTML = `
-    <table style="width:100%;border-collapse:collapse;font-size:11px">
-      <thead><tr>
-        <th style="text-align:left;padding:4px 8px;background:var(--bg);border-bottom:1px solid var(--border)">Ingrediente</th>
-        <th style="text-align:right;padding:4px 8px;background:var(--bg);border-bottom:1px solid var(--border)">Cantidad escalada</th>
-      </tr></thead>
+    <div style="background:var(--bg);border-radius:var(--r-md);padding:10px;margin-top:6px">
+      <p style="font-size:11px;font-weight:600;margin-bottom:6px">Dividir en tandas libres (total: ${pesoTotalKg.toFixed(2)}kg)</p>
+      ${tandas.map((t,i) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0">
+          <span style="font-size:11px">Tanda ${i+1}: <strong>${parseFloat(t.kg).toFixed(2)}kg</strong></span>
+          <div style="display:flex;gap:4px">
+            <button class="btn-secundario" style="font-size:9px;padding:2px 6px" onclick="verRecetaEscaladaTanda(${fila},'${recetaId}',${t.kg},${i})">Ver receta</button>
+            <button class="btn-fila-del" style="padding:2px" onclick="quitarTanda(${fila},'${recetaId}',${cantidadUnidades},${i})"><i class="ti ti-x"></i></button>
+          </div>
+        </div>
+        <div id="tanda-receta-${fila}-${i}" class="hidden" style="margin:4px 0"></div>
+      `).join('')}
+      <div style="display:flex;gap:6px;align-items:center;margin-top:8px">
+        <input type="number" id="nueva-tanda-${fila}" min="0.1" step="0.1" placeholder="kg" style="max-width:80px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:11px">
+        <button class="btn-secundario" style="font-size:10px;padding:4px 10px" onclick="agregarTanda(${fila},'${recetaId}',${cantidadUnidades})">
+          <i class="ti ti-plus"></i> Agregar tanda
+        </button>
+      </div>
+      <p style="font-size:10px;margin-top:6px;color:${Math.abs(diferencia) < 0.05 ? '#2E7D32' : '#C62828'}">
+        ${Math.abs(diferencia) < 0.05 ? '✓ Las tandas suman el total' : `Faltan ${diferencia.toFixed(2)}kg por asignar (o sobran, si es negativo)`}
+      </p>
+    </div>
+  `;
+}
+
+async function agregarTanda(fila, recetaId, cantidadUnidades) {
+  const input = document.getElementById('nueva-tanda-' + fila);
+  const kg = parseFloat(input?.value) || 0;
+  if (kg <= 0) { toast('Ingresa un peso válido', 'error'); return; }
+
+  const entrada = (_planMasaBaseCache || []).find(p => p._fila === fila);
+  let tandas = [];
+  try { tandas = JSON.parse(entrada?.tandas_JSON || '[]'); } catch(e) {}
+  if (!Array.isArray(tandas)) tandas = [];
+  tandas.push({ kg });
+
+  await guardarTandasEnSheet(fila, tandas);
+  renderEditorTandas(fila, recetaId, cantidadUnidades, tandas);
+}
+
+async function quitarTanda(fila, recetaId, cantidadUnidades, index) {
+  const entrada = (_planMasaBaseCache || []).find(p => p._fila === fila);
+  let tandas = [];
+  try { tandas = JSON.parse(entrada?.tandas_JSON || '[]'); } catch(e) {}
+  tandas.splice(index, 1);
+
+  await guardarTandasEnSheet(fila, tandas);
+  renderEditorTandas(fila, recetaId, cantidadUnidades, tandas);
+}
+
+async function guardarTandasEnSheet(fila, tandas) {
+  const tandasJSON = JSON.stringify(tandas);
+  try {
+    await escribirEnSheet('actualizar_tandas_plan_masa_base', { fila, tandas_JSON: tandasJSON });
+    const entrada = (_planMasaBaseCache || []).find(p => p._fila === fila);
+    if (entrada) entrada.tandas_JSON = tandasJSON;
+  } catch(e) {
+    toast('Error al guardar la tanda', 'error');
+  }
+}
+
+function verRecetaEscaladaTanda(fila, recetaId, tandaKg, index) {
+  const objetivo = document.getElementById(`tanda-receta-${fila}-${index}`);
+  if (!objetivo) return;
+
+  if (!objetivo.classList.contains('hidden')) {
+    objetivo.classList.add('hidden');
+    return;
+  }
+
+  const r = App.recetas.find(x => x.ID_receta === recetaId);
+  if (!r) return;
+  const porciones = parseFloat(r.porciones_base) || 1;
+  const entrada = (_planMasaBaseCache || []).find(p => p._fila === fila);
+  const pesoUnidadG = parseFloat(entrada?.peso_unidad_g) || 0;
+  const pesoRecetaBaseG = porciones * pesoUnidadG;
+  const factor = pesoRecetaBaseG > 0 ? (tandaKg * 1000) / pesoRecetaBaseG : 0;
+
+  let ingredientes = [];
+  try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+
+  objetivo.classList.remove('hidden');
+  objetivo.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:4px">
       <tbody>
         ${ingredientes.map(ing => `
           <tr>
-            <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${ing.nombre}</td>
-            <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace">
-              ${(parseFloat(ing.gramos||0) * factor).toFixed(1)}g
-            </td>
+            <td style="padding:3px 6px;border-bottom:1px solid var(--border)">${ing.nombre}</td>
+            <td style="padding:3px 6px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace">${(parseFloat(ing.gramos||0) * factor).toFixed(1)}g</td>
           </tr>`).join('')}
       </tbody>
     </table>
-    <p style="font-size:10px;color:var(--txt3);margin-top:4px">Receta base (1 unidad) escalada ×${factor.toFixed(2)} → ${cantidadUnidades} unidades</p>
   `;
 }
 
