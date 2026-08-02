@@ -5829,11 +5829,14 @@ async function renderVistaRellenosOtrasRecetas() {
     let sugerenciaGramos = 0;
     (_planPSPCCache || []).filter(p => p.tipo_preparacion === 'producto_compuesto').forEach(entrada => {
       const final = App.recetas.find(x => x.ID_receta === entrada.ID_receta);
-      if (!final) return;
+      if (!final) { console.log('[DEBUG sugerencia]', r.nombre, '- no se encontró la receta del plan:', entrada.ID_receta, entrada.nombre); return; }
       let ings = [];
       try { ings = JSON.parse(final.ingredientes_JSON || '[]'); } catch(e) {}
       const usoEnEsta = ings.find(i => i.id === r.ID_receta);
-      if (!usoEnEsta) return;
+      if (!usoEnEsta) {
+        console.log('[DEBUG sugerencia]', r.nombre, `(ID:${r.ID_receta}) — no encontrada entre los ingredientes de "${final.nombre}". IDs de sus ingredientes:`, ings.map(i => `${i.nombre}:${i.id}`));
+        return;
+      }
       const porcionesFinal = parseFloat(final.porciones_base) || 1;
       const gramosPorUnidadFinal = (parseFloat(usoEnEsta.gramos) || 0) / porcionesFinal;
       sugerenciaGramos += gramosPorUnidadFinal * (parseFloat(entrada.cantidad) || 0);
