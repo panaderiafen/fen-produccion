@@ -6355,6 +6355,26 @@ async function renderVistaPlanMasaBase() {
         const totalKgDia = items.reduce((s,it) => s + (parseFloat(it.peso_total_g)||0), 0) / 1000;
         const totalUnidadesDia = items.reduce((s,it) => s + (parseFloat(it.cantidad_unidades)||0), 0);
         const numTandas = totalKgDia > 0 ? Math.ceil(totalKgDia / maxPorTanda) : 0;
+        const sugerenciasHermanas = calcularSugerenciasHermanasDia(items);
+
+        // Preparar bloques de "sub-receta anidada por tanda" (ej. Poolish dentro de cada tanda de Masa Base)
+        const bloquesAnidados = [];
+        items.forEach(it => {
+          let tandas = [];
+          try { tandas = JSON.parse(it.tandas_JSON || '[]'); } catch(e) {}
+          if (!Array.isArray(tandas) || !tandas.length) return;
+          const r = App.recetas.find(x => x.ID_receta === it.ID_receta);
+          if (!r) return;
+          let ingredientesPropios = [];
+          try { ingredientesPropios = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+          const subRecetasAnidadas = ingredientesPropios.filter(ing => {
+            const mp = App.materiasPrimas.find(m => m.ID_MP === ing.id);
+            return mp && mp.tipo === 'sub_receta';
+          });
+          if (!subRecetasAnidadas.length) return;
+          bloquesAnidados.push({ entradaFila: it._fila, recetaId: it.ID_receta, tandas, subRecetasAnidadas });
+        });
+
         return `
         <div class="card">
           <div class="card-head" style="font-size:13px">${d}</div>
@@ -6383,72 +6403,121 @@ async function renderVistaPlanMasaBase() {
                   <i class="ti ${totalKgDia > maxPorTanda ? 'ti-alert-triangle' : 'ti-circle-check'}"></i>
                   ${numTandas} tanda${numTandas!==1?'s':''} necesaria${numTandas!==1?'s':''} (máx. ${maxPorTanda}kg c/u — usted decide cómo repartirlas)
                 </p>
+                ${Object.keys(sugerenciasHermanas).map(n => `
+                  <p style="font-size:12px;color:#1565C0;margin-top:4px"><i class="ti ti-bulb"></i> ${Math.round(sugerenciasHermanas[n])} ${n} — revise tamaño según peso de masa base</p>
+                `).join('')}
                 <p style="font-size:11px;color:var(--txt3);margin-top:4px">${totalUnidadesDia} unidades pasan a congelación este día</p>
+              </div>` : ''}
+            ${bloquesAnidados.length ? `
+              <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--border)">
+                ${bloquesAnidados.map(b => b.tandas.map((t,i) => b.subRecetasAnidadas.map(subIng => `
+                  <div style="margin-bottom:6px">
+                    <button class="btn-secundario" style="font-size:11px;padding:4px 10px;width:100%;text-align:left"
+                      onclick="toggleSubRecetaAnidada('${b.entradaFila}-${i}-${subIng.id}','${b.recetaId}','${subIng.id}',${t.kg},${i})">
+                      <i class="ti ti-chevron-down"></i> ${subIng.nombre} — Tanda ${i+1}
+                    </button>
+                    <div id="anidada-${b.entradaFila}-${i}-${subIng.id}" class="hidden" style="margin-top:4px"></div>
+                  </div>
+                `).join('')).join('')).join('')}
               </div>` : ''}
           </div>
         </div>`;
       }).join('')}
     </div>
-
-    ${construirSugerenciasHermanasMasaBase(dias)}
   `;
 }
 
-// Para cada día, encuentra otras preparaciones "Masa Base" (ej. Empaste) que se
-// usan JUNTO a la masa planificada dentro de una misma receta final (ej. Croissant
-// usa Masa Base Pastón + Empaste como ingredientes hermanos, no uno dentro del otro)
-// y calcula cuánto necesitaría según la proporción entre ambos en esa receta.
-function construirSugerenciasHermanasMasaBase(dias) {
+// Para un conjunto de entradas planificadas de un mismo día, encuentra otras
+// preparaciones "Masa Base" (ej. Empaste) que se usan JUNTO a esa masa dentro de
+// una misma receta final (ej. Croissant usa Masa Base Pastón + Empaste como
+// ingredientes hermanos, no uno dentro del otro) y calcula cuánto se necesitaría
+// según la proporción entre ambos en esa receta.
+function calcularSugerenciasHermanasDia(items) {
   const masasBaseTodas = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_preparacion === 'masa_base');
-  const bloques = dias.map(d => {
-    const planificadasHoy = (_planMasaBaseCache || []).filter(p => p.dia === d);
-    if (!planificadasHoy.length) return '';
+  const sugerencias = {}; // nombre_hermana -> unidades sugeridas
 
-    const sugerencias = {}; // nombre_hermana -> unidades sugeridas
+  items.forEach(entrada => {
+    const unidadesPlanificadas = parseFloat(entrada.cantidad_unidades) || 0;
+    App.recetas.forEach(final => {
+      let ings = [];
+      try { ings = JSON.parse(final.ingredientes_JSON || '[]'); } catch(e) {}
+      if (!ings.length) return;
+      const mpDeMasaBase = App.materiasPrimas.find(m => m.nombre === entrada.nombre && m.tipo === 'sub_receta');
+      if (!mpDeMasaBase) return;
+      const usoMasaBase = ings.find(i => i.id === mpDeMasaBase.ID_MP);
+      if (!usoMasaBase) return;
+      const cantidadMasaBaseEnReceta = parseFloat(usoMasaBase.unidades) || parseFloat(usoMasaBase.gramos) || 1;
 
-    planificadasHoy.forEach(entrada => {
-      const unidadesPlanificadas = parseFloat(entrada.cantidad_unidades) || 0;
-      // Buscar recetas finales donde esta masa base se usa junto a otra preparación "masa_base"
-      App.recetas.forEach(final => {
-        let ings = [];
-        try { ings = JSON.parse(final.ingredientes_JSON || '[]'); } catch(e) {}
-        if (!ings.length) return;
-        const mpDeMasaBase = App.materiasPrimas.find(m => m.nombre === entrada.nombre && m.tipo === 'sub_receta');
-        if (!mpDeMasaBase) return;
-        const usoMasaBase = ings.find(i => i.id === mpDeMasaBase.ID_MP);
-        if (!usoMasaBase) return;
-        const cantidadMasaBaseEnReceta = parseFloat(usoMasaBase.unidades) || parseFloat(usoMasaBase.gramos) || 1;
-
-        ings.forEach(ing => {
-          if (ing.id === mpDeMasaBase.ID_MP) return;
-          const hermana = masasBaseTodas.find(mb => {
-            const mpHermana = App.materiasPrimas.find(m => m.nombre === mb.nombre && m.tipo === 'sub_receta');
-            return mpHermana && mpHermana.ID_MP === ing.id;
-          });
-          if (!hermana) return;
-          const cantidadHermanaEnReceta = parseFloat(ing.unidades) || parseFloat(ing.gramos) || 1;
-          const proporcion = cantidadHermanaEnReceta / cantidadMasaBaseEnReceta;
-          const sugerido = proporcion * unidadesPlanificadas;
-          sugerencias[hermana.nombre] = (sugerencias[hermana.nombre] || 0) + sugerido;
+      ings.forEach(ing => {
+        if (ing.id === mpDeMasaBase.ID_MP) return;
+        const hermana = masasBaseTodas.find(mb => {
+          const mpHermana = App.materiasPrimas.find(m => m.nombre === mb.nombre && m.tipo === 'sub_receta');
+          return mpHermana && mpHermana.ID_MP === ing.id;
         });
+        if (!hermana) return;
+        const cantidadHermanaEnReceta = parseFloat(ing.unidades) || parseFloat(ing.gramos) || 1;
+        const proporcion = cantidadHermanaEnReceta / cantidadMasaBaseEnReceta;
+        const sugerido = proporcion * unidadesPlanificadas;
+        sugerencias[hermana.nombre] = (sugerencias[hermana.nombre] || 0) + sugerido;
       });
     });
+  });
 
-    const nombres = Object.keys(sugerencias);
-    if (!nombres.length) return '';
+  return sugerencias;
+}
 
-    return `
-      <div class="card" style="margin-top:12px">
-        <div class="card-head" style="font-size:13px">${d} — otras preparaciones necesarias</div>
-        <div style="padding:10px 14px">
-          ${nombres.map(n => `
-            <p style="font-size:12px"><i class="ti ti-bulb" style="color:#1565C0"></i> <strong>${n}:</strong> ~${Math.round(sugerencias[n])} unidades sugeridas</p>
-          `).join('')}
-        </div>
-      </div>`;
-  }).filter(b => b).join('');
+// Muestra/oculta la receta de una sub-receta ANIDADA dentro de la masa base (ej.
+// Poolish, que es ingrediente de Masa Base Pastón), escalada a lo que se necesita
+// para una tanda específica.
+function toggleSubRecetaAnidada(contenedorId, recetaId, subRecetaMpId, tandaKg, tandaIndex) {
+  const cont = document.getElementById('anidada-' + contenedorId);
+  if (!cont) return;
+  if (!cont.classList.contains('hidden')) { cont.classList.add('hidden'); return; }
 
-  return bloques ? `<div style="margin-top:16px">${bloques}</div>` : '';
+  const r = App.recetas.find(x => x.ID_receta === recetaId);
+  if (!r) return;
+  const entrada = (_planMasaBaseCache || []).find(p => p.ID_receta === recetaId);
+  const porciones = parseFloat(r.porciones_base) || 1;
+  const pesoUnidadG = parseFloat(entrada?.peso_unidad_g) || 0;
+  const pesoRecetaBaseG = porciones * pesoUnidadG;
+  const factorMasaBase = pesoRecetaBaseG > 0 ? (tandaKg * 1000) / pesoRecetaBaseG : 0;
+
+  let ingredientesPropios = [];
+  try { ingredientesPropios = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+  const usoSubReceta = ingredientesPropios.find(ing => ing.id === subRecetaMpId);
+  if (!usoSubReceta) return;
+  const gramosNecesarios = (parseFloat(usoSubReceta.gramos) || 0) * factorMasaBase;
+
+  // Encontrar la receta real de esa sub-receta (por nombre, cruzando desde MP_maestro)
+  const mpSub = App.materiasPrimas.find(m => m.ID_MP === subRecetaMpId);
+  const subReceta = mpSub ? App.recetas.find(x => x.nombre === mpSub.nombre && x.tipo_receta === 'sub_receta') : null;
+  if (!subReceta) {
+    cont.classList.remove('hidden');
+    cont.innerHTML = `<p style="font-size:11px;color:var(--txt3)">No se encontró la receta detallada de esta sub-receta.</p>`;
+    return;
+  }
+
+  const porcionesSub = parseFloat(subReceta.porciones_base) || 1;
+  const factorSub = gramosNecesarios / porcionesSub;
+
+  let ingredientesSub = [];
+  try { ingredientesSub = JSON.parse(subReceta.ingredientes_JSON || '[]'); } catch(e) {}
+
+  cont.classList.remove('hidden');
+  cont.innerHTML = `
+    <div style="background:var(--bg);border-radius:var(--r-sm);padding:8px">
+      <p style="font-size:10px;color:var(--txt3);margin-bottom:4px">Necesita ${gramosNecesarios.toFixed(0)}g de esta preparación para la Tanda ${tandaIndex+1}:</p>
+      <table style="width:100%;border-collapse:collapse;font-size:10px">
+        <tbody>
+          ${ingredientesSub.map(ing => `
+            <tr>
+              <td style="padding:3px 6px;border-bottom:1px solid var(--border)">${ing.nombre}</td>
+              <td style="padding:3px 6px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace">${(parseFloat(ing.gramos||0) * factorSub).toFixed(1)}g</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 function seleccionarMasaBase(id, nombre, pesoUnidad) {
