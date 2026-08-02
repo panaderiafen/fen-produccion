@@ -609,15 +609,22 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
         </div>
         ${App.areaCodigo === 'BOL' ? `
         <div class="campo">
-          <label>Tipo de preparación</label>
+          <label>Clasificación</label>
           <select id="f-tipo-preparacion" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
-            <option value="elaboracion_previa" ${(receta?.tipo_preparacion||'elaboracion_previa')==='elaboracion_previa'?'selected':''}>Elaboración previa (se calcula sola según el plan diario)</option>
-            <option value="relleno" ${receta?.tipo_preparacion==='relleno'?'selected':''}>Relleno (dura varios días, se planifica aparte)</option>
-            <option value="masa" ${receta?.tipo_preparacion==='masa'?'selected':''}>Otra masa (ritmo de elaboración propio)</option>
+            <optgroup label="Productos terminados">
+              <option value="producto_simple" ${receta?.tipo_preparacion==='producto_simple'?'selected':''}>Producto Simple (base + ingredientes sueltos, sin sub-receta)</option>
+              <option value="producto_compuesto" ${receta?.tipo_preparacion==='producto_compuesto'?'selected':''}>Producto Compuesto (base + relleno u otra sub-receta)</option>
+            </optgroup>
+            <optgroup label="Preparaciones internas">
+              <option value="masa_base" ${receta?.tipo_preparacion==='masa_base'?'selected':''}>Masa Base (laminado, congelación, escalado por peso)</option>
+              <option value="elaboracion_previa" ${(receta?.tipo_preparacion||(tipoActual==='sub_receta'?'elaboracion_previa':''))==='elaboracion_previa'?'selected':''}>Elaboración previa (se calcula sola según el plan diario)</option>
+              <option value="relleno" ${receta?.tipo_preparacion==='relleno'?'selected':''}>Relleno (dura varios días, se planifica aparte)</option>
+              <option value="masa" ${receta?.tipo_preparacion==='masa'?'selected':''}>Otra masa (ritmo de elaboración propio)</option>
+            </optgroup>
           </select>
           <p style="font-size:11px;color:var(--txt3);margin-top:4px">
-            "Elaboración previa" se calcula automáticamente cada día según lo que planificó (ej: Masa Base Pastón).
-            "Relleno" y "Otra masa" aparecen en <strong>Recetas del día</strong> para planificarlas usted mismo, en la cantidad y el día que le convenga.
+            Define qué tipo de planificación aplica: <strong>Producto Simple/Compuesto</strong> van a la grilla de planificación semanal;
+            <strong>Masa Base</strong> tiene su propia planificación de tandas y stock congelado; el resto aparece en <strong>Recetas del día</strong>.
           </p>
         </div>` : ''}
         ${esPan ? `
