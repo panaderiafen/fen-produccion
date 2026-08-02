@@ -1182,7 +1182,12 @@ function toggleCampoPesoMB(sel) {
 function recalcularRecetaPorPeso() {
   const unidadRendimiento = document.getElementById('f-porciones-unidad')?.value;
   if (unidadRendimiento === 'g') {
-    toast('El "Rendimiento" está en gramos — cámbielo a "unidades" (ej. 1) antes de usar Peso por unidad. Son dos formas distintas de definir el peso, no se combinan.', 'error');
+    alert(
+      '⚠️ No se puede recalcular todavía\n\n' +
+      'El campo "Rendimiento" está configurado en GRAMOS, y "Peso por unidad" espera que el Rendimiento sea en UNIDADES.\n\n' +
+      'Son dos formas distintas de definir el peso — no se pueden combinar.\n\n' +
+      'Qué hacer: suba hasta el campo "Rendimiento" (arriba del formulario), cambie el número a 1 y la unidad a "unidades", y vuelva a intentar.'
+    );
     return;
   }
 
