@@ -630,6 +630,14 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
           </p>
         </div>
         <div class="campo ${receta?.tipo_preparacion==='masa_base'?'':'hidden'}" id="campo-peso-unidad-mb">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="f-planificable-directo" ${receta?.planificable_directo === false || receta?.planificable_directo === 'no' ? '' : 'checked'} style="width:auto">
+            Aparece en la grilla de "Planificación Masas Base"
+          </label>
+          <p style="font-size:11px;color:var(--txt3);margin-top:2px;margin-bottom:10px">
+            Desmárquelo para componentes internos como Empaste o Poolish, que no se planifican por su cuenta —
+            solo la Masa Base propiamente tal (ej. Masa Base Pastón) debería aparecer ahí.
+          </p>
           <label>Peso por unidad (g) <span style="color:var(--txt3);font-weight:400;font-size:10px">— versatilidad de rendimiento</span></label>
           <div style="display:flex;gap:8px;align-items:center">
             <input type="number" id="f-peso-unidad-mb" min="1" step="1" style="max-width:140px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm)"
@@ -1432,6 +1440,7 @@ async function guardarReceta(recetaId, btn) {
     porciones_base_unidad:       document.getElementById('f-porciones-unidad')?.value || 'un',
     tipo_preparacion:            document.getElementById('f-tipo-preparacion')?.value ?? '',
     peso_unidad_mb_g:            document.getElementById('f-peso-unidad-mb')?.value || '',
+    planificable_directo:        document.getElementById('f-planificable-directo') ? (document.getElementById('f-planificable-directo').checked ? 'si' : 'no') : 'si',
     peso_harina_total_g:         App.areaCodigo === 'PAN' ? (document.getElementById('f-harina')?.value || '') : '',
     ingredientes_JSON:           JSON.stringify(ingredientes),
     insumos_JSON:                JSON.stringify(insumos),
@@ -6309,7 +6318,10 @@ async function renderVistaPlanMasaBase() {
     _planMasaBaseCache = [];
   }
 
-  const masasBase = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_preparacion === 'masa_base');
+  const masasBase = App.recetas.filter(r =>
+    r.estado === 'consolidada' && r.tipo_preparacion === 'masa_base' &&
+    r.planificable_directo !== 'no' && r.planificable_directo !== false
+  );
   const dias = ['Lun','Mar','Mié','Jue','Vie','Sáb'];
   const cfg = cargarConfigSubrecetas();
   const bolCfg = cfg.bol || {};
