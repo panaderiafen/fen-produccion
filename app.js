@@ -5832,7 +5832,7 @@ async function renderVistaRellenosOtrasRecetas() {
       sugerenciaGramos += gramosPorUnidadFinal * (parseFloat(entrada.cantidad) || 0);
     });
 
-    const tipoLabel = r.tipo_preparacion === 'relleno' ? '🧁 Relleno' : '🍞 Otra masa';
+    const tipoLabel = r.tipo_preparacion === 'relleno' ? '🧁 Relleno' : '⚠️ Sin clasificar';
 
     return `
       <div class="card" style="margin-bottom:14px" data-receta-id="${r.ID_receta}">
@@ -5856,7 +5856,7 @@ async function renderVistaRellenosOtrasRecetas() {
               id="cant-relleno-${r.ID_receta}" value="${cantidadGuardada || ''}" placeholder="0">
             <span style="font-size:12px;color:var(--txt3)">${unidadLabel}</span>
             <button class="btn-primario" style="font-size:12px;padding:6px 14px"
-              onclick="guardarCantidadRelleno('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}')">
+              onclick="guardarCantidadRelleno('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}',this)">
               <i class="ti ti-device-floppy"></i> Guardar
             </button>
             ${guardado?.hecho === true || guardado?.hecho === 'true' ? `
@@ -5980,10 +5980,11 @@ function toggleDetalleRelleno(recetaId) {
   `;
 }
 
-async function guardarCantidadRelleno(recetaId, nombre) {
+async function guardarCantidadRelleno(recetaId, nombre, btn) {
   const cantidad = parseFloat(document.getElementById('cant-relleno-' + recetaId)?.value) || 0;
   const r = App.recetas.find(x => x.ID_receta === recetaId);
   const unidad = (r?.porciones_base_unidad || 'un') === 'g' ? 'g' : 'uni';
+  if (btn) bloquearBtn(btn, 'Guardando...');
   try {
     await escribirEnSheet('guardar_plan_relleno', {
       registro: { ID_receta: recetaId, nombre, cantidad_planificada: cantidad, unidad, hecho: false }
@@ -5995,6 +5996,7 @@ async function guardarCantidadRelleno(recetaId, nombre) {
   } catch(e) {
     toast('Error al guardar', 'error');
   }
+  if (btn) desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar', true);
 }
 
 async function marcarRellenoHecho(recetaId, nombre) {
