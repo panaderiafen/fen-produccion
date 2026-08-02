@@ -313,7 +313,6 @@ function renderSidebar() {
       { id: 'mis-recetas',       icon: 'ti-clipboard-list', label: 'Mis recetas'        },
       { id: 'planificacion',     icon: 'ti-calendar-week',  label: 'Plan semanal'       },
       { id: 'recetas-del-dia', icon: 'ti-flame', label: 'Recetas del día' },
-      { id: 'maestro',         icon: 'ti-book',  label: 'Maestro de recetas' },
       { id: 'registro-merma',  icon: 'ti-trash', label: 'Registro de merma' },
     ];
     if (App.areaCodigo === 'CAF') items.splice(2, 2);
