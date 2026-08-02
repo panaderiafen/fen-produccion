@@ -5773,7 +5773,7 @@ async function renderVistaRellenosOtrasRecetas() {
   vista.innerHTML = '<div class="vista-header"><h1 class="vista-titulo">Recetas del día</h1></div><p style="color:var(--txt3)">Cargando...</p>';
   mostrarVista('rellenos-otras-recetas');
 
-  // Cargar plan guardado
+  // Cargar plan guardado (cantidades confirmadas de rellenos) y el plan PS/PC (para la sugerencia)
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_rellenos' }));
     const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
@@ -5781,6 +5781,14 @@ async function renderVistaRellenosOtrasRecetas() {
     _planRellenosCache = data.filas || [];
   } catch(e) {
     _planRellenosCache = [];
+  }
+  try {
+    const payload2 = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_ps_pc' }));
+    const res2 = await fetch(FEN.WEBAPP_URL + '?payload=' + payload2, { redirect: 'follow' });
+    const data2 = await res2.json();
+    _planPSPCCache = data2.filas || [];
+  } catch(e) {
+    _planPSPCCache = [];
   }
 
   const candidatas = App.recetas.filter(r => {
@@ -5809,19 +5817,19 @@ async function renderVistaRellenosOtrasRecetas() {
     const esGramos = (r.porciones_base_unidad || 'un') === 'g';
     const unidadLabel = esGramos ? 'g' : 'uni';
 
-    // Sugerencia: buscar en qué recetas finales se usa esta preparación como ingrediente,
-    // y multiplicar por lo planificado esa semana para cada una
+    // Sugerencia: buscar en qué Productos Compuestos planificados esta semana (BOL_plan_ps_pc)
+    // se usa esta preparación como ingrediente, y sumar según la cantidad planificada de cada uno
     let sugerenciaGramos = 0;
-    App.recetas.forEach(final => {
-      if (final.ID_receta === r.ID_receta || final.tipo_receta === 'sub_receta') return;
+    (_planPSPCCache || []).filter(p => p.tipo_preparacion === 'producto_compuesto').forEach(entrada => {
+      const final = App.recetas.find(x => x.ID_receta === entrada.ID_receta);
+      if (!final) return;
       let ings = [];
       try { ings = JSON.parse(final.ingredientes_JSON || '[]'); } catch(e) {}
       const usoEnEsta = ings.find(i => i.id === r.ID_receta);
       if (!usoEnEsta) return;
       const porcionesFinal = parseFloat(final.porciones_base) || 1;
       const gramosPorUnidadFinal = (parseFloat(usoEnEsta.gramos) || 0) / porcionesFinal;
-      const planificadoSemana = (App.planSemana[final.ID_receta] || []).reduce((s,v) => s + (parseFloat(v)||0), 0);
-      sugerenciaGramos += gramosPorUnidadFinal * planificadoSemana;
+      sugerenciaGramos += gramosPorUnidadFinal * (parseFloat(entrada.cantidad) || 0);
     });
 
     const tipoLabel = r.tipo_preparacion === 'relleno' ? '🧁 Relleno' : '🍞 Otra masa';
@@ -5872,7 +5880,67 @@ async function renderVistaRellenosOtrasRecetas() {
       Rellenos y otras masas que usted elabora con su propio ritmo — planifique la cantidad que va a preparar esta semana.
     </p>
     ${filasHtml}
+    ${construirListaCompraRellenos(candidatas)}
   `;
+}
+
+// Suma la MP necesaria para elaborar los rellenos, escalando cada receta a la
+// cantidad CONFIRMADA por la jefa (no la sugerencia) — solo cuenta los que
+// realmente tienen algo planificado.
+function construirListaCompraRellenos(candidatas) {
+  const totalesMP = {};
+  let hayAlgoPlanificado = false;
+
+  candidatas.forEach(r => {
+    const guardado = (_planRellenosCache || []).find(p => p.ID_receta === r.ID_receta);
+    const cantidad = guardado ? parseFloat(guardado.cantidad_planificada) || 0 : 0;
+    if (cantidad <= 0) return;
+    hayAlgoPlanificado = true;
+
+    let ingredientes = [];
+    try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+    const porciones = parseFloat(r.porciones_base) || 1;
+    const factor = cantidad / porciones;
+
+    ingredientes.forEach(ing => {
+      const totalGramos = (parseFloat(ing.gramos) || 0) * factor;
+      if (!totalesMP[ing.id]) {
+        const mp = App.materiasPrimas.find(m => m.ID_MP === ing.id);
+        totalesMP[ing.id] = { nombre: ing.nombre, gramos: 0, unidadCompra: (mp?.unidad_compra || 'kg').toLowerCase() };
+      }
+      totalesMP[ing.id].gramos += totalGramos;
+    });
+  });
+
+  if (!hayAlgoPlanificado) return '';
+
+  const lista = Object.values(totalesMP).sort((a,b) => b.gramos - a.gramos);
+
+  return `
+    <div class="card" style="margin-top:16px">
+      <div class="card-head"><i class="ti ti-shopping-cart"></i> Lista de compra — Rellenos y preparaciones</div>
+      <table class="tabla-vista">
+        <thead><tr>
+          <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Materia Prima</th>
+          <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Cantidad necesaria</th>
+        </tr></thead>
+        <tbody>
+          ${lista.map(it => {
+            const esPorUnidad = it.unidadCompra === 'un' || it.unidadCompra === 'unidad' || it.unidadCompra === 'unidades';
+            const display = esPorUnidad
+              ? `${Math.ceil(it.gramos)} un`
+              : it.gramos >= 1000 ? `${(it.gramos/1000).toFixed(2)} kg` : `${Math.round(it.gramos)} g`;
+            return `<tr>
+              <td class="td-nombre">${it.nombre}</td>
+              <td class="td-num" style="font-weight:600">${display}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      <p style="font-size:11px;color:var(--txt3);padding:10px 16px">
+        Suma según las cantidades que <strong>confirmó</strong> arriba (no la sugerencia) — solo cuenta lo que ya guardó.
+      </p>
+    </div>`;
 }
 
 function toggleDetalleRelleno(recetaId) {
