@@ -110,6 +110,7 @@ async function entrar(areaCodigo, rol, desdeAdmin = false) {
 
   renderSidebar();
   mostrarLoading('Cargando datos...');
+  await sincronizarConfigDesdeSheet(); // trae la config guardada en el Sheet (ej. capacidad congelador) a localStorage
   await cargarMP();
   await cargarRecetas(true);
   await cargarPlanSemana();
@@ -273,12 +274,30 @@ function renderAvisos() {
 }
 
 // ── SINCRONIZAR TODO ──────────────────────────────────────────
+// Trae la config de subrecetas guardada en el Sheet (fuente de verdad) hacia
+// localStorage — sin esto, un localStorage.clear() (ej. al presionar "sincronizar")
+// deja huérfano cualquier valor guardado en el Sheet, porque cargarConfigSubrecetas()
+// solo lee de localStorage.
+async function sincronizarConfigDesdeSheet() {
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_config', clave: 'subrecetas' }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const data = await res.json();
+    if (data.ok && data.valor) {
+      localStorage.setItem('fen_config_subrecetas', data.valor);
+    }
+  } catch(e) {
+    // Si falla, seguimos con lo que haya en localStorage (o los valores por defecto)
+  }
+}
+
 async function sincronizarTodo(btn) {
   const icon = btn.querySelector('i');
   btn.disabled = true;
   icon.style.animation = 'spin .7s linear infinite';
   Cache.invalidarTodo();
   try { localStorage.clear(); } catch(e) {}
+  await sincronizarConfigDesdeSheet(); // re-traer la config recién borrada, para no perderla
   await cargarMP();
   await cargarRecetas();
   await cargarPlanSemana();
@@ -6380,7 +6399,7 @@ async function renderVistaPlanMasaBase() {
     r.estado === 'consolidada' && r.tipo_preparacion === 'masa_base' &&
     r.planificable_directo !== 'no' && r.planificable_directo !== false
   );
-  const dias = ['Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const dias = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
   const cfg = cargarConfigSubrecetas();
   const bolCfg = cfg.bol || {};
   const maxPorTanda = bolCfg.amasadora_max_por_tanda || 16;
@@ -6480,38 +6499,12 @@ async function renderVistaPlanMasaBase() {
         <div class="card">
           <div class="card-head" style="font-size:13px">${d}</div>
           <div style="padding:10px 14px">
-            ${!items.length ? '<p style="color:var(--txt3);font-size:12px">Sin masas planificadas</p>' : items.map(it => `
-              <div style="padding:6px 0;border-bottom:1px solid var(--border)">
-                <div style="display:flex;justify-content:space-between;align-items:center">
-                  <div>
-                    <div style="font-size:12px;font-weight:600">${it.nombre}</div>
-                    <div style="font-size:11px;color:var(--txt3)">${it.cantidad_unidades} uni · ${(parseFloat(it.peso_total_g)/1000).toFixed(2)}kg</div>
-                  </div>
-                  <div style="display:flex;gap:4px">
-                    <button class="btn-secundario" style="font-size:10px;padding:4px 8px" onclick="toggleDetalleMasaBase(${it._fila},'${it.ID_receta}',${it.cantidad_unidades})">
-                      <i class="ti ti-list-details"></i>
-                    </button>
-                    <button class="btn-fila-del" onclick="eliminarPlanMasaBaseUI(${it._fila})" aria-label="Eliminar"><i class="ti ti-x"></i></button>
-                  </div>
-                </div>
-                <div id="detalle-masa-base-${it._fila}" class="hidden" style="margin-top:8px"></div>
-              </div>
-            `).join('')}
-            ${items.length ? `
-              <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--border)">
-                <p style="font-size:13px;font-weight:700">Total: ${totalKgDia.toFixed(2)}kg</p>
-                <p style="font-size:12px;color:${totalKgDia > maxPorTanda ? '#C62828' : '#2E7D32'}">
-                  <i class="ti ${totalKgDia > maxPorTanda ? 'ti-alert-triangle' : 'ti-circle-check'}"></i>
-                  ${numTandas} tanda${numTandas!==1?'s':''} necesaria${numTandas!==1?'s':''} (máx. ${maxPorTanda}kg c/u — usted decide cómo repartirlas)
-                </p>
-                <p style="font-size:11px;color:var(--txt3);margin-top:4px">${totalUnidadesDia} unidades pasan a congelación este día</p>
-              </div>` : ''}
             ${(() => {
               const salidaHoy = parseInt(salidasMasas[d]) || 0;
               const proyectado = stockTotalActual + totalUnidadesDia - salidaHoy;
               const hayEspacio = proyectado <= capacidadCongelador;
               return `
-              <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--border)">
+              <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:2px solid var(--border)">
                 <label style="font-size:11px;color:var(--txt2)">¿Cuántas masas va a sacar a descongelar este día?</label>
                 <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
                   <input type="number" id="salida-masa-${d}" min="0" step="1" value="${salidaHoy || ''}" placeholder="0"
@@ -6520,6 +6513,7 @@ async function renderVistaPlanMasaBase() {
                     <i class="ti ti-device-floppy"></i> Guardar
                   </button>
                 </div>
+                <p style="font-size:11px;color:var(--txt3);margin-top:6px">Según plan, ${totalUnidadesDia} masas pasan a congelación este día.</p>
                 ${items.length || salidaHoy ? `
                   <p style="font-size:11px;margin-top:6px;color:${hayEspacio ? '#2E7D32' : '#C62828'}">
                     <i class="ti ${hayEspacio ? 'ti-circle-check' : 'ti-alert-triangle'}"></i>
@@ -6527,8 +6521,32 @@ async function renderVistaPlanMasaBase() {
                   </p>` : ''}
               </div>`;
             })()}
+            ${!items.length ? '<p style="color:var(--txt3);font-size:12px">Sin masas planificadas</p>' : items.map(it => `
+              <div style="padding:8px 0;border-bottom:1px solid var(--border)">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <div>
+                    <div style="font-size:12px;font-weight:600">${it.nombre}</div>
+                    <div style="font-size:11px;color:var(--txt3)">${it.cantidad_unidades} uni · Total ${(parseFloat(it.peso_total_g)/1000).toFixed(2)}kg</div>
+                  </div>
+                  <button class="btn-fila-del" onclick="eliminarPlanMasaBaseUI(${it._fila})" aria-label="Eliminar"><i class="ti ti-x"></i></button>
+                </div>
+                <button class="btn-primario" style="width:100%;margin-top:8px;font-size:12px;padding:8px" onclick="toggleDetalleMasaBase(${it._fila},'${it.ID_receta}',${it.cantidad_unidades})">
+                  <i class="ti ti-list-details"></i> Dividir en tandas / Ver receta escalada
+                </button>
+                <div id="detalle-masa-base-${it._fila}" class="hidden" style="margin-top:8px"></div>
+              </div>
+            `).join('')}
+            ${items.length ? `
+              <div style="margin-top:10px;padding-top:10px">
+                <p style="font-size:13px;font-weight:700">Total: ${totalKgDia.toFixed(2)}kg</p>
+                <p style="font-size:12px;color:${totalKgDia > maxPorTanda ? '#C62828' : '#2E7D32'}">
+                  <i class="ti ${totalKgDia > maxPorTanda ? 'ti-alert-triangle' : 'ti-circle-check'}"></i>
+                  ${numTandas} tanda${numTandas!==1?'s':''} necesaria${numTandas!==1?'s':''} (máx. ${maxPorTanda}kg c/u — usted decide cómo repartirlas)
+                </p>
+              </div>` : ''}
             ${bloquesAnidados.length ? `
               <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--border)">
+                <p style="font-size:11px;font-weight:600;color:var(--txt3);margin-bottom:6px">PREPARACIONES POR TANDA</p>
                 ${bloquesAnidados.map(b => b.tandas.map((t,i) => {
                   const kgTanda = (parseFloat(t.unidades)||0) * b.pesoUnidadG / 1000;
                   return b.subRecetasAnidadas.map(subIng => `
