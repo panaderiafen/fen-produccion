@@ -5240,7 +5240,7 @@ function renderVistaAprobaciones() {
                       </td>
                       <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:600">${displayVal}</td>
                       ${r._area === 'PAN' || r.área === 'Panadería' ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:#E65100">${((parseFloat(ing.pct)||0)*100).toFixed(1)}%</td>` : ''}
-                      <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2);font-size:11px">$${parseFloat(ing.costo||0).toFixed(0)}</td>
+                      <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2);font-size:11px">${formatearCostoDecimal(ing.costo)}</td>
                     </tr>`;
                   }).join('')}
                   <tr style="background:var(--bg);font-weight:600">
@@ -5252,7 +5252,7 @@ function renderVistaAprobaciones() {
                     </td>
                     ${r._area === 'PAN' || r.área === 'Panadería' ? '<td></td>' : ''}
                     <td style="padding:6px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:11px">
-                      $${ingredientes.reduce((s,i)=>s+(parseFloat(i.costo)||0),0).toFixed(0)}
+                      ${formatearCostoDecimal(ingredientes.reduce((s,i)=>s+(parseFloat(i.costo)||0),0))}
                     </td>
                   </tr>
                 </tbody>
@@ -5272,18 +5272,18 @@ function renderVistaAprobaciones() {
                         <span style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:6px">${ins.id||''}</span>
                       </td>
                       <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:600">${parseFloat(ins.unidades||0).toFixed(0)} uni</td>
-                      <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2);font-size:11px">$${parseFloat(ins.costo||0).toFixed(0)}</td>
+                      <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2);font-size:11px">${formatearCostoDecimal(ins.costo)}</td>
                     </tr>`).join('')}
                   <tr style="background:#FFF3E0;font-weight:600">
                     <td style="padding:6px 10px" colspan="2">Total insumos</td>
                     <td style="padding:6px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:11px">
-                      $${insumos.reduce((s,i)=>s+(parseFloat(i.costo)||0),0).toFixed(0)}
+                      ${formatearCostoDecimal(insumos.reduce((s,i)=>s+(parseFloat(i.costo)||0),0))}
                     </td>
                   </tr>
                 </tbody>
               </table>
               <div style="text-align:right;font-size:13px;font-weight:700;margin-bottom:12px;padding:6px 10px">
-                Costo directo total (MP + insumos): $${(ingredientes.reduce((s,i)=>s+(parseFloat(i.costo)||0),0) + insumos.reduce((s,i)=>s+(parseFloat(i.costo)||0),0)).toFixed(0)}
+                Costo directo total (MP + insumos): ${formatearCostoDecimal(ingredientes.reduce((s,i)=>s+(parseFloat(i.costo)||0),0) + insumos.reduce((s,i)=>s+(parseFloat(i.costo)||0),0))}
               </div>` : ''}
               ${r.observaciones_procedimiento ? `
                 <div style="margin-top:12px">
@@ -7551,6 +7551,15 @@ async function calcularECUI(btn) {
 // Traduce el valor guardado de tipo_preparacion a un texto legible
 // Formatea una cantidad en "unidades" mostrando decimales solo si los tiene —
 // evita que fracciones como 0.083 (1 de cada 12) se vean como "0" y confundan.
+// Muestra un costo en pesos — si es mayor a $0 pero muy chico (ej. $0,03), muestra
+// decimales en vez de redondear a "$0" (que podría confundirse con "sin costo").
+function formatearCostoDecimal(valor) {
+  const n = parseFloat(valor) || 0;
+  if (n === 0) return '$0';
+  if (Math.abs(n) < 1) return '$' + n.toFixed(2);
+  return '$' + Math.round(n).toLocaleString('es-CL');
+}
+
 function formatearUnidadesIngrediente(valor) {
   const n = parseFloat(valor) || 0;
   if (Number.isInteger(n)) return n.toFixed(0);
@@ -7565,6 +7574,15 @@ function formatearClasificacionBOL(valor) {
     relleno: 'Relleno / preparación',
   };
   return mapa[valor] || '⚠️ Sin clasificar';
+}
+
+// Muestra un costo en pesos, pero si redondea a $0 y en realidad no es cero,
+// muestra el decimal — para no confundir "cuesta casi nada" con "no se calculó".
+function formatearCostoDetalle(valor) {
+  const n = parseFloat(valor) || 0;
+  if (n === 0) return '$0';
+  if (Math.round(n) === 0) return '$' + n.toFixed(3);
+  return clp(n);
 }
 
 function construirDetalleCosteoRecetaHTML(r) {
@@ -7606,7 +7624,7 @@ function construirDetalleCosteoRecetaHTML(r) {
             </td>
             <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:600">${displayVal}</td>
             ${esPan ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:#E65100">${((parseFloat(ing.pct)||0)*100).toFixed(1)}%</td>` : ''}
-            <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2);font-size:11px">$${parseFloat(ing.costo||0).toFixed(0)}</td>
+            <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2);font-size:11px">${formatearCostoDecimal(ing.costo)}</td>
           </tr>`;
         }).join('')}
         <tr style="background:var(--bg);font-weight:600">
@@ -7618,7 +7636,7 @@ function construirDetalleCosteoRecetaHTML(r) {
           </td>
           ${esPan ? '<td></td>' : ''}
           <td style="padding:6px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:11px">
-            $${ingredientes.reduce((s,i)=>s+(parseFloat(i.costo)||0),0).toFixed(0)}
+            ${formatearCostoDecimal(ingredientes.reduce((s,i)=>s+(parseFloat(i.costo)||0),0))}
           </td>
         </tr>
       </tbody>
@@ -7638,18 +7656,18 @@ function construirDetalleCosteoRecetaHTML(r) {
               <span style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:6px">${ins.id||''}</span>
             </td>
             <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:600">${parseFloat(ins.unidades||0).toFixed(0)} uni</td>
-            <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2);font-size:11px">$${parseFloat(ins.costo||0).toFixed(0)}</td>
+            <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;color:var(--txt2);font-size:11px">${formatearCostoDecimal(ins.costo)}</td>
           </tr>`).join('')}
         <tr style="background:#FFF3E0;font-weight:600">
           <td style="padding:6px 10px" colspan="2">Total insumos</td>
           <td style="padding:6px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:11px">
-            $${insumos.reduce((s,i)=>s+(parseFloat(i.costo)||0),0).toFixed(0)}
+            ${formatearCostoDecimal(insumos.reduce((s,i)=>s+(parseFloat(i.costo)||0),0))}
           </td>
         </tr>
       </tbody>
     </table>
     <div style="text-align:right;font-size:13px;font-weight:700;margin-bottom:12px;padding:6px 10px">
-      Costo directo total (MP + insumos): $${(ingredientes.reduce((s,i)=>s+(parseFloat(i.costo)||0),0) + insumos.reduce((s,i)=>s+(parseFloat(i.costo)||0),0)).toFixed(0)}
+      Costo directo total (MP + insumos): ${formatearCostoDecimal(ingredientes.reduce((s,i)=>s+(parseFloat(i.costo)||0),0) + insumos.reduce((s,i)=>s+(parseFloat(i.costo)||0),0))}
     </div>` : ''}
     ${r.observaciones_procedimiento ? `
       <div style="margin-top:12px">
