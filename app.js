@@ -7556,7 +7556,9 @@ async function calcularECUI(btn) {
 function formatearCostoDecimal(valor) {
   const n = parseFloat(valor) || 0;
   if (n === 0) return '$0';
-  if (Math.abs(n) < 1) return '$' + n.toFixed(2);
+  // Coma para decimales (nunca punto, que en Chile es separador de miles — "$7.096" se
+  // leería como "siete mil noventa y seis", no como "siete coma cero noventa y seis")
+  if (Math.abs(n) < 1) return '$' + n.toFixed(2).replace('.', ',');
   return '$' + Math.round(n).toLocaleString('es-CL');
 }
 
