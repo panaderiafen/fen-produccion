@@ -218,7 +218,7 @@ async function cargarAvisos() {
       accion: 'leer_avisos',
       area_codigo: App.areaCodigo
     }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' });
     const data = await res.json();
     if (data.ok) {
       _avisosCache = (data.avisos || []).filter(a => !_avisosLeidos.has(a.id));
@@ -238,7 +238,7 @@ function marcarAvisoLeido(id) {
   const payload = encodeURIComponent(JSON.stringify({
     accion: 'marcar_aviso_leido', aviso_id: id
   }));
-  fetch(FEN.WEBAPP_URL + '?payload=' + payload).catch(() => {});
+  fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' }).catch(() => {});
 }
 
 function renderAvisos() {
@@ -281,7 +281,7 @@ function renderAvisos() {
 async function sincronizarConfigDesdeSheet() {
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_config', clave: 'subrecetas' }));
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (data.ok && data.valor) {
       localStorage.setItem('fen_config_subrecetas', data.valor);
@@ -1037,7 +1037,7 @@ async function enviarSolicitudInsumo(btn) {
       receta_nombre: recetaNombre,
       fecha: new Date().toISOString()
     }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (data.ok && data.id) insId = data.id;
   } catch(e) {
@@ -1556,7 +1556,7 @@ async function enviarARevision(recetaId) {
     hoja: App.area.hoja_recetas,
     area_codigo: App.areaCodigo
   }));
-  fetch(FEN.WEBAPP_URL + '?payload=' + payloadRevision, { redirect: 'follow' }).catch(e => console.warn('Error:', e));
+  fetch(FEN.WEBAPP_URL + '?payload=' + payloadRevision, { redirect: 'follow', cache: 'no-store' }).catch(e => console.warn('Error:', e));
 
   desbloquearBtn(btn, '<i class="ti ti-send"></i> Enviar a revisión', true);
   toast('Receta enviada a revisión');
@@ -2252,7 +2252,7 @@ async function guardarPlanificacion() {
     const payloadB2B = encodeURIComponent(JSON.stringify({
       accion: 'guardar_plan_b2cb2b_bol', filas: filasBOL
     }));
-    fetch(FEN.WEBAPP_URL + '?payload=' + payloadB2B).catch(() => {});
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadB2B, { cache: 'no-store' }).catch(() => {});
     toast('Plan guardado correctamente');
     desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan', true);
     return;
@@ -2921,7 +2921,7 @@ async function renderVistaRegistroMerma() {
 async function cargarRegistrosMerma() {
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_registro_merma', area_codigo: App.areaCodigo }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     _mermaRegistros = data.registros || [];
   } catch(e) {
@@ -3256,7 +3256,7 @@ function renderTablaRegistrosCAF() {
 async function cargarBaristasCaf() {
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_baristas_caf' }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (data.ok && data.baristas) _cafBaristas = data.baristas;
   } catch(e) {
@@ -3268,7 +3268,7 @@ async function cargarBaristasCaf() {
 async function cargarRegistrosCAF() {
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_registros_caf' }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (data.ok) _cafRegistros = data.registros || [];
   } catch(e) {
@@ -3326,7 +3326,7 @@ async function guardarRegistroCaf(btn) {
 
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'guardar_registro_caf', registro }));
-    await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     _cafRegistros.unshift(registro);
     document.getElementById('modal-registro-caf').classList.add('hidden');
     renderTablaRegistrosCAF();
@@ -3394,7 +3394,7 @@ async function cargarConsolidado() {
       mes, año,
       area: App.areaCodigo
     }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' });
     const data = await res.json();
 
     if (!data.ok || !data.filas?.length) {
@@ -3518,7 +3518,7 @@ async function guardarConsolidadoAhora(btn) {
   bloquearBtn(btn, 'Guardando...');
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'guardar_consolidado' }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (data.ok) {
       toast('Consolidado guardado');
@@ -3552,7 +3552,7 @@ async function cargarPlanB2CB2BBOL() {
     const payload = encodeURIComponent(JSON.stringify({
       accion: 'leer_plan_b2cb2b_bol', semana_ID: semana
     }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (data.ok && data.filas?.length) {
       const dias = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo'];
@@ -3588,7 +3588,7 @@ async function cargarPlanMasasBOL() {
     const payload = encodeURIComponent(JSON.stringify({
       accion: 'leer_plan_masas_bol', semana_ID: semana
     }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (data.ok && data.filas?.length) {
       _planMasasBOL = {};
@@ -3936,7 +3936,7 @@ async function cargarEstadoTareasBOL(diaIdx) {
       semana_ID: semana,
       dia: diaIdx
     }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (data.ok && data.tareas) {
       _tareasEstadoBOL = {};
@@ -4035,7 +4035,7 @@ function actualizarDescongelado(prodId, diaIdx, valor, planificado) {
     fecha_local: fechaRealDiaSemana(diaIdx),
     dispositivo: navigator.userAgent.slice(0,50)
   }));
-  fetch(FEN.WEBAPP_URL + '?payload=' + payload).catch(() => {});
+  fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' }).catch(() => {});
 
   // Update stock congelado in plan de horneado (next day)
   const sigDiaIdx = (diaIdx + 1) % 7;
@@ -4075,7 +4075,7 @@ function actualizarDescongeladoMasa(masaId, diaIdx, valor, planificado) {
     fecha_local: fechaRealDiaSemana(diaIdx),
     dispositivo: navigator.userAgent.slice(0,50)
   }));
-  fetch(FEN.WEBAPP_URL + '?payload=' + payload).catch(() => {});
+  fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' }).catch(() => {});
 }
 
 async function cargarDescongeladoAntDesdeSheet(diaAnt, diaHoy) {
@@ -4087,7 +4087,7 @@ async function cargarDescongeladoAntDesdeSheet(diaAnt, diaHoy) {
       semana_ID: semana,
       dia: diaAnt
     }));
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (data.ok && data.tareas) {
       data.tareas.forEach(t => {
@@ -4515,14 +4515,14 @@ function actualizarEmpastes(diaIdx) {
     cantidad: por, cantidad_real: por, estado: '1',
     fecha_local: fechaRealDiaSemana(diaIdx), dispositivo: navigator.userAgent.slice(0,50)
   }));
-  fetch(FEN.WEBAPP_URL + '?payload=' + payload).catch(() => {});
+  fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' }).catch(() => {});
   const payload2 = encodeURIComponent(JSON.stringify({
     accion: 'guardar_tarea_bol', semana_ID: semana, dia: diaIdx,
     tipo_tarea: 'empaste_estirados', subtarea: 'empaste_estirados',
     cantidad: est, cantidad_real: est, estado: '1',
     fecha_local: fechaRealDiaSemana(diaIdx), dispositivo: navigator.userAgent.slice(0,50)
   }));
-  fetch(FEN.WEBAPP_URL + '?payload=' + payload2).catch(() => {});
+  fetch(FEN.WEBAPP_URL + '?payload=' + payload2, { cache: 'no-store' }).catch(() => {});
 
   // Calculate total empastes for this day
   let total = 0;
@@ -4640,7 +4640,7 @@ function togglePreTarea(id, diaIdx, checked) {
     estado: checked ? '1' : '0',
     fecha_local: fechaRealDiaSemana(diaIdx), dispositivo: navigator.userAgent.slice(0,50)
   }));
-  fetch(FEN.WEBAPP_URL + '?payload=' + payloadTarea).catch(() => {});
+  fetch(FEN.WEBAPP_URL + '?payload=' + payloadTarea, { cache: 'no-store' }).catch(() => {});
 }
 
 
@@ -5049,7 +5049,7 @@ function toggleTareaBOLProduccion(id, checked) {
     fecha_local: fechaRealDiaSemana(diaIdx),
     dispositivo: navigator.userAgent.slice(0,50)
   }));
-  fetch(FEN.WEBAPP_URL + '?payload=' + payloadTarea2).catch(() => {});
+  fetch(FEN.WEBAPP_URL + '?payload=' + payloadTarea2, { cache: 'no-store' }).catch(() => {});
 }
 
 function actualizarStockCirculante(input, diaIdx) {
@@ -5143,7 +5143,7 @@ function guardarTareaManualBOL() {
     fecha_local: fechaRealDiaSemana(diaIdx),
     dispositivo: navigator.userAgent.slice(0,50)
   }));
-  fetch(FEN.WEBAPP_URL + '?payload=' + payload).catch(() => {});
+  fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' }).catch(() => {});
   toast('Tarea agregada');
 }
 
@@ -5320,7 +5320,7 @@ async function aprobarReceta(recetaId, areaCodigo, btnParam) {
       tipo: 'receta_aprobada',
       mensaje: `Tu receta "${r?.nombre || recetaId}" fue aprobada y está disponible en el maestro.`
     }));
-    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso).catch(() => {});
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso, { cache: 'no-store' }).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
 
     toast('Receta aprobada y enviada al maestro');
     setTimeout(() => renderVistaAprobaciones(), 1200);
@@ -5363,7 +5363,7 @@ async function rechazarReceta() {
       tipo: 'receta_devuelta',
       mensaje: mensajeCompleto
     }));
-    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso).catch(() => {});
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso, { cache: 'no-store' }).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
 
     document.getElementById('modal-devolver-receta').classList.add('hidden');
     desbloquearBtn(btn, '<i class="ti ti-check"></i> Confirmar devolución', true);
@@ -5406,7 +5406,7 @@ async function eliminarReceta(recetaId, area) {
   // Eliminar usa GET directo (payload pequeño, necesita respuesta confirmada)
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'eliminar_receta', ID_receta: recetaId, hoja }));
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' });
     const data = await res.json();
     console.log('[fën] Respuesta eliminar:', data);
     if (!data.ok) {
@@ -5444,7 +5444,7 @@ async function eliminarSolicitudMP(mpId, nombre, btn) {
     const payload = encodeURIComponent(JSON.stringify({
       accion: 'eliminar_mp', ID_MP: mpId
     }));
-    await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     App.materiasPrimas = App.materiasPrimas.filter(m => m.ID_MP !== mpId);
     Cache.invalidar('mp_maestro');
     toast(`Solicitud "${nombre}" eliminada`);
@@ -5471,7 +5471,7 @@ async function notificarJefaMP(mpId, nombre, btn) {
       mensaje: 'Tu solicitud fue recibida por administracion - esta siendo revisada.',
       mp_id: mpId
     }));
-    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisRec).catch(() => {});
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisRec, { cache: 'no-store' }).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
   }
 
   if (mp) mp.estado = 'recibida';
@@ -5535,7 +5535,7 @@ async function aprobarMP(mpId, btn) {
       mensaje: mp.nombre + ' fue aprobada y esta disponible.' + (mp.receta_nombre ? ' Receta: ' + mp.receta_nombre + '.' : '') + ' Actualiza tu receta.',
       mp_id: mpId
     }));
-    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso).catch(() => {});
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso, { cache: 'no-store' }).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
   }
 
   mp.estado = 'activa';
@@ -5622,7 +5622,7 @@ async function confirmarAsignarMP(btn) {
       mensaje: `Tu solicitud "${nombreOriginal}"${recetaInfo} fue resuelta: usa "${nombreExist}" en su lugar. Ve a Mis recetas → edita la receta y presiona Reemplazar.`,
       mp_id: mpSolicitudId
     }));
-    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisAsig).catch(() => {});
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisAsig, { cache: 'no-store' }).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
   }
 
   toast(`Asignado "${nombreExist}" — aviso enviado a la jefa`);
@@ -5786,7 +5786,7 @@ async function renombrarMPUI(mpId, nombreActual) {
   toast('Renombrando, puede tardar unos segundos...');
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'renombrar_mp', mp_id: mpId, nuevo_nombre: nuevoNombre.trim() }));
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (data.ok) {
       Cache.invalidar('mp_maestro');
@@ -5805,7 +5805,7 @@ async function verRecetasQueUsanMP(mpId, nombre) {
   toast('Buscando en las 4 áreas...');
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'buscar_recetas_usando_mp', mp_id: mpId }));
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (!data.ok) { toast('Error: ' + (data.msg||''), 'error'); return; }
     if (!data.recetas.length) {
@@ -5939,7 +5939,7 @@ async function renderVistaRellenosOtrasRecetas() {
   // Cargar plan guardado (cantidades confirmadas de rellenos) y el plan PS/PC (para la sugerencia)
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_rellenos' }));
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     _planRellenosCache = data.filas || [];
   } catch(e) {
@@ -5947,7 +5947,7 @@ async function renderVistaRellenosOtrasRecetas() {
   }
   try {
     const payload2 = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_ps_pc' }));
-    const res2 = await fetch(FEN.WEBAPP_URL + '?payload=' + payload2, { redirect: 'follow' });
+    const res2 = await fetch(FEN.WEBAPP_URL + '?payload=' + payload2, { redirect: 'follow', cache: 'no-store' });
     const data2 = await res2.json();
     _planPSPCCache = data2.filas || [];
   } catch(e) {
@@ -6211,7 +6211,7 @@ async function renderVistaPlanPSPC() {
 
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_ps_pc' }));
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     _planPSPCCache = data.filas || [];
   } catch(e) {
@@ -6389,7 +6389,7 @@ async function renderVistaPlanMasaBase() {
 
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_masa_base' }));
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     _planMasaBaseCache = data.filas || [];
   } catch(e) {
@@ -6853,7 +6853,7 @@ async function ejecutarAuditoriaCostos(btn) {
   contenedor.innerHTML = '<div style="padding:20px;text-align:center;color:var(--txt3)"><div class="spinner"></div> Revisando todas las recetas...</div>';
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'auditar_costos_recetas' }));
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     desbloquearBtn(btn, '<i class="ti ti-shield-check"></i> Ejecutar auditoría', true);
     if (!data.ok) { contenedor.innerHTML = `<p style="color:#C62828">Error: ${data.msg||''}</p>`; return; }
@@ -6933,7 +6933,7 @@ async function renderVistaAnalisisMerma() {
 
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_registro_merma' }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     _mermaTodasAreas = data.registros || [];
   } catch(e) {
@@ -7059,7 +7059,7 @@ async function renderVistaConfigCosteo() {
 
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_config_costeo' }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     _configCosteoFilas = data.filas || [];
   } catch(e) {
@@ -7169,7 +7169,7 @@ async function sincronizarGastosArea() {
   estadoEl.textContent = 'Sincronizando...';
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_gastos_area', mes }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (!data.ok) { estadoEl.textContent = 'Error: ' + (data.msg||''); return; }
     const areaData = data.datos?.[area] || { fijos: 0, remuneracion: 0 };
@@ -7387,7 +7387,7 @@ async function sincronizarMapeoUI(btn) {
   bloquearBtn(btn, 'Sincronizando...');
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'sincronizar_mapeo' }));
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (data.ok) {
       toast(data.msg);
@@ -7433,7 +7433,7 @@ async function cargarMapeoProductos() {
   if (App._mapeoProductos) return App._mapeoProductos;
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_mapeo_productos' }));
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     App._mapeoProductos = data.filas || [];
   } catch(e) {
@@ -7528,7 +7528,7 @@ async function calcularECUI(btn) {
     const volumenReal = calcularVolumenMensualArea(area, mes);
     const volumenPorProducto = await calcularVolumenMensualPorProducto(area, mes);
     const payload = encodeURIComponent(JSON.stringify({ accion: 'calcular_ec', area, mes, volumenTotalReal: volumenReal, volumenPorProducto }));
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (data.ok) {
       App._ecVolumenInfo = { area, mes, volumen: volumenReal, esReal: !!volumenReal, msg: data.msg };
@@ -7838,7 +7838,7 @@ async function enviarSolicitudMP(btn) {
       receta_nombre: recetaNombre,
       fecha: new Date().toISOString()
     }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (data.ok && data.id) mpId = data.id;
   } catch(e) {
@@ -7912,7 +7912,7 @@ async function fusionarMPUI(mpIdEliminar, nombreActual) {
     const payload = encodeURIComponent(JSON.stringify({
       accion: 'fusionar_mp', mp_id_mantener: mantener.ID_MP, mp_id_eliminar: mpIdEliminar
     }));
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (data.ok) {
       Cache.invalidar('mp_maestro');
@@ -8062,7 +8062,7 @@ async function crearMPAdmin(btn) {
       area_codigo: areasHabilitadas,
       fecha: new Date().toISOString()
     }));
-    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow' });
+    const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (data.ok && data.id) nuevoId = data.id;
   } catch(e) {
