@@ -5320,7 +5320,7 @@ async function aprobarReceta(recetaId, areaCodigo, btnParam) {
       tipo: 'receta_aprobada',
       mensaje: `Tu receta "${r?.nombre || recetaId}" fue aprobada y está disponible en el maestro.`
     }));
-    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso, { cache: 'no-store' }).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso, { cache: 'no-store' }).then(r => r.json()).then(d => console.log('[fën] Respuesta crear_aviso:', d)).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
 
     toast('Receta aprobada y enviada al maestro');
     setTimeout(() => renderVistaAprobaciones(), 1200);
@@ -5363,7 +5363,7 @@ async function rechazarReceta() {
       tipo: 'receta_devuelta',
       mensaje: mensajeCompleto
     }));
-    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso, { cache: 'no-store' }).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso, { cache: 'no-store' }).then(r => r.json()).then(d => console.log('[fën] Respuesta crear_aviso:', d)).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
 
     document.getElementById('modal-devolver-receta').classList.add('hidden');
     desbloquearBtn(btn, '<i class="ti ti-check"></i> Confirmar devolución', true);
@@ -5471,7 +5471,7 @@ async function notificarJefaMP(mpId, nombre, btn) {
       mensaje: 'Tu solicitud fue recibida por administracion - esta siendo revisada.',
       mp_id: mpId
     }));
-    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisRec, { cache: 'no-store' }).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisRec, { cache: 'no-store' }).then(r => r.json()).then(d => console.log('[fën] Respuesta crear_aviso:', d)).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
   }
 
   if (mp) mp.estado = 'recibida';
@@ -5535,7 +5535,7 @@ async function aprobarMP(mpId, btn) {
       mensaje: mp.nombre + ' fue aprobada y esta disponible.' + (mp.receta_nombre ? ' Receta: ' + mp.receta_nombre + '.' : '') + ' Actualiza tu receta.',
       mp_id: mpId
     }));
-    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso, { cache: 'no-store' }).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso, { cache: 'no-store' }).then(r => r.json()).then(d => console.log('[fën] Respuesta crear_aviso:', d)).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
   }
 
   mp.estado = 'activa';
@@ -5622,7 +5622,7 @@ async function confirmarAsignarMP(btn) {
       mensaje: `Tu solicitud "${nombreOriginal}"${recetaInfo} fue resuelta: usa "${nombreExist}" en su lugar. Ve a Mis recetas → edita la receta y presiona Reemplazar.`,
       mp_id: mpSolicitudId
     }));
-    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisAsig, { cache: 'no-store' }).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
+    fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisAsig, { cache: 'no-store' }).then(r => r.json()).then(d => console.log('[fën] Respuesta crear_aviso:', d)).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
   }
 
   toast(`Asignado "${nombreExist}" — aviso enviado a la jefa`);
