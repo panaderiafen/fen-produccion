@@ -5185,7 +5185,8 @@ function renderVistaAprobaciones() {
         try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
         let insumos = [];
         try { insumos = JSON.parse(r.insumos_JSON || '[]'); } catch(e) {}
-        const areaInfo = FEN.AREAS[r._area] || {};
+        const codigoArea = codigoAreaDesdeReceta(r);
+        const areaInfo = FEN.AREAS[codigoArea] || {};
         return `
           <div class="card" style="margin-bottom:16px">
             <div class="card-head">
@@ -5193,18 +5194,18 @@ function renderVistaAprobaciones() {
                 padding:2px 8px;border-radius:99px;font-size:11px">${areaInfo.nombre || r.área}</span>
               <strong style="margin-left:6px">${r.nombre}</strong>
               <span style="font-size:11px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:8px">${r.ID_receta}</span>
-              ${r._area === 'BOL' ? `
+              ${codigoArea === 'BOL' ? `
                 <span style="font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:99px;
                   background:${r.tipo_preparacion?'#E8F5E9':'#FFEBEE'};color:${r.tipo_preparacion?'#2E7D32':'#C62828'}">
                   ${formatearClasificacionBOL(r.tipo_preparacion)}
                 </span>` : ''}
               <div style="margin-left:auto;display:flex;gap:8px">
                 <button id="btn-devolver-${r.ID_receta}" class="btn-peligro" style="font-size:12px;padding:5px 12px"
-                  onclick="abrirModalDevolverReceta('${r.ID_receta}','${r._area}','${(r.nombre||'').replace(/'/g,"\\'")}')">
+                  onclick="abrirModalDevolverReceta('${r.ID_receta}','${codigoArea}','${(r.nombre||'').replace(/'/g,"\\'")}')">
                   <i class="ti ti-x"></i> Devolver
                 </button>
                 <button id="btn-aprobar-${r.ID_receta}" class="btn-primario" style="font-size:12px;padding:5px 12px"
-                  onclick="aprobarReceta('${r.ID_receta}','${r._area}',this)">
+                  onclick="aprobarReceta('${r.ID_receta}','${codigoArea}',this)">
                   <i class="ti ti-check"></i> Aprobar
                 </button>
               </div>
@@ -7566,6 +7567,17 @@ function formatearUnidadesIngrediente(valor) {
   const n = parseFloat(valor) || 0;
   if (Number.isInteger(n)) return n.toFixed(0);
   return n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+// r._area solo se llena cuando Admin carga TODAS las áreas de una vez — si Admin
+// entró vía "Ir a área" (navegando dentro de una sola área), ese campo queda vacío
+// y un template literal lo convierte en el texto "undefined". Este helper usa el
+// nombre de área del Sheet (siempre presente) como respaldo confiable.
+function codigoAreaDesdeReceta(r) {
+  if (r._area) return r._area;
+  const entrada = Object.entries(FEN.AREAS).find(([cod, info]) => info.nombre === r.área);
+  if (entrada) return entrada[0];
+  return App.areaCodigo || '';
 }
 
 function formatearClasificacionBOL(valor) {
