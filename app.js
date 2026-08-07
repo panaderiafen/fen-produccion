@@ -355,7 +355,7 @@ function renderSidebar() {
     }
 
     if (App.areaCodigo === 'CAF') {
-      items.push({ id: 'registros-caf', icon: 'ti-clipboard-list', label: 'Registros de turno' });
+      items.push({ id: 'registros-caf', icon: 'ti-clipboard-list', label: 'Bitácora de turno' });
     }
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL' || App.areaCodigo === 'CAF') {
       items.push({ id: 'config-subrecetas',   icon: 'ti-adjustments',     label: App.areaCodigo === 'CAF' ? 'Configuración' : 'Config sub recetas' });
@@ -2946,9 +2946,10 @@ function renderTablaRegistrosMerma() {
   const primerMes = fechaHoy.slice(0,7) + '-01';
 
   let filtrados = _mermaRegistros.filter(r => {
-    if (periodo === 'hoy' && r.fecha !== fechaHoy) return false;
-    if (periodo === 'semana' && r.fecha < lunesSemana) return false;
-    if (periodo === 'mes' && r.fecha < primerMes) return false;
+    const fechaNorm = (r.fecha || '').slice(0,10);
+    if (periodo === 'hoy' && fechaNorm !== fechaHoy) return false;
+    if (periodo === 'semana' && fechaNorm < lunesSemana) return false;
+    if (periodo === 'mes' && fechaNorm < primerMes) return false;
     return true;
   }).sort((a,b) => b.fecha.localeCompare(a.fecha) || (b.hora||'').localeCompare(a.hora||''));
 
@@ -3125,7 +3126,7 @@ async function renderVistaRegistrosCAF() {
     <div class="vista-header">
       <div>
         <div class="vista-eyebrow">Cafetería</div>
-        <h1 class="vista-titulo">Registros de turno</h1>
+        <h1 class="vista-titulo">Bitácora de turno</h1>
       </div>
       <button class="btn-primario" onclick="abrirModalRegistroCaf()">
         <i class="ti ti-plus"></i> Nuevo registro
@@ -3186,9 +3187,10 @@ function renderTablaRegistrosCAF() {
   let filtrados = _cafRegistros.filter(r => {
     if (barista && r.barista !== barista) return false;
     if (tipo && r.tipo !== tipo) return false;
-    if (periodo === 'hoy' && r.fecha !== fechaHoy) return false;
-    if (periodo === 'semana' && r.fecha < lunesSemana) return false;
-    if (periodo === 'mes' && r.fecha < primerMes) return false;
+    const fechaNorm = (r.fecha || '').slice(0,10);
+    if (periodo === 'hoy' && fechaNorm !== fechaHoy) return false;
+    if (periodo === 'semana' && fechaNorm < lunesSemana) return false;
+    if (periodo === 'mes' && fechaNorm < primerMes) return false;
     return true;
   }).sort((a,b) => b.fecha.localeCompare(a.fecha) || b.hora?.localeCompare(a.hora||''));
 
