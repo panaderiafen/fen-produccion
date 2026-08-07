@@ -255,14 +255,17 @@ function renderAvisos() {
     mp_recibida: { ico: 'ti-clock', color: '#1565C0', bg: '#E3F2FD' },
     mp_aprobada: { ico: 'ti-check', color: '#2E7D32', bg: '#E8F5E9' },
     mp_asignada: { ico: 'ti-link',  color: '#E65100', bg: '#FFF3E0' },
+    receta_aprobada: { ico: 'ti-check', color: '#2E7D32', bg: '#E8F5E9' },
+    receta_devuelta: { ico: 'ti-alert-triangle', color: '#C62828', bg: '#FFEBEE' },
   };
 
   const html = avisosPendientes.map(a => {
     const cfg = iconos[a.tipo] || { ico: 'ti-bell', color: '#F57C00', bg: '#FFF8E1' };
+    const esUrgente = a.tipo === 'receta_devuelta';
     return `
-      <div class="aviso-card" style="background:${cfg.bg};border-color:${cfg.color}20">
+      <div class="aviso-card" style="background:${cfg.bg};border-color:${cfg.color}${esUrgente?'':'20'};${esUrgente?`border-width:2px;`:''}">
         <i class="ti ${cfg.ico}" style="color:${cfg.color};font-size:16px;flex-shrink:0"></i>
-        <span style="flex:1;font-size:13px;color:var(--txt)">${a.mensaje}</span>
+        <span style="flex:1;font-size:13px;color:var(--txt);${esUrgente?'font-weight:500':''}">${a.mensaje}</span>
         <button onclick="marcarAvisoLeido('${a.id}')"
           style="background:none;border:1px solid ${cfg.color}40;border-radius:var(--r-sm);padding:4px 10px;font-size:11px;color:${cfg.color};cursor:pointer;white-space:nowrap;font-family:inherit">
           Entendido
@@ -5318,7 +5321,7 @@ async function aprobarReceta(recetaId, areaCodigo, btnParam) {
       accion: 'crear_aviso',
       area_codigo: areaCodigo,
       tipo: 'receta_aprobada',
-      mensaje: `Tu receta "${r?.nombre || recetaId}" fue aprobada y está disponible en el maestro.`
+      mensaje: `Tu receta "<strong>${r?.nombre || recetaId}</strong>" fue aprobada y está disponible en el maestro.`
     }));
     fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso, { cache: 'no-store' }).then(r => r.json()).then(d => console.log('[fën] Respuesta crear_aviso:', d)).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
 
@@ -5353,9 +5356,9 @@ async function rechazarReceta() {
     if (r) r.estado = 'en_prueba';
 
     // Notificar a la jefa por aviso + correo, incluyendo el comentario
-    const mensajeBase = `Tu receta "${r?.nombre || recetaId}" fue devuelta para revisión.`;
+    const mensajeBase = `Tu receta "<strong>${r?.nombre || recetaId}</strong>" fue devuelta para revisión.`;
     const mensajeCompleto = comentario
-      ? `${mensajeBase} Comentario del admin: "${comentario}"`
+      ? `${mensajeBase} Comentario del admin: <em>"${comentario}"</em>`
       : `${mensajeBase} Revisa los detalles y vuelve a enviarla.`;
     const payloadAviso = encodeURIComponent(JSON.stringify({
       accion: 'crear_aviso',
@@ -5468,7 +5471,7 @@ async function notificarJefaMP(mpId, nombre, btn) {
       accion: 'crear_aviso',
       area_codigo: areaCode,
       tipo: 'mp_recibida',
-      mensaje: 'Tu solicitud fue recibida por administracion - esta siendo revisada.',
+      mensaje: `Tu solicitud de "<strong>${nombre}</strong>" fue recibida por administración — está siendo revisada.`,
       mp_id: mpId
     }));
     fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisRec, { cache: 'no-store' }).then(r => r.json()).then(d => console.log('[fën] Respuesta crear_aviso:', d)).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
@@ -5532,7 +5535,7 @@ async function aprobarMP(mpId, btn) {
       accion: 'crear_aviso',
       area_codigo: areaCode,
       tipo: 'mp_aprobada',
-      mensaje: mp.nombre + ' fue aprobada y esta disponible.' + (mp.receta_nombre ? ' Receta: ' + mp.receta_nombre + '.' : '') + ' Actualiza tu receta.',
+      mensaje: '<strong>' + mp.nombre + '</strong> fue aprobada y esta disponible.' + (mp.receta_nombre ? ' Receta: <strong>' + mp.receta_nombre + '</strong>.' : '') + ' Actualiza tu receta.',
       mp_id: mpId
     }));
     fetch(FEN.WEBAPP_URL + '?payload=' + payloadAviso, { cache: 'no-store' }).then(r => r.json()).then(d => console.log('[fën] Respuesta crear_aviso:', d)).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
@@ -5619,7 +5622,7 @@ async function confirmarAsignarMP(btn) {
       accion: 'crear_aviso',
       area_codigo: areaCode2,
       tipo: 'mp_asignada',
-      mensaje: `Tu solicitud "${nombreOriginal}"${recetaInfo} fue resuelta: usa "${nombreExist}" en su lugar. Ve a Mis recetas → edita la receta y presiona Reemplazar.`,
+      mensaje: `Tu solicitud "<strong>${nombreOriginal}</strong>"${recetaInfo} fue resuelta: usa "<strong>${nombreExist}</strong>" en su lugar. Ve a Mis recetas → edita la receta y presiona Reemplazar.`,
       mp_id: mpSolicitudId
     }));
     fetch(FEN.WEBAPP_URL + '?payload=' + payloadAvisAsig, { cache: 'no-store' }).then(r => r.json()).then(d => console.log('[fën] Respuesta crear_aviso:', d)).catch(e => console.error('[fën] Error al crear aviso/correo:', e));
