@@ -2066,13 +2066,14 @@ function renderVistaPlanificacion() {
   const hoy  = new Date().getDay();
   const diaIdx = hoy === 0 ? 6 : hoy - 1;
   const semana = obtenerSemanaActual();
+  const semanaLabel = formatearEtiquetaSemana(obtenerSemanaHace(0));
   const esBOL = App.areaCodigo === 'BOL';
 
   const vista = document.getElementById('vista-planificacion');
   vista.innerHTML = `
     <div class="vista-header">
       <div>
-        <div class="vista-eyebrow">${App.area?.nombre} · Semana ${semana}</div>
+        <div class="vista-eyebrow">${App.area?.nombre} · Semana ${semanaLabel}</div>
         <h1 class="vista-titulo">Plan semanal</h1>
       </div>
       <div style="display:flex;gap:8px">
@@ -2106,7 +2107,7 @@ function renderVistaPlanificacion() {
         <select id="selector-semana-historica" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
           ${Array.from({length:16}, (_,i) => i+1).map(n => {
             const s = obtenerSemanaHace(n);
-            return `<option value="${s.id}">${s.id} (hace ${n} semana${n>1?'s':''})</option>`;
+            return `<option value="${s.id}">${formatearEtiquetaSemana(s)} (hace ${n} semana${n>1?'s':''})</option>`;
           }).join('')}
         </select>
         <button class="btn-secundario" style="font-size:12px;padding:8px 14px" onclick="verSemanaHistorica()">
@@ -2274,32 +2275,36 @@ async function verSemanaHistorica() {
     return;
   }
 
-  const totalPorDia = diasCorto.map((_,i) => recetaIds.reduce((s,rid) => s + (plan[rid][i]||0), 0));
-  const totalGeneral = totalPorDia.reduce((s,v)=>s+v,0);
+  // Ordenado de mayor a menor total elaborado en la semana — así se ve de un
+  // vistazo qué pan tuvo más volumen, que es lo que realmente sirve (el total
+  // por día no distingue entre panes de distinta naturaleza)
+  const totalGeneral = recetaIds.reduce((s,rid) => s + plan[rid].reduce((s2,v)=>s2+(v||0),0), 0);
+  const recetaIdsOrdenados = [...recetaIds].sort((a,b) =>
+    plan[b].reduce((s,v)=>s+(v||0),0) - plan[a].reduce((s,v)=>s+(v||0),0)
+  );
 
   cont.innerHTML = `
     <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:500px">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:560px">
         <thead><tr style="background:var(--bg)">
           <th style="text-align:left;padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Receta</th>
           ${diasCorto.map(d => `<th style="text-align:right;padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">${d}</th>`).join('')}
+          <th style="text-align:right;padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--area-color, #1565C0);border-left:2px solid var(--border)">Total semana</th>
         </tr></thead>
         <tbody>
-          ${recetaIds.map(rid => {
+          ${recetaIdsOrdenados.map(rid => {
             const r = App.recetas.find(x => x.ID_receta === rid);
+            const totalReceta = plan[rid].reduce((s,v)=>s+(v||0),0);
             return `<tr>
               <td style="padding:5px 10px;border-bottom:1px solid var(--border)">${r?.nombre || rid}</td>
               ${plan[rid].map(v => `<td style="padding:5px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace">${v||''}</td>`).join('')}
+              <td style="padding:5px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:700;border-left:2px solid var(--border)">${totalReceta}</td>
             </tr>`;
           }).join('')}
-          <tr style="font-weight:700">
-            <td style="padding:6px 10px">Total</td>
-            ${totalPorDia.map(v => `<td style="padding:6px 10px;text-align:right;font-family:'DM Mono',monospace">${v}</td>`).join('')}
-          </tr>
         </tbody>
       </table>
     </div>
-    <p style="font-size:12px;color:var(--txt3);margin-top:8px">Total de la semana: <strong>${totalGeneral}</strong> unidades</p>
+    <p style="font-size:12px;color:var(--txt3);margin-top:8px">Total general de la semana: <strong>${totalGeneral}</strong> unidades</p>
     <button class="btn-primario" style="font-size:12px;padding:8px 14px;margin-top:8px" onclick="copiarSemanaHistorica('${semanaId}',this)">
       <i class="ti ti-copy"></i> Copiar esta semana a la actual
     </button>
@@ -8299,6 +8304,13 @@ function obtenerSemanaHace(n) {
   const yearStart = new Date(d.getFullYear(), 0, 1);
   const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
   return { id: `${d.getFullYear()}-W${String(weekNo).padStart(2,'0')}`, fechaRef: new Date(now) };
+}
+
+// Convierte { id: "2026-W32", fechaRef } en algo legible: "W32-ago-2026"
+function formatearEtiquetaSemana(s) {
+  const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const [anio, wPart] = s.id.split('-W');
+  return `W${wPart}-${meses[s.fechaRef.getMonth()]}-${anio}`;
 }
 
 function obtenerSemanaAnterior() {
