@@ -6776,7 +6776,7 @@ function renderEditorTandas(fila, recetaId, cantidadUnidades, tandas) {
           </span>
           <div style="display:flex;gap:4px">
             <button class="btn-secundario" style="font-size:9px;padding:2px 6px" onclick="verRecetaEscaladaTanda(${fila},'${recetaId}',${kgTanda},${i})">Ver receta</button>
-            <button class="btn-fila-del" style="padding:2px" onclick="quitarTanda(${fila},'${recetaId}',${cantidadUnidades},${i})"><i class="ti ti-x"></i></button>
+            <button class="btn-fila-del" style="padding:2px" onclick="quitarTandaMasaBase(${fila},'${recetaId}',${cantidadUnidades},${i})"><i class="ti ti-x"></i></button>
           </div>
         </div>
         <div id="tanda-receta-${fila}-${i}" class="hidden" style="margin:4px 0"></div>
@@ -6784,7 +6784,7 @@ function renderEditorTandas(fila, recetaId, cantidadUnidades, tandas) {
       }).join('')}
       <div style="display:flex;gap:6px;align-items:center;margin-top:8px">
         <input type="number" id="nueva-tanda-${fila}" min="1" step="1" placeholder="unidades" style="max-width:80px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:11px">
-        <button class="btn-secundario" style="font-size:10px;padding:4px 10px" onclick="agregarTanda(${fila},'${recetaId}',${cantidadUnidades})">
+        <button class="btn-secundario" style="font-size:10px;padding:4px 10px" onclick="agregarTandaMasaBase(${fila},'${recetaId}',${cantidadUnidades})">
           <i class="ti ti-plus"></i> Agregar tanda
         </button>
       </div>
@@ -6795,7 +6795,7 @@ function renderEditorTandas(fila, recetaId, cantidadUnidades, tandas) {
   `;
 }
 
-async function agregarTanda(fila, recetaId, cantidadUnidades) {
+async function agregarTandaMasaBase(fila, recetaId, cantidadUnidades) {
   const input = document.getElementById('nueva-tanda-' + fila);
   const unidades = parseFloat(input?.value) || 0;
   if (unidades <= 0) { toast('Ingresa una cantidad de unidades válida', 'error'); return; }
@@ -6811,7 +6811,7 @@ async function agregarTanda(fila, recetaId, cantidadUnidades) {
   toggleDetalleMasaBase(fila, recetaId, cantidadUnidades); // reabrir el panel que quedó cerrado por el re-render
 }
 
-async function quitarTanda(fila, recetaId, cantidadUnidades, index) {
+async function quitarTandaMasaBase(fila, recetaId, cantidadUnidades, index) {
   const entrada = (_planMasaBaseCache || []).find(p => p._fila === fila);
   let tandas = [];
   try { tandas = JSON.parse(entrada?.tandas_JSON || '[]'); } catch(e) {}
