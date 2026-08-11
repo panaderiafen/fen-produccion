@@ -2089,11 +2089,32 @@ function renderVistaPlanificacion() {
       El plan se guarda por semana. Puedes modificarlo en cualquier momento.
       ${esBOL ? 'Para BOL: ingresa la meta por canal (B2C vitrina + B2B pedidos).' : ''}
     </p>
-    ${Object.keys(App.planSemana || {}).length === 0 ? `
+    ${(() => {
+      const plan = App.planSemana || {};
+      // Vacío si no hay filas, o si las hay pero todos los días de todas las recetas están en 0
+      const totalUnidades = Object.values(plan).reduce((s, dias) => s + (dias||[]).reduce((s2,v)=>s2+(parseInt(v)||0),0), 0);
+      return totalUnidades === 0;
+    })() ? `
       <div class="card" style="background:#E3F2FD;border:1px solid #1565C0;margin-bottom:16px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
         <span style="font-size:13px;color:#0D47A1"><i class="ti ti-copy"></i> Esta semana todavía no tiene plan cargado. ¿Copiar el de la semana pasada como punto de partida?</span>
         <button class="btn-primario" style="font-size:12px;padding:6px 14px;white-space:nowrap" onclick="copiarPlanSemanaAnterior(this)">Copiar semana anterior</button>
       </div>` : ''}
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head"><i class="ti ti-calendar-search"></i> Ver / copiar otra semana</div>
+      <div style="padding:14px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="selector-semana-historica" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+          ${Array.from({length:16}, (_,i) => i+1).map(n => {
+            const s = obtenerSemanaHace(n);
+            return `<option value="${s.id}">${s.id} (hace ${n} semana${n>1?'s':''})</option>`;
+          }).join('')}
+        </select>
+        <button class="btn-secundario" style="font-size:12px;padding:8px 14px" onclick="verSemanaHistorica()">
+          <i class="ti ti-eye"></i> Ver
+        </button>
+      </div>
+      <div id="preview-semana-historica" class="hidden" style="padding:0 16px 16px"></div>
+    </div>
 
     ${!recetasConsolidadas.length ? `
       <div class="empty-state">
@@ -2223,6 +2244,88 @@ function actualizarTotalFila(input) {
   const total = Array.from(inputs).reduce((s,el) => s + (parseInt(el.value)||0), 0);
   const span = document.getElementById('total-' + rid);
   if (span) span.textContent = total;
+}
+
+async function leerPlanDeSemana(semanaId) {
+  const hoja = FEN.AREAS[App.areaCodigo].hoja_plan;
+  const datos = await leerHoja(hoja);
+  const diasCols = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo'];
+  const plan = {};
+  datos.filter(f => f.semana_ID === semanaId).forEach(fila => {
+    const rid = fila.ID_receta;
+    if (rid) plan[rid] = diasCols.map(d => parseInt(fila[d]) || 0);
+  });
+  return plan;
+}
+
+async function verSemanaHistorica() {
+  const semanaId = document.getElementById('selector-semana-historica')?.value;
+  const cont = document.getElementById('preview-semana-historica');
+  if (!semanaId || !cont) return;
+  cont.classList.remove('hidden');
+  cont.innerHTML = '<p style="color:var(--txt3);font-size:12px">Cargando...</p>';
+
+  const plan = await leerPlanDeSemana(semanaId);
+  const diasCorto = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  const recetaIds = Object.keys(plan);
+
+  if (!recetaIds.length) {
+    cont.innerHTML = `<p style="color:var(--txt3);font-size:12px">No hay plan guardado para la semana ${semanaId}.</p>`;
+    return;
+  }
+
+  const totalPorDia = diasCorto.map((_,i) => recetaIds.reduce((s,rid) => s + (plan[rid][i]||0), 0));
+  const totalGeneral = totalPorDia.reduce((s,v)=>s+v,0);
+
+  cont.innerHTML = `
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:500px">
+        <thead><tr style="background:var(--bg)">
+          <th style="text-align:left;padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Receta</th>
+          ${diasCorto.map(d => `<th style="text-align:right;padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">${d}</th>`).join('')}
+        </tr></thead>
+        <tbody>
+          ${recetaIds.map(rid => {
+            const r = App.recetas.find(x => x.ID_receta === rid);
+            return `<tr>
+              <td style="padding:5px 10px;border-bottom:1px solid var(--border)">${r?.nombre || rid}</td>
+              ${plan[rid].map(v => `<td style="padding:5px 10px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace">${v||''}</td>`).join('')}
+            </tr>`;
+          }).join('')}
+          <tr style="font-weight:700">
+            <td style="padding:6px 10px">Total</td>
+            ${totalPorDia.map(v => `<td style="padding:6px 10px;text-align:right;font-family:'DM Mono',monospace">${v}</td>`).join('')}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:12px;color:var(--txt3);margin-top:8px">Total de la semana: <strong>${totalGeneral}</strong> unidades</p>
+    <button class="btn-primario" style="font-size:12px;padding:8px 14px;margin-top:8px" onclick="copiarSemanaHistorica('${semanaId}',this)">
+      <i class="ti ti-copy"></i> Copiar esta semana a la actual
+    </button>
+  `;
+}
+
+async function copiarSemanaHistorica(semanaId, btn) {
+  if (btn) bloquearBtn(btn, 'Copiando...');
+  try {
+    const plan = await leerPlanDeSemana(semanaId);
+    if (!Object.keys(plan).length) {
+      toast('Esa semana no tiene datos para copiar', 'error');
+      if (btn) desbloquearBtn(btn, '<i class="ti ti-copy"></i> Copiar esta semana a la actual', false);
+      return;
+    }
+    const hoja = FEN.AREAS[App.areaCodigo].hoja_plan;
+    const semanaActual = obtenerSemanaActual();
+    await escribirEnSheet('guardar_planificacion', { hoja, semana: semanaActual, plan });
+    App.planSemana = plan;
+    guardarPlanLocal(plan);
+    toast(`Plan de la semana ${semanaId} copiado a la semana actual — revíselo y ajuste lo que corresponda`);
+    renderVistaPlanificacion();
+  } catch(e) {
+    toast('Error al copiar: ' + e.message, 'error');
+    if (btn) desbloquearBtn(btn, '<i class="ti ti-copy"></i> Copiar esta semana a la actual', false);
+  }
 }
 
 async function copiarPlanSemanaAnterior(btn) {
@@ -8186,28 +8289,24 @@ function generarId(areaCodigo) {
   return `${areaCodigo}${timestamp}${random}`;
 }
 
-function obtenerSemanaAnterior() {
+// n=0 → semana actual, n=1 → semana pasada, n=4 → hace 4 semanas, etc.
+function obtenerSemanaHace(n) {
   const now = new Date();
-  now.setDate(now.getDate() - 7); // retroceder 7 días y calcular la semana ISO de esa fecha
+  now.setDate(now.getDate() - 7*n);
   const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const dayNum = d.getDay() || 7;
   d.setDate(d.getDate() + 4 - dayNum);
   const yearStart = new Date(d.getFullYear(), 0, 1);
   const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-  return `${d.getFullYear()}-W${String(weekNo).padStart(2,'0')}`;
+  return { id: `${d.getFullYear()}-W${String(weekNo).padStart(2,'0')}`, fechaRef: new Date(now) };
+}
+
+function obtenerSemanaAnterior() {
+  return obtenerSemanaHace(1).id;
 }
 
 function obtenerSemanaActual() {
-  // ISO 8601 week number — robusto con zona horaria
-  // Usa fecha local del dispositivo (no UTC) para evitar cambios de semana a medianoche
-  const now = new Date();
-  // Ajustar al jueves de la misma semana ISO (semana empieza en lunes)
-  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const dayNum = d.getDay() || 7; // 1=Lun, 7=Dom
-  d.setDate(d.getDate() + 4 - dayNum); // jueves de esta semana
-  const yearStart = new Date(d.getFullYear(), 0, 1);
-  const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-  return `${d.getFullYear()}-W${String(weekNo).padStart(2,'0')}`;
+  return obtenerSemanaHace(0).id;
 }
 
 function mostrarLoading(msg = 'Cargando...') {
