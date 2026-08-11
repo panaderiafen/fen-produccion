@@ -510,11 +510,15 @@ async function cargarPlanSemana() {
     console.warn('Sheet no disponible, usando caché local:', e);
   }
 
-  // Fallback: localStorage (mismo dispositivo)
+  // Fallback: localStorage (mismo dispositivo). Si tampoco hay nada ahí, vaciar
+  // explícitamente — antes se dejaba lo que hubiera quedado en memoria de una
+  // carga anterior, y el aviso de "copiar semana pasada" nunca aparecía.
   try {
     const local = localStorage.getItem(claveLS);
-    if (local) App.planSemana = JSON.parse(local);
-  } catch(e) {}
+    App.planSemana = local ? JSON.parse(local) : {};
+  } catch(e) {
+    App.planSemana = {};
+  }
 }
 
 function guardarPlanLocal(plan) {
