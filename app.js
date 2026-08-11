@@ -2085,6 +2085,11 @@ function renderVistaPlanificacion() {
       El plan se guarda por semana. Puedes modificarlo en cualquier momento.
       ${esBOL ? 'Para BOL: ingresa la meta por canal (B2C vitrina + B2B pedidos).' : ''}
     </p>
+    ${Object.keys(App.planSemana || {}).length === 0 ? `
+      <div class="card" style="background:#E3F2FD;border:1px solid #1565C0;margin-bottom:16px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <span style="font-size:13px;color:#0D47A1"><i class="ti ti-copy"></i> Esta semana todavía no tiene plan cargado. ¿Copiar el de la semana pasada como punto de partida?</span>
+        <button class="btn-primario" style="font-size:12px;padding:6px 14px;white-space:nowrap" onclick="copiarPlanSemanaAnterior(this)">Copiar semana anterior</button>
+      </div>` : ''}
 
     ${!recetasConsolidadas.length ? `
       <div class="empty-state">
@@ -2214,6 +2219,37 @@ function actualizarTotalFila(input) {
   const total = Array.from(inputs).reduce((s,el) => s + (parseInt(el.value)||0), 0);
   const span = document.getElementById('total-' + rid);
   if (span) span.textContent = total;
+}
+
+async function copiarPlanSemanaAnterior(btn) {
+  if (btn) bloquearBtn(btn, 'Copiando...');
+  try {
+    const hoja = FEN.AREAS[App.areaCodigo].hoja_plan;
+    const semanaAnterior = obtenerSemanaAnterior();
+    const semanaActual = obtenerSemanaActual();
+    const datos = await leerHoja(hoja);
+    const diasCols = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo'];
+    const plan = {};
+    datos.filter(f => f.semana_ID === semanaAnterior).forEach(fila => {
+      const rid = fila.ID_receta;
+      if (rid) plan[rid] = diasCols.map(d => parseInt(fila[d]) || 0);
+    });
+
+    if (!Object.keys(plan).length) {
+      toast('La semana pasada tampoco tiene plan guardado', 'error');
+      if (btn) desbloquearBtn(btn, 'Copiar semana anterior', false);
+      return;
+    }
+
+    await escribirEnSheet('guardar_planificacion', { hoja, semana: semanaActual, plan });
+    App.planSemana = plan;
+    guardarPlanLocal(plan);
+    toast('Plan de la semana pasada copiado — revíselo y ajuste lo que corresponda');
+    renderVistaPlanificacion();
+  } catch(e) {
+    toast('Error al copiar: ' + e.message, 'error');
+    if (btn) desbloquearBtn(btn, 'Copiar semana anterior', false);
+  }
 }
 
 async function guardarPlanificacion() {
@@ -2384,10 +2420,20 @@ function agregarTanda() {
   let ingredientes = [];
   try { ingredientes = JSON.parse(r?.ingredientes_JSON || '[]'); } catch(e) {}
   const inputs = document.querySelectorAll('#tandas-body input[type=number]');
-  const tandas = Array.from(inputs).map(inp => parseInt(inp.value)||0);
-  const usadas = tandas.reduce((s,v)=>s+v,0);
-  const restante = Math.max(0, total - usadas);
-  tandas.push(restante);
+  let tandas = Array.from(inputs).map(inp => parseInt(inp.value)||0);
+
+  // Antes: calculaba "lo que sobra" y lo ponía en la tanda nueva — pero al abrir el
+  // modal la primera tanda ya tiene el 100%, así que "sobraba" 0 y la tanda nueva
+  // quedaba vacía (inservible). Ahora parte la tanda más grande por la mitad.
+  let idxMax = 0;
+  tandas.forEach((v,i) => { if (v > tandas[idxMax]) idxMax = i; });
+  const mitad = Math.floor(tandas[idxMax] / 2);
+  if (mitad > 0) {
+    tandas[idxMax] = tandas[idxMax] - mitad;
+    tandas.push(mitad);
+  } else {
+    tandas.push(0);
+  }
   renderTandasBody(ingredientes, tandas, total);
 }
 
@@ -8134,6 +8180,17 @@ function generarId(areaCodigo) {
   const timestamp = Date.now().toString(36).toUpperCase();
   const random = Math.random().toString(36).substring(2, 5).toUpperCase();
   return `${areaCodigo}${timestamp}${random}`;
+}
+
+function obtenerSemanaAnterior() {
+  const now = new Date();
+  now.setDate(now.getDate() - 7); // retroceder 7 días y calcular la semana ISO de esa fecha
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dayNum = d.getDay() || 7;
+  d.setDate(d.getDate() + 4 - dayNum);
+  const yearStart = new Date(d.getFullYear(), 0, 1);
+  const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+  return `${d.getFullYear()}-W${String(weekNo).padStart(2,'0')}`;
 }
 
 function obtenerSemanaActual() {
