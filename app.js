@@ -1159,23 +1159,65 @@ function calcularCostoFila(el) {
 // Calcula y muestra el total de gramos de la tabla de ingredientes, convirtiendo
 // sub-recetas agregadas en "Unidades" a su peso equivalente (solo para mostrar,
 // igual que se hace al guardar — no afecta el costo).
+let _calcInputTarget = null;
+let _calcExpresion = '';
+
 function calcularFraccionIngrediente(btn) {
   const tr = btn.closest('tr');
   const input = tr.querySelector('input[type="number"]');
   if (!input) return;
+  _calcInputTarget = input;
+  _calcExpresion = '';
+  document.getElementById('calc-display').value = '0';
+  document.getElementById('modal-calculadora').classList.remove('hidden');
+}
 
-  const necesita = prompt('¿Cuántas unidades de esta sub-receta necesita para SU receta?\n(Ej: 1 croissant necesita 1 masa base)', '1');
-  if (necesita === null) return;
-  const rinde = prompt('¿De cuántas unidades rinde el lote completo de esa sub-receta?\n(Ej: 1 lote de Masa Base Pastón rinde para 12 croissants)', '12');
-  if (rinde === null) return;
+function calcInput(val) {
+  const esOperador = ['+','-','*','/'].includes(val);
+  if (_calcExpresion === '0' && !esOperador && val !== '.') _calcExpresion = '';
+  _calcExpresion += val;
+  document.getElementById('calc-display').value = _calcExpresion;
+}
 
-  const n = parseFloat(necesita), r = parseFloat(rinde);
-  if (!n || !r || r <= 0) { toast('Valores inválidos', 'error'); return; }
+function calcClear() {
+  _calcExpresion = '';
+  document.getElementById('calc-display').value = '0';
+}
 
-  const fraccion = n / r;
-  input.value = fraccion.toFixed(4);
-  actualizarTotalIngredientesPreview();
-  toast(`Calculado: ${n} de ${r} = ${fraccion.toFixed(4)}`);
+function calcBorrarUltimo() {
+  _calcExpresion = _calcExpresion.slice(0, -1);
+  document.getElementById('calc-display').value = _calcExpresion || '0';
+}
+
+function calcEquals() {
+  const display = document.getElementById('calc-display');
+  try {
+    // Solo dígitos, operadores básicos, puntos, paréntesis y espacios — nunca eval libre
+    if (!_calcExpresion || !/^[0-9+\-*/(). ]+$/.test(_calcExpresion)) throw new Error('vacío o inválido');
+    const resultado = Function('"use strict"; return (' + _calcExpresion + ')')();
+    if (!isFinite(resultado)) throw new Error('resultado inválido');
+    _calcExpresion = String(Math.round(resultado * 10000) / 10000); // hasta 4 decimales
+    display.value = _calcExpresion;
+  } catch(e) {
+    display.value = 'Error';
+    _calcExpresion = '';
+  }
+}
+
+function calcAplicar() {
+  const valor = parseFloat(_calcExpresion);
+  if (isNaN(valor)) { toast('Calcule un resultado primero (presione =)', 'error'); return; }
+  if (_calcInputTarget) {
+    _calcInputTarget.value = valor.toFixed(4);
+    actualizarTotalIngredientesPreview();
+    toast(`Valor aplicado: ${valor.toFixed(4)}`);
+  }
+  cerrarModalCalculadora();
+}
+
+function cerrarModalCalculadora() {
+  document.getElementById('modal-calculadora').classList.add('hidden');
+  _calcInputTarget = null;
 }
 
 function actualizarTotalIngredientesPreview() {
