@@ -639,6 +639,18 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
             Use <strong>gramos</strong> si se consume en porciones variables de un lote (ej: 190g de masa madre).
           </p>
         </div>
+        <div class="campo">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="f-vende-directo"
+              ${receta?.vende_directo === 'no' ? '' : (receta?.vende_directo === 'si' || tipoActual !== 'sub_receta') ? 'checked' : ''}
+              style="width:auto">
+            Se vende directo al cliente (aparece en el listado para B2B/B2C)
+          </label>
+          <p style="font-size:11px;color:var(--txt3);margin-top:2px">
+            Marcado por defecto en recetas normales, desmarcado en sub-recetas — pero puede cambiarlo.
+            Útil para casos como el Espresso: es ingrediente de otras bebidas <strong>y</strong> también se vende solo.
+          </p>
+        </div>
         ${App.areaCodigo === 'BOL' ? `
         <div class="campo">
           <label>Clasificación</label>
@@ -1532,6 +1544,7 @@ async function guardarReceta(recetaId, btn) {
     porciones_base_unidad:       document.getElementById('f-porciones-unidad')?.value || 'un',
     tipo_preparacion:            document.getElementById('f-tipo-preparacion')?.value ?? '',
     peso_unidad_mb_g:            document.getElementById('f-peso-unidad-mb')?.value || '',
+    vende_directo:                document.getElementById('f-vende-directo')?.checked ? 'si' : 'no',
     planificable_directo:        document.getElementById('f-planificable-directo') ? (document.getElementById('f-planificable-directo').checked ? 'si' : 'no') : 'si',
     peso_harina_total_g:         App.areaCodigo === 'PAN' ? (document.getElementById('f-harina')?.value || '') : '',
     ingredientes_JSON:           JSON.stringify(ingredientes),
