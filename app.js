@@ -651,6 +651,20 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
             Útil para casos como el Espresso: es ingrediente de otras bebidas <strong>y</strong> también se vende solo.
           </p>
         </div>
+        <div class="campo">
+          <label>¿Es una variante interna de otro producto?</label>
+          <select id="f-variante-de" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+            <option value="">— No, es un producto propio —</option>
+            ${App.recetas
+              .filter(r => r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta' && r.ID_receta !== receta?.ID_receta)
+              .map(r => `<option value="${r.ID_receta}" ${receta?.variante_de_id === r.ID_receta ? 'selected' : ''}>${r.nombre}</option>`)
+              .join('')}
+          </select>
+          <p style="font-size:11px;color:var(--txt3);margin-top:4px">
+            Ej: "Hogaza clásica 48 horas" es la misma "Hogaza clásica" para el cliente, solo que con una receta
+            distinta para sábado/feriados — elíjala acá para que no aparezca duplicada en el listado de B2B/B2C.
+          </p>
+        </div>
         ${App.areaCodigo === 'BOL' ? `
         <div class="campo">
           <label>Clasificación</label>
@@ -1545,6 +1559,7 @@ async function guardarReceta(recetaId, btn) {
     tipo_preparacion:            document.getElementById('f-tipo-preparacion')?.value ?? '',
     peso_unidad_mb_g:            document.getElementById('f-peso-unidad-mb')?.value || '',
     vende_directo:                document.getElementById('f-vende-directo')?.checked ? 'si' : 'no',
+    variante_de_id:               document.getElementById('f-variante-de')?.value || '',
     planificable_directo:        document.getElementById('f-planificable-directo') ? (document.getElementById('f-planificable-directo').checked ? 'si' : 'no') : 'si',
     peso_harina_total_g:         App.areaCodigo === 'PAN' ? (document.getElementById('f-harina')?.value || '') : '',
     ingredientes_JSON:           JSON.stringify(ingredientes),
