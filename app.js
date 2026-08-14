@@ -5770,6 +5770,7 @@ async function eliminarReceta(recetaId, area) {
       desbloquearBtn(btn, '<i class="ti ti-trash"></i> Eliminar', false);
       return;
     }
+    App._ultimoMsgEliminar = data.msg;
   } catch(e) {
     console.error('[fën] Error eliminando:', e);
     toast('Error de conexión al eliminar', 'error');
@@ -5786,7 +5787,7 @@ async function eliminarReceta(recetaId, area) {
 
   document.getElementById('modal-eliminar-receta').classList.add('hidden');
   desbloquearBtn(btn, '<i class="ti ti-trash"></i> Eliminar', true);
-  toast('Receta eliminada');
+  toast(App._ultimoMsgEliminar || 'Receta eliminada');
 
   // Recargar maestro desde Sheet
   await renderVistaMaestroAdmin();
