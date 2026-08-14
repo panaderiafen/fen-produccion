@@ -6014,7 +6014,7 @@ async function renombrarMPUI(mpId, nombreActual) {
   const nuevoNombre = prompt(`Nuevo nombre para "${nombreActual}":`, nombreActual);
   if (!nuevoNombre || !nuevoNombre.trim() || nuevoNombre.trim() === nombreActual) return;
 
-  if (!confirm(`¿Renombrar "${nombreActual}" a "${nuevoNombre.trim()}"?\n\nSe actualizará automáticamente en todas las recetas que la usan. Las que estaban aprobadas volverán a "en prueba" para revisión (el costo no cambia, solo el nombre).`)) return;
+  if (!confirm(`¿Renombrar "${nombreActual}" a "${nuevoNombre.trim()}"?\n\nSe actualizará automáticamente en todas las recetas que la usan. Las que estaban aprobadas quedarán pendientes de aprobación, listas para que las revise en Aprobaciones (el costo no cambia, solo el nombre).`)) return;
 
   toast('Renombrando, puede tardar unos segundos...');
   try {
@@ -6134,7 +6134,7 @@ async function cambiarUnidadCompra(mpId, unidadActual, nombre) {
   await escribirEnSheet('editar_campo_mp', { ID_MP: mpId, campo: 'unidad_compra', valor: nuevaUnidad });
   // 2. Volver a enviar el costo_neto para que el backend recalcule costo_bruto/por_kg/por_gramo
   //    ya con la unidad correcta (evita que quede desfasado el costo por unidad/gramo)
-  await escribirEnSheet('editar_mp', { ID_MP: mpId, costo_neto: item.costo_neto || 0 });
+  const resp = await escribirEnSheet('editar_mp', { ID_MP: mpId, costo_neto: item.costo_neto || 0 });
 
   item.unidad_compra = nuevaUnidad;
   const bruto = (parseFloat(item.costo_neto) || 0) * 1.19;
@@ -6142,6 +6142,13 @@ async function cambiarUnidadCompra(mpId, unidadActual, nombre) {
   item.costo_por_kg = bruto;
 
   toast(`"${nombre}" ahora se compra por "${nuevaUnidad}" — costo recalculado`);
+  if (resp?.recetasActualizadas?.length) {
+    alert(
+      `Se recalculó el costo automáticamente en ${resp.recetasActualizadas.length} receta(s) que usan "${nombre}":\n\n` +
+      resp.recetasActualizadas.join('\n') +
+      `\n\nQuedaron pendientes de aprobación — van a aparecerle en Aprobaciones.`
+    );
+  }
   Cache.invalidar('mp_maestro');
   renderVistaMP();
 }
@@ -8182,7 +8189,7 @@ async function editarImpuestosMP(mpId) {
   const impPct = parseFloat(nuevoImp);
   if (isNaN(impPct)) { toast('Impuesto adicional inválido', 'error'); return; }
 
-  await escribirEnSheet('editar_mp', {
+  const resp = await escribirEnSheet('editar_mp', {
     ID_MP: mpId,
     costo_neto: mp.costo_neto || 0,
     iva_pct: ivaPct / 100,
@@ -8197,6 +8204,13 @@ async function editarImpuestosMP(mpId) {
   mp.costo_por_kg = bruto;
 
   toast('Impuestos actualizados');
+  if (resp?.recetasActualizadas?.length) {
+    alert(
+      `Se recalculó el costo automáticamente en ${resp.recetasActualizadas.length} receta(s) que usan "${mp.nombre}":\n\n` +
+      resp.recetasActualizadas.join('\n') +
+      `\n\nQuedaron pendientes de aprobación — van a aparecerle en Aprobaciones.`
+    );
+  }
   Cache.invalidar('mp_maestro');
   renderVistaMP();
 }
@@ -8239,7 +8253,16 @@ function editarMP(mpId) {
     payload.observaciones = (obsSinNotaVieja + ' ' + notaFlete).trim();
   }
 
-  escribirEnSheet('editar_mp', payload);
+  escribirEnSheet('editar_mp', payload).then(resp => {
+    if (resp?.recetasActualizadas?.length) {
+      alert(
+        `✓ Precio actualizado.\n\n` +
+        `Se recalculó el costo automáticamente en ${resp.recetasActualizadas.length} receta(s) que usan "${mp.nombre}":\n\n` +
+        resp.recetasActualizadas.join('\n') +
+        `\n\nQuedaron pendientes de aprobación — van a aparecerle en Aprobaciones.`
+      );
+    }
+  });
   mp.costo_neto = precioFinal;
   if (payload.observaciones !== undefined) mp.observaciones = payload.observaciones;
   toast(fletePct > 0 ? `Precio actualizado: $${precio} + flete $${fletePct} = ${clp(precioFinal)}` : 'Precio actualizado');
