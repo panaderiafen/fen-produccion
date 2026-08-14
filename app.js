@@ -6167,6 +6167,8 @@ function renderVistaMP() {
               ? {c:'#2E7D32',bg:'#E8F5E9',l:'Activa'}
               : m.estado==='pendiente'
               ? {c:'#1565C0',bg:'#E3F2FD',l:'Pendiente'}
+              : m.estado==='reemplazada'
+              ? {c:'#E65100',bg:'#FFF3E0',l:'Reemplazada' + (m.reemplazada_por ? ` por ${App.materiasPrimas.find(x=>x.ID_MP===m.reemplazada_por)?.nombre || m.reemplazada_por}` : '')}
               : {c:'#9E9E9E',bg:'#F5F5F5',l:'Inactiva'};
             return `<tr>
               <td class="td-nombre">${m.nombre}
@@ -8338,12 +8340,40 @@ function filtrarResultadosBuscarMP() {
   }
 
   const areaActual = App.areaCodigo || '';
-  const coincidencias = App.materiasPrimas.filter(m => _normTexto(m.nombre).includes(q));
+  const coincidencias = App.materiasPrimas.filter(m =>
+    _normTexto(m.nombre).includes(q) && m.estado !== 'inactiva'
+  );
 
   if (!coincidencias.length) {
     resultados.innerHTML = '<p style="font-size:12px;color:var(--txt3);text-align:center;padding:20px 0">No se encontró nada con ese nombre.</p>';
   } else {
     resultados.innerHTML = coincidencias.map(m => {
+      // Reemplazada: ya no se usa, fue fusionada con otra MP — no ofrecer habilitarla.
+      // Se muestra chica y discreta (no compite con los resultados accionables), pero
+      // no se oculta del todo: si alguien la busca por su nombre viejo, necesita ver
+      // hacia dónde migró para no terminar creando el duplicado de nuevo.
+      if (m.estado === 'reemplazada') {
+        const vigente = App.materiasPrimas.find(x => x.ID_MP === m.reemplazada_por);
+        return `
+          <div style="padding:6px 12px;border-left:2px solid #FFCC80;margin-bottom:6px">
+            <span style="font-size:11px;color:var(--txt3);text-decoration:line-through">${m.nombre}</span>
+            <span style="font-size:11px;color:#E65100"> → reemplazada por "${vigente?.nombre || 'otra MP'}", búsquela por ese nombre</span>
+          </div>`;
+      }
+
+      // Pendiente/recibida: todavía no fue aprobada por Admin, no hay nada que habilitar aún.
+      if (m.estado === 'pendiente' || m.estado === 'recibida') {
+        return `
+          <div style="padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:8px;background:var(--bg)">
+            <div style="font-weight:600;font-size:13px">${m.nombre}</div>
+            <p style="font-size:11px;color:#1565C0;margin:4px 0 0">
+              <i class="ti ti-clock-pause"></i> Ya fue solicitada y está esperando que Admin la revise —
+              todavía no se puede habilitar para otra área.
+            </p>
+          </div>`;
+      }
+
+      // Activa: caso normal — ofrecer habilitación si falta, o avisar que ya está disponible
       const areas = (m.areas_habilitadas || '').split(',').map(a=>a.trim()).filter(Boolean);
       const yaHabilitada = !m.areas_habilitadas || areas.includes(areaActual);
       const areasLabel = areas.length ? areas.join(', ') : 'todas las áreas';
