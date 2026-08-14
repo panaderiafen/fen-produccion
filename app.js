@@ -1013,7 +1013,7 @@ function agregarInsumo(data = {}) {
   const insumosActivos = App.materiasPrimas.filter(m =>
     m.estado === 'activa' && m.tipo === 'insumo' &&
     (!m.areas_habilitadas || m.areas_habilitadas.split(',').map(a=>a.trim()).includes(areaCode))
-  );
+  ).sort((a,b) => (a.nombre||'').localeCompare(b.nombre||'', 'es'));
 
   const options = insumosActivos.map(m =>
     `<option value="${m.ID_MP}" data-costo="${m.costo_por_gramo || 0}"
@@ -1118,11 +1118,11 @@ function agregarIngrediente(data = {}) {
   const mpActivas  = App.materiasPrimas.filter(m =>
     m.estado === 'activa' && m.tipo !== 'sub_receta' &&
     (!m.areas_habilitadas || m.areas_habilitadas.split(',').map(a=>a.trim()).includes(areaCode))
-  );
+  ).sort((a,b) => (a.nombre||'').localeCompare(b.nombre||'', 'es'));
   const subRecetas = App.materiasPrimas.filter(m =>
     m.estado === 'activa' && m.tipo === 'sub_receta' &&
     (!m.areas_habilitadas || m.areas_habilitadas.split(',').map(a=>a.trim()).includes(areaCode))
-  );
+  ).sort((a,b) => (a.nombre||'').localeCompare(b.nombre||'', 'es'));
 
   const optionsMP = mpActivas.map(m =>
     `<option value="${m.ID_MP}" data-costo="${m.costo_por_gramo || 0}"
@@ -3355,7 +3355,7 @@ async function abrirModalRegistroMerma() {
   const mpArea = App.materiasPrimas.filter(m =>
     m.estado === 'activa' && m.tipo !== 'sub_receta' &&
     (!m.areas_habilitadas || m.areas_habilitadas.split(',').map(a=>a.trim()).includes(App.areaCodigo))
-  );
+  ).sort((a,b) => (a.nombre||'').localeCompare(b.nombre||'', 'es'));
   const selMP = document.getElementById('merma-mp-id');
   selMP.innerHTML = '<option value="">— Seleccionar —</option>' + mpArea.map(m => {
     const unidadCompra = (m.unidad_compra || 'kg').toLowerCase();
@@ -5907,7 +5907,7 @@ function asignarMPExistente(mpIdSolicitud, nombreSolicitud) {
   // Mostrar todas las MPs activas para que admin pueda asignar cualquiera
   const existentes = App.materiasPrimas.filter(m =>
     (m.estado === 'activa' || m.estado === 'recibida') && m.ID_MP !== mpIdSolicitud
-  );
+  ).sort((a,b) => (a.nombre||'').localeCompare(b.nombre||'', 'es'));
   const modal = document.getElementById('modal-asignar-mp');
   document.getElementById('asignar-mp-nueva-id').value = mpIdSolicitud;
   document.getElementById('asignar-mp-area').value = areaCode;
