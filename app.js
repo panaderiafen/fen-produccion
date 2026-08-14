@@ -1703,15 +1703,29 @@ function renderVistaMisRecetas() {
         const recetasNormales = recetas.filter(r => r.tipo_receta !== 'sub_receta');
         const subRecetas = recetas.filter(r => r.tipo_receta === 'sub_receta');
 
+        // Revisa si una MP marcada como "pendiente" en una receta ya fue resuelta por
+        // Admin (aprobada directo, o fusionada con una MP existente) — misma lógica
+        // que ya usa el formulario de "Nueva receta" al agregar ingredientes.
+        const mpYaResuelta = item => {
+          const mpActual = App.materiasPrimas.find(m => m.ID_MP === item.id);
+          if (!mpActual) return false;
+          if (mpActual.estado === 'activa') return true;
+          if (mpActual.estado === 'reemplazada' && mpActual.reemplazada_por) return true;
+          return false;
+        };
+
         const filaHtml = r => {
           const est = FEN.ESTADOS[r.estado] || FEN.ESTADOS.borrador;
           const esConsolidada = r.estado === 'consolidada';
           let ingredientesFila = [], insumosFila = [];
           try { ingredientesFila = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
           try { insumosFila = JSON.parse(r.insumos_JSON || '[]'); } catch(e) {}
-          const tieneMPPendiente =
-            ingredientesFila.some(ing => ing.pendiente || ing.id === '__pendiente__') ||
-            insumosFila.some(ins => ins.pendiente || ins.id === '__pendiente__');
+          const itemsPendientesMarcados = [
+            ...ingredientesFila.filter(ing => ing.pendiente || ing.id === '__pendiente__'),
+            ...insumosFila.filter(ins => ins.pendiente || ins.id === '__pendiente__'),
+          ];
+          const tieneMPPendiente = itemsPendientesMarcados.some(item => !mpYaResuelta(item));
+          const tieneMPAsignada = !tieneMPPendiente && itemsPendientesMarcados.some(item => mpYaResuelta(item));
           return `<tr>
             <td class="td-nombre">
               ${r.nombre || r.ID_receta}
@@ -1719,6 +1733,7 @@ function renderVistaMisRecetas() {
               ${esConsolidada ? '<span style="font-size:10px;color:#2E7D32;margin-left:4px"><i class="ti ti-lock"></i></span>' : ''}
               ${App.areaCodigo === 'BOL' ? `<span style="font-size:10px;color:${r.tipo_preparacion?'var(--txt3)':'#C62828'};margin-left:6px">· ${formatearClasificacionBOL(r.tipo_preparacion)}</span>` : ''}
               ${tieneMPPendiente ? `<span style="font-size:10px;font-weight:600;color:#C62828;background:#FFEBEE;padding:1px 7px;border-radius:99px;margin-left:6px"><i class="ti ti-clock-pause"></i> Espera asignación de MP</span>` : ''}
+              ${tieneMPAsignada ? `<span style="font-size:10px;font-weight:600;color:#2E7D32;background:#E8F5E9;padding:1px 7px;border-radius:99px;margin-left:6px"><i class="ti ti-check"></i> MP asignada — reemplácela en la receta</span>` : ''}
             </td>
             <td style="text-align:center">
               <span class="estado-badge" style="color:${est.color};background:${est.bg}">${est.label}</span>
