@@ -756,6 +756,10 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
       </div>
     </div>
 
+    <button type="button" class="btn-secundario" style="width:100%;margin-bottom:16px;padding:10px" onclick="abrirBuscarMP(null,null)">
+      <i class="ti ti-search"></i> ¿Ya existe la materia prima que necesito? Buscar antes de agregar ingredientes
+    </button>
+
     <div class="card" style="margin-bottom:16px">
       <div class="card-head">
         <i class="ti ti-basket"></i> Ingredientes
