@@ -333,6 +333,7 @@ function renderSidebar() {
     const items = [
       { id: 'nueva-receta',      icon: 'ti-plus',           label: 'Nueva receta / sub receta' },
       { id: 'mis-recetas',       icon: 'ti-clipboard-list', label: 'Mis recetas'        },
+      { id: 'buscar-mp',         icon: 'ti-search',         label: 'Buscar materia prima' },
       { id: 'planificacion',     icon: 'ti-calendar-week',  label: 'Plan semanal'       },
       { id: 'recetas-del-dia', icon: 'ti-flame', label: 'Recetas del día' },
       { id: 'registro-merma',  icon: 'ti-trash', label: 'Registro de merma' },
@@ -416,6 +417,7 @@ function navegarA(vistaId) {
   switch(vistaId) {
     case 'nueva-receta':    renderVistaFormReceta(null, 'receta'); break;
     case 'mis-recetas':     renderVistaMisRecetas(); cargarAvisos(); break;
+    case 'buscar-mp':       mostrarVista('empty'); abrirBuscarMP(null, null); break;
     case 'planificacion':
       (async () => {
         await cargarPlanSemana();
@@ -1033,7 +1035,7 @@ function agregarInsumo(data = {}) {
 }
 
 function onChangeInsumoSelect(sel) {
-  if (sel.value === '__nuevo__') { solicitarNuevoInsumo(); sel.value = ''; return; }
+  if (sel.value === '__nuevo__') { abrirBuscarMP(sel, 'insumo'); sel.value = ''; return; }
 }
 
 function solicitarNuevoInsumo() {
@@ -1181,7 +1183,7 @@ function agregarIngrediente(data = {}) {
 function calcularCostoFila(el) {
   const tr = el.closest('tr');
   const select = tr.querySelector('select');
-  if (select.value === '__nueva__') { solicitarNuevaMP(); select.value = ''; return; }
+  if (select.value === '__nueva__') { abrirBuscarMP(select, 'ingrediente'); select.value = ''; return; }
 }
 
 // Calcula y muestra el total de gramos de la tabla de ingredientes, convirtiendo
@@ -1286,7 +1288,7 @@ function actualizarTotalIngredientesPreview() {
 }
 
 function onChangeIngredienteSelect(sel) {
-  if (sel.value === '__nueva__') { solicitarNuevaMP(); sel.value = ''; return; }
+  if (sel.value === '__nueva__') { abrirBuscarMP(sel, 'ingrediente'); sel.value = ''; return; }
   // Auto-switch to unidades if sub receta in BOL
   if (App.areaCodigo === 'BOL') {
     const esSR = App.materiasPrimas.find(m => m.ID_MP === sel.value && (m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR')));
@@ -1440,7 +1442,7 @@ async function guardarReceta(recetaId, btn) {
     const select = tr.querySelector('select');
     const inputs = tr.querySelectorAll('input[type="number"]');
 
-    // Handle temporary (pending) ingredients
+    // Handle temporary (pending) ingredients — MP realmente nueva, sin ID todavía
     if (select?.disabled && select.options[0]?.text.includes('pendiente')) {
       const nombre = select.options[0].text.replace('⏳ ', '').replace(' (pendiente habilitación)', '').trim();
       const cantidad = parseFloat(inputs[0]?.value) || 0;
@@ -1456,6 +1458,29 @@ async function guardarReceta(recetaId, btn) {
         pct: 0,
         costo: 0,
         pendiente: true
+      });
+      return;
+    }
+
+    // Handle "esperando habilitación" — MP ya existe (ID y costo reales), solo
+    // falta que Admin habilite el área. A diferencia del caso anterior, el costo
+    // sí se calcula bien desde ahora.
+    if (select?.disabled && select.options[0]?.text.includes('esperando habilitación')) {
+      const nombre = select.options[0].text.replace('⏳ ', '').replace(' (esperando habilitación)', '').trim();
+      const cantidad = parseFloat(inputs[0]?.value) || 0;
+      const unidad = inputs[0]?.dataset?.unidad || 'gramos';
+      const mpId = select.dataset?.mpId || '';
+      const costoPorGramo = parseFloat(select.dataset?.costo) || 0;
+      ingredientes.push({
+        id: mpId,
+        nombre,
+        gramos: unidad === 'gramos' ? cantidad : 0,
+        unidades: unidad === 'unidades' ? cantidad : null,
+        ml: unidad === 'ml' ? cantidad : null,
+        unidad_receta: unidad,
+        pct: 0,
+        costo: costoPorGramo * cantidad,
+        esperando_habilitacion: true
       });
       return;
     }
@@ -1519,6 +1544,23 @@ async function guardarReceta(recetaId, btn) {
         unidad_receta: 'unidades',
         costo: 0,
         pendiente: true
+      });
+      return;
+    }
+
+    // Insumo esperando habilitación (MP ya existe, solo falta el área)
+    if (select?.disabled && select.options[0]?.text.includes('esperando habilitación')) {
+      const nombre = select.options[0].text.replace('⏳ ', '').replace(' (esperando habilitación)', '').trim();
+      const cantidad = parseFloat(input?.value) || 0;
+      const insId = select.dataset?.mpId || '';
+      const costoPorGramo = parseFloat(select.dataset?.costo) || 0;
+      insumos.push({
+        id: insId,
+        nombre,
+        unidades: cantidad,
+        unidad_receta: 'unidades',
+        costo: costoPorGramo * cantidad,
+        esperando_habilitacion: true
       });
       return;
     }
@@ -1619,8 +1661,8 @@ async function enviarARevision(recetaId) {
   const r = App.recetas.find(x => x.ID_receta === recetaId);
 
   // Bloquear si algún ingrediente/insumo todavía apunta a una MP recién solicitada
-  // (sin asignar por Admin) — evita que la receta quede aprobada con una referencia
-  // rota que nadie se acuerda de resolver después.
+  // (sin asignar por Admin) o a una MP existente esperando habilitación para el área
+  // — evita que la receta quede aprobada con una referencia rota o no disponible.
   if (r) {
     let ingredientes = [], insumos = [];
     try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
@@ -1629,12 +1671,25 @@ async function enviarARevision(recetaId) {
       ...ingredientes.filter(ing => ing.pendiente || ing.id === '__pendiente__').map(ing => ing.nombre),
       ...insumos.filter(ins => ins.pendiente || ins.id === '__pendiente__').map(ins => ins.nombre),
     ];
+    const esperandoHabilitacion = [
+      ...ingredientes.filter(ing => ing.esperando_habilitacion).map(ing => ing.nombre),
+      ...insumos.filter(ins => ins.esperando_habilitacion).map(ins => ins.nombre),
+    ];
     if (pendientes.length) {
       alert(
         `Esta receta no se puede enviar a revisión todavía.\n\n` +
         `Está esperando que Admin asigne la materia prima oficial para:\n` +
         `${pendientes.map(n => '• ' + n).join('\n')}\n\n` +
         `Apenas Admin la asigne, le va a llegar un aviso — ahí podrá reemplazarla en la receta y recién entonces enviarla a revisión.`
+      );
+      return;
+    }
+    if (esperandoHabilitacion.length) {
+      alert(
+        `Esta receta no se puede enviar a revisión todavía.\n\n` +
+        `Está esperando que Admin habilite estas materias primas para su área:\n` +
+        `${esperandoHabilitacion.map(n => '• ' + n).join('\n')}\n\n` +
+        `Apenas Admin las habilite, va a poder enviarla a revisión sin ningún paso extra.`
       );
       return;
     }
@@ -1714,6 +1769,15 @@ function renderVistaMisRecetas() {
           return false;
         };
 
+        // Para "esperando habilitación", la MP ya es real — lo único que falta es
+        // que el área actual aparezca en su lista de áreas habilitadas.
+        const habilitacionYaResuelta = item => {
+          const mpActual = App.materiasPrimas.find(m => m.ID_MP === item.id);
+          if (!mpActual) return false;
+          if (!mpActual.areas_habilitadas) return true; // sin restricción = habilitada para todas
+          return mpActual.areas_habilitadas.split(',').map(a=>a.trim()).includes(App.areaCodigo);
+        };
+
         const filaHtml = r => {
           const est = FEN.ESTADOS[r.estado] || FEN.ESTADOS.borrador;
           const esConsolidada = r.estado === 'consolidada';
@@ -1724,8 +1788,14 @@ function renderVistaMisRecetas() {
             ...ingredientesFila.filter(ing => ing.pendiente || ing.id === '__pendiente__'),
             ...insumosFila.filter(ins => ins.pendiente || ins.id === '__pendiente__'),
           ];
+          const itemsEsperandoHabilitacion = [
+            ...ingredientesFila.filter(ing => ing.esperando_habilitacion),
+            ...insumosFila.filter(ins => ins.esperando_habilitacion),
+          ];
           const tieneMPPendiente = itemsPendientesMarcados.some(item => !mpYaResuelta(item));
           const tieneMPAsignada = !tieneMPPendiente && itemsPendientesMarcados.some(item => mpYaResuelta(item));
+          const tieneHabilitacionPendiente = itemsEsperandoHabilitacion.some(item => !habilitacionYaResuelta(item));
+          const tieneHabilitacionResuelta = !tieneHabilitacionPendiente && itemsEsperandoHabilitacion.some(item => habilitacionYaResuelta(item));
           return `<tr>
             <td class="td-nombre">
               ${r.nombre || r.ID_receta}
@@ -1734,6 +1804,8 @@ function renderVistaMisRecetas() {
               ${App.areaCodigo === 'BOL' ? `<span style="font-size:10px;color:${r.tipo_preparacion?'var(--txt3)':'#C62828'};margin-left:6px">· ${formatearClasificacionBOL(r.tipo_preparacion)}</span>` : ''}
               ${tieneMPPendiente ? `<span style="font-size:10px;font-weight:600;color:#C62828;background:#FFEBEE;padding:1px 7px;border-radius:99px;margin-left:6px"><i class="ti ti-clock-pause"></i> Espera asignación de MP</span>` : ''}
               ${tieneMPAsignada ? `<span style="font-size:10px;font-weight:600;color:#2E7D32;background:#E8F5E9;padding:1px 7px;border-radius:99px;margin-left:6px"><i class="ti ti-check"></i> MP asignada — reemplácela en la receta</span>` : ''}
+              ${tieneHabilitacionPendiente ? `<span style="font-size:10px;font-weight:600;color:#C62828;background:#FFEBEE;padding:1px 7px;border-radius:99px;margin-left:6px"><i class="ti ti-clock-pause"></i> Espera habilitación de MP</span>` : ''}
+              ${tieneHabilitacionResuelta ? `<span style="font-size:10px;font-weight:600;color:#2E7D32;background:#E8F5E9;padding:1px 7px;border-radius:99px;margin-left:6px"><i class="ti ti-check"></i> MP habilitada — ya puede enviarla</span>` : ''}
             </td>
             <td style="text-align:center">
               <span class="estado-badge" style="color:${est.color};background:${est.bg}">${est.label}</span>
@@ -5912,10 +5984,56 @@ async function confirmarAsignarMP(btn) {
 }
 
 // ── ADMIN: MATERIAS PRIMAS ────────────────────────────────────
+async function cargarSolicitudesHabilitacion() {
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_solicitudes_habilitacion' }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' });
+    const data = await res.json();
+    App._solicitudesHabilitacion = data.solicitudes || [];
+    if (App.vistaActual === 'materias-primas') renderVistaMP();
+  } catch(e) {
+    console.warn('[fën] No se pudieron cargar solicitudes de habilitación:', e.message);
+    App._solicitudesHabilitacion = [];
+  }
+}
+
+async function habilitarMPDesdeSolicitud(id, mpId, areaCodigo, nombreMP, btn) {
+  if (btn) bloquearBtn(btn, 'Habilitando...');
+  try {
+    const resp = await escribirEnSheet('resolver_solicitud_habilitacion', { id, mp_id: mpId, area_codigo: areaCodigo });
+    if (resp?.ok) {
+      toast(`"${nombreMP}" habilitada para ${areaCodigo}`);
+      App._solicitudesHabilitacion = (App._solicitudesHabilitacion || []).filter(s => s.id !== id);
+      const mpLocal = App.materiasPrimas.find(m => m.ID_MP === mpId);
+      if (mpLocal) {
+        const areas = (mpLocal.areas_habilitadas || '').split(',').map(a=>a.trim()).filter(Boolean);
+        if (!areas.includes(areaCodigo)) areas.push(areaCodigo);
+        mpLocal.areas_habilitadas = areas.join(',');
+      }
+      renderVistaMP();
+    } else {
+      toast('No se pudo habilitar: ' + (resp?.msg || ''), 'error');
+      if (btn) desbloquearBtn(btn, '<i class="ti ti-check"></i> Habilitar', true);
+    }
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+    if (btn) desbloquearBtn(btn, '<i class="ti ti-check"></i> Habilitar', true);
+  }
+}
+
 function renderVistaMP() {
   const mp = App.materiasPrimas;
   const filtro = App._filtroMP || 'todos';
   const busqueda = (App._busquedaMP || '').trim().toLowerCase();
+
+  // Solicitudes de habilitación (MP que ya existe, esperando que se habilite
+  // para otra área) — viven en su propia hoja, se cargan aparte de App.materiasPrimas
+  if (App._solicitudesHabilitacion === undefined) {
+    App._solicitudesHabilitacion = [];
+    cargarSolicitudesHabilitacion();
+  }
+  const solicitudesHabilitacion = App._solicitudesHabilitacion || [];
+
   // "Sin costo" significa cosas distintas según el tipo: para MP/Insumo es costo_neto=0
   // (nunca se le puso precio); para sub-recetas es costo_por_gramo=0 (nunca se aprobó,
   // o sus propios ingredientes también están sin costo) — costo_neto siempre es $0 en
@@ -5950,6 +6068,29 @@ function renderVistaMP() {
         onfocus="App._buscarMPFocused=true"
         style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
     </div>
+    ${solicitudesHabilitacion.length ? `
+      <div class="card" style="margin-bottom:16px;border-color:#90CAF9">
+        <div class="card-head" style="background:#E3F2FD;color:#1565C0">
+          <i class="ti ti-bell"></i>
+          Solicitudes de habilitación (${solicitudesHabilitacion.length})
+        </div>
+        ${solicitudesHabilitacion.map(s => {
+          const areaLabel = FEN.AREAS[s.area_codigo]?.nombre || s.area_codigo;
+          return `
+          <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <div style="flex:1;min-width:180px">
+              <div style="font-size:14px;font-weight:600">${s.mp_nombre}</div>
+              <div style="font-size:11px;color:var(--txt2);margin-top:2px">
+                <strong>${areaLabel}</strong> quiere usar esta MP que ya existe en el sistema — no necesita revisión de precio, solo habilitar el área.
+              </div>
+            </div>
+            <button class="btn-primario" style="font-size:12px;padding:5px 10px"
+              onclick="habilitarMPDesdeSolicitud('${s.id}','${s.mp_id}','${s.area_codigo}','${(s.mp_nombre||'').replace(/'/g,"\\'")}',this)">
+              <i class="ti ti-check"></i> Habilitar
+            </button>
+          </div>`;
+        }).join('')}
+      </div>` : ''}
     ${pendientes.length ? `
       <div class="card" style="margin-bottom:16px;border-color:#FFA726">
         <div class="card-head" style="background:#FFF3E0;color:#E65100">
@@ -8154,6 +8295,141 @@ function abrirModalCosteoReceta(recetaId) {
 }
 
 // ── MP: SOLICITAR Y EDITAR ────────────────────────────────────
+// ── BUSCADOR DE MP EXISTENTE (evita duplicados por MP no habilitada en el área) ──
+let _buscarMPContexto = null; // referencia al <select> que abrió el buscador, o null si es standalone
+let _buscarMPTipo = 'ingrediente'; // 'ingrediente' o 'insumo' — determina qué fallback de creación usar
+
+function _normTexto(s) {
+  return (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
+function abrirBuscarMP(selectEl, tipo) {
+  _buscarMPContexto = selectEl || null;
+  _buscarMPTipo = tipo || 'ingrediente';
+  const input = document.getElementById('buscar-mp-input');
+  const resultados = document.getElementById('buscar-mp-resultados');
+  const fallback = document.getElementById('buscar-mp-fallback');
+  if (input) input.value = '';
+  if (resultados) resultados.innerHTML = '<p style="font-size:12px;color:var(--txt3);text-align:center;padding:20px 0">Escriba para buscar...</p>';
+  if (fallback) fallback.innerHTML = '';
+  document.getElementById('modal-buscar-mp')?.classList.remove('hidden');
+  setTimeout(() => input?.focus(), 50);
+}
+
+function cerrarModalBuscarMP() {
+  document.getElementById('modal-buscar-mp')?.classList.add('hidden');
+  _buscarMPContexto = null;
+}
+
+function filtrarResultadosBuscarMP() {
+  const q = _normTexto(document.getElementById('buscar-mp-input')?.value);
+  const resultados = document.getElementById('buscar-mp-resultados');
+  const fallback = document.getElementById('buscar-mp-fallback');
+  if (!resultados) return;
+
+  if (q.length < 2) {
+    resultados.innerHTML = '<p style="font-size:12px;color:var(--txt3);text-align:center;padding:20px 0">Escriba al menos 2 letras...</p>';
+    fallback.innerHTML = '';
+    return;
+  }
+
+  const areaActual = App.areaCodigo || '';
+  const coincidencias = App.materiasPrimas.filter(m => _normTexto(m.nombre).includes(q));
+
+  if (!coincidencias.length) {
+    resultados.innerHTML = '<p style="font-size:12px;color:var(--txt3);text-align:center;padding:20px 0">No se encontró nada con ese nombre.</p>';
+  } else {
+    resultados.innerHTML = coincidencias.map(m => {
+      const areas = (m.areas_habilitadas || '').split(',').map(a=>a.trim()).filter(Boolean);
+      const yaHabilitada = !m.areas_habilitadas || areas.includes(areaActual);
+      const areasLabel = areas.length ? areas.join(', ') : 'todas las áreas';
+      return `
+        <div style="padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:8px">
+          <div style="font-weight:600;font-size:13px">${m.nombre}</div>
+          <div style="font-size:11px;color:var(--txt3);margin:2px 0 8px">Habilitada hoy para: ${areasLabel}</div>
+          ${yaHabilitada
+            ? `<p style="font-size:11px;color:#2E7D32;margin:0"><i class="ti ti-check"></i> Ya está disponible para su área — selecciónela desde el desplegable normal.</p>`
+            : `<button class="btn-primario" style="font-size:12px;padding:5px 12px" onclick="solicitarHabilitacionDesdeModal('${m.ID_MP}','${(m.nombre||'').replace(/'/g,"\\'")}')">
+                 Solicitar habilitación para mi área
+               </button>`}
+        </div>`;
+    }).join('');
+  }
+
+  // Fallback de "crear nueva" — solo tiene sentido si venimos del contexto de una receta
+  if (_buscarMPContexto) {
+    fallback.innerHTML = `
+      <p style="font-size:12px;color:var(--txt3);margin-bottom:8px">¿Ninguna de estas es lo que busca?</p>
+      <button class="btn-secundario" style="width:100%" onclick="pasarACrearMPNueva()">
+        <i class="ti ti-plus"></i> Crear como materia prima nueva
+      </button>`;
+  } else {
+    fallback.innerHTML = '';
+  }
+}
+
+function pasarACrearMPNueva() {
+  const selectEl = _buscarMPContexto;
+  const tipo = _buscarMPTipo;
+  cerrarModalBuscarMP();
+  if (tipo === 'insumo') solicitarNuevoInsumo();
+  else solicitarNuevaMP(selectEl);
+}
+
+async function solicitarHabilitacionDesdeModal(mpId, mpNombre) {
+  const areaActual = App.areaCodigo || '';
+  const selectEl = _buscarMPContexto;
+  const tipo = _buscarMPTipo;
+  cerrarModalBuscarMP();
+
+  const resp = await escribirEnSheet('solicitar_habilitacion_mp', {
+    mp_id: mpId, mp_nombre: mpNombre, area_codigo: areaActual
+  });
+
+  if (!resp?.ok) { toast('No se pudo enviar la solicitud', 'error'); return; }
+  toast(`Solicitud enviada — "${mpNombre}" quedará disponible apenas Admin la habilite`);
+
+  // Si venía de un ingrediente/insumo de receta, agrega la fila ya mismo con el ID
+  // y costo reales (la MP ya existe, solo falta habilitar el área) — usa el mismo
+  // patrón de <select disabled> que ya usa el sistema para MP pendientes, así el
+  // guardado la detecta igual. Queda bloqueado el envío a revisión hasta que se
+  // resuelva — se detecta solo, sin pasos extra de la jefa.
+  if (selectEl) {
+    const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
+    const costoPorGramo = mp?.costo_por_gramo || 0;
+    const tr = selectEl.closest('tr');
+    if (tr) {
+      const tbody = tr.parentElement;
+      const nuevaTr = document.createElement('tr');
+      nuevaTr.style.background = '#FFF9C4';
+      const inputCantidad = tr.querySelector('input[type="number"]');
+      const cantidadPrevia = inputCantidad?.value || '';
+      if (tipo === 'insumo') {
+        nuevaTr.innerHTML = `
+          <td><select disabled style="color:#F57C00;font-weight:500" data-mp-id="${mpId}" data-costo="${costoPorGramo}">
+            <option>⏳ ${mpNombre} (esperando habilitación)</option>
+          </select></td>
+          <td><input type="number" placeholder="1" value="${cantidadPrevia}" min="0" step="1" data-unidad="unidades"></td>
+          <td><button class="btn-fila-del" onclick="this.closest('tr').remove()" aria-label="Eliminar"><i class="ti ti-x"></i></button></td>
+        `;
+      } else {
+        nuevaTr.innerHTML = `
+          <td style="min-width:200px">
+            <select disabled style="color:#F57C00;font-weight:500" data-mp-id="${mpId}" data-costo="${costoPorGramo}">
+              <option>⏳ ${mpNombre} (esperando habilitación)</option>
+            </select>
+          </td>
+          <td><input type="number" placeholder="0" value="${cantidadPrevia}" min="0" step="0.01" data-unidad="gramos"></td>
+          ${App.areaCodigo === 'PAN' ? '<td><input type="number" placeholder="0.00" readonly style="color:var(--txt3)"></td>' : ''}
+          <td><button class="btn-fila-del" onclick="this.closest('tr').remove()" aria-label="Eliminar"><i class="ti ti-x"></i></button></td>
+        `;
+      }
+      tbody.insertBefore(nuevaTr, tr);
+      tr.remove();
+    }
+  }
+}
+
 function solicitarNuevaMP(selectEl) {
   // Mostrar modal de solicitud sin salir del formulario
   const modal = document.getElementById('modal-solicitar-mp');
