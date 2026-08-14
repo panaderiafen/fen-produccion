@@ -371,6 +371,7 @@ function renderSidebar() {
       { id: 'analisis-merma', icon: 'ti-trash',                 label: 'Análisis de $ merma' },
       { id: 'auditoria-costos', icon: 'ti-shield-check',        label: 'Auditoría de costos' },
       { id: 'config-costeo',  icon: 'ti-settings-dollar',       label: 'Config de costeo (Fase 2)' },
+      { id: 'correos-contacto', icon: 'ti-mail', label: 'Correos de contacto' },
     ].forEach(item => nav.appendChild(crearNavItem(item)));
 
     // Area shortcuts for admin
@@ -441,6 +442,7 @@ function navegarA(vistaId) {
     case 'analisis-merma':      renderVistaAnalisisMerma();  break;
     case 'auditoria-costos':    renderVistaAuditoriaCostos(); break;
     case 'config-costeo':       renderVistaConfigCosteo();   break;
+    case 'correos-contacto':    renderVistaCorreosContacto(); break;
     default: mostrarVista('empty');
   }
 }
@@ -7321,6 +7323,83 @@ function renderAnalisisMerma() {
 // ── ADMIN: CONFIG DE COSTEO (FASE 2) ──────────────────────────
 let _configCosteoFilas = [];
 let _gastosSincronizados = null;
+
+// ── ADMIN: CORREOS DE CONTACTO POR ÁREA ────────────────────────
+async function renderVistaCorreosContacto() {
+  const vista = document.getElementById('vista-correos-contacto');
+  vista.innerHTML = '<div class="vista-header"><h1 class="vista-titulo">Correos de contacto</h1></div><p style="color:var(--txt3)">Cargando...</p>';
+  mostrarVista('correos-contacto');
+
+  let correos = {};
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_correos_jefas' }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' });
+    const data = await res.json();
+    correos = data.correos || {};
+  } catch(e) {
+    toast('No se pudieron cargar los correos actuales', 'error');
+  }
+
+  const areas = [
+    { cod: 'BOL', nombre: 'Bollería' },
+    { cod: 'PAN', nombre: 'Panadería' },
+    { cod: 'CAF', nombre: 'Cafetería' },
+    { cod: 'PAS', nombre: 'Pastelería' },
+  ];
+
+  vista.innerHTML = `
+    <div class="vista-header"><h1 class="vista-titulo">Correos de contacto</h1></div>
+    <p style="font-size:12px;color:var(--txt2);margin-bottom:16px">
+      Correo al que le llegan los avisos de aprobación/devolución de recetas y solicitudes de MP de cada área.
+      Se puede cambiar acá sin tocar código. Puede escribir <strong>más de uno separados por coma</strong>
+      (ej. jefa@gmail.com, encargada@gmail.com).
+    </p>
+    <div class="card">
+      <div style="padding:16px">
+        ${areas.map(a => `
+          <div class="campo" style="margin-bottom:14px">
+            <label>${a.nombre}</label>
+            <input type="text" id="correo-${a.cod}" value="${correos[a.cod] || ''}" placeholder="correo@ejemplo.com, otro@ejemplo.com"
+              style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+          </div>
+        `).join('')}
+        <button class="btn-primario" onclick="guardarCorreosContactoUI(this)">
+          <i class="ti ti-device-floppy"></i> Guardar correos
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+async function guardarCorreosContactoUI(btn) {
+  const correos = {
+    BOL: document.getElementById('correo-BOL')?.value.trim() || '',
+    PAN: document.getElementById('correo-PAN')?.value.trim() || '',
+    CAF: document.getElementById('correo-CAF')?.value.trim() || '',
+    PAS: document.getElementById('correo-PAS')?.value.trim() || '',
+  };
+
+  // Validar cada dirección de cada área (pueden venir varias separadas por coma)
+  const regexEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  for (const [cod, valor] of Object.entries(correos)) {
+    if (!valor) continue;
+    const direcciones = valor.split(',').map(d => d.trim()).filter(Boolean);
+    const invalidas = direcciones.filter(d => !regexEmail.test(d));
+    if (invalidas.length) {
+      alert(`Correo con formato inválido en "${cod}": ${invalidas.join(', ')}\n\nRevise y vuelva a intentar.`);
+      return;
+    }
+  }
+
+  bloquearBtn(btn, 'Guardando...');
+  try {
+    await escribirEnSheet('guardar_correos_jefas', { correos });
+    toast('Correos actualizados');
+  } catch(e) {
+    toast('Error al guardar: ' + e.message, 'error');
+  }
+  desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar correos', true);
+}
 
 async function renderVistaConfigCosteo() {
   const vista = document.getElementById('vista-config-costeo');
