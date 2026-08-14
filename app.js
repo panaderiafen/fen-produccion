@@ -8218,14 +8218,24 @@ async function editarImpuestosMP(mpId) {
 function editarMP(mpId) {
   const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
   if (!mp) return;
-  const unidadCompra = (mp.unidad_compra || 'kg').toLowerCase();
+
+  const unidadActual = (mp.unidad_compra || 'kg').toLowerCase();
+  const nuevaUnidadInput = prompt(
+    `Antes de ingresar el precio, confirme la unidad de compra de "${mp.nombre}"\n` +
+    `(así el costo por gramo/unidad se calcula correcto de inmediato).\n\n` +
+    `Ejemplos: kg, 25kg, un, 180un, 500ml\n\nUnidad de compra actual:`,
+    unidadActual
+  );
+  if (nuevaUnidadInput === null) return;
+  const unidadCompra = nuevaUnidadInput.trim().toLowerCase();
   const parsed = parsearUnidadCompraJS(unidadCompra);
+  if (!parsed) { toast('Formato de unidad de compra inválido — ej: kg, 25kg, un, 180un, 500ml', 'error'); return; }
+
   let etiquetaUnidad;
   if (unidadCompra === 'kg') etiquetaUnidad = 'por kilo';
   else if (unidadCompra === 'lt' || unidadCompra === 'l') etiquetaUnidad = 'por litro';
   else if (unidadCompra === 'un' || unidadCompra === 'unidad' || unidadCompra === 'unidades') etiquetaUnidad = 'por unidad';
-  else if (parsed) etiquetaUnidad = `del paquete completo (${unidadCompra})`;
-  else etiquetaUnidad = `(unidad de compra: "${unidadCompra}")`;
+  else etiquetaUnidad = `del paquete completo (${unidadCompra})`;
   const nuevoPrecio = prompt(
     `Precio neto ${etiquetaUnidad} de "${mp.nombre}" (solo el producto, sin flete)\nActual: ${clp(mp.costo_neto)}\n\nNuevo precio neto ${etiquetaUnidad}:`,
     mp.costo_neto
@@ -8243,7 +8253,7 @@ function editarMP(mpId) {
   if (isNaN(fletePct) || fletePct < 0) { toast('Flete inválido', 'error'); return; }
 
   const precioFinal = precio + fletePct;
-  const payload = { ID_MP: mpId, costo_neto: precioFinal };
+  const payload = { ID_MP: mpId, costo_neto: precioFinal, unidad_compra: unidadCompra };
 
   if (fletePct > 0) {
     const obsActual = mp.observaciones || '';
@@ -8264,6 +8274,7 @@ function editarMP(mpId) {
     }
   });
   mp.costo_neto = precioFinal;
+  mp.unidad_compra = unidadCompra;
   if (payload.observaciones !== undefined) mp.observaciones = payload.observaciones;
   toast(fletePct > 0 ? `Precio actualizado: $${precio} + flete $${fletePct} = ${clp(precioFinal)}` : 'Precio actualizado');
   Cache.invalidar('mp_maestro');
