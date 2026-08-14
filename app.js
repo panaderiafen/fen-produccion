@@ -1614,6 +1614,30 @@ async function guardarReceta(recetaId, btn) {
 }
 
 async function enviarARevision(recetaId) {
+  const r = App.recetas.find(x => x.ID_receta === recetaId);
+
+  // Bloquear si algún ingrediente/insumo todavía apunta a una MP recién solicitada
+  // (sin asignar por Admin) — evita que la receta quede aprobada con una referencia
+  // rota que nadie se acuerda de resolver después.
+  if (r) {
+    let ingredientes = [], insumos = [];
+    try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+    try { insumos = JSON.parse(r.insumos_JSON || '[]'); } catch(e) {}
+    const pendientes = [
+      ...ingredientes.filter(ing => ing.pendiente || ing.id === '__pendiente__').map(ing => ing.nombre),
+      ...insumos.filter(ins => ins.pendiente || ins.id === '__pendiente__').map(ins => ins.nombre),
+    ];
+    if (pendientes.length) {
+      alert(
+        `Esta receta no se puede enviar a revisión todavía.\n\n` +
+        `Está esperando que Admin asigne la materia prima oficial para:\n` +
+        `${pendientes.map(n => '• ' + n).join('\n')}\n\n` +
+        `Apenas Admin la asigne, le va a llegar un aviso — ahí podrá reemplazarla en la receta y recién entonces enviarla a revisión.`
+      );
+      return;
+    }
+  }
+
   const btn = document.querySelector(`[onclick="enviarARevision('${recetaId}')"]`);
   bloquearBtn(btn, 'Enviando...');
 
@@ -1621,7 +1645,6 @@ async function enviarARevision(recetaId) {
   setEstadoLocal(recetaId, 'pendiente_aprobación');
   console.log('[fën] Verificacion localStorage:', getEstadoLocal(recetaId));
   // Actualizar estado local en memoria
-  const r = App.recetas.find(x => x.ID_receta === recetaId);
   if (r) r.estado = 'pendiente_aprobación';
   verificarAlertas();
 
@@ -1681,12 +1704,19 @@ function renderVistaMisRecetas() {
         const filaHtml = r => {
           const est = FEN.ESTADOS[r.estado] || FEN.ESTADOS.borrador;
           const esConsolidada = r.estado === 'consolidada';
+          let ingredientesFila = [], insumosFila = [];
+          try { ingredientesFila = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+          try { insumosFila = JSON.parse(r.insumos_JSON || '[]'); } catch(e) {}
+          const tieneMPPendiente =
+            ingredientesFila.some(ing => ing.pendiente || ing.id === '__pendiente__') ||
+            insumosFila.some(ins => ins.pendiente || ins.id === '__pendiente__');
           return `<tr>
             <td class="td-nombre">
               ${r.nombre || r.ID_receta}
               <span style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:6px">${r.ID_receta}</span>
               ${esConsolidada ? '<span style="font-size:10px;color:#2E7D32;margin-left:4px"><i class="ti ti-lock"></i></span>' : ''}
               ${App.areaCodigo === 'BOL' ? `<span style="font-size:10px;color:${r.tipo_preparacion?'var(--txt3)':'#C62828'};margin-left:6px">· ${formatearClasificacionBOL(r.tipo_preparacion)}</span>` : ''}
+              ${tieneMPPendiente ? `<span style="font-size:10px;font-weight:600;color:#C62828;background:#FFEBEE;padding:1px 7px;border-radius:99px;margin-left:6px"><i class="ti ti-clock-pause"></i> Espera asignación de MP</span>` : ''}
             </td>
             <td style="text-align:center">
               <span class="estado-badge" style="color:${est.color};background:${est.bg}">${est.label}</span>
