@@ -373,6 +373,7 @@ function renderSidebar() {
       { id: 'auditoria-costos', icon: 'ti-shield-check',        label: 'Auditoría de costos' },
       { id: 'config-costeo',  icon: 'ti-settings-dollar',       label: 'Config de costeo (Fase 2)' },
       { id: 'correos-contacto', icon: 'ti-mail', label: 'Correos de contacto' },
+      { id: 'productos-reventa', icon: 'ti-shopping-cart', label: 'Productos de reventa' },
     ].forEach(item => nav.appendChild(crearNavItem(item)));
 
     // Area shortcuts for admin
@@ -445,6 +446,7 @@ function navegarA(vistaId) {
     case 'auditoria-costos':    renderVistaAuditoriaCostos(); break;
     case 'config-costeo':       renderVistaConfigCosteo();   break;
     case 'correos-contacto':    renderVistaCorreosContacto(); break;
+    case 'productos-reventa':   renderVistaProductosReventa(); break;
     default: mostrarVista('empty');
   }
 }
@@ -7488,6 +7490,155 @@ let _configCosteoFilas = [];
 let _gastosSincronizados = null;
 
 // ── ADMIN: CORREOS DE CONTACTO POR ÁREA ────────────────────────
+// ── ADMIN: PRODUCTOS DE REVENTA ────────────────────────────────
+async function renderVistaProductosReventa() {
+  const vista = document.getElementById('vista-productos-reventa');
+  vista.innerHTML = `
+    <div class="vista-header">
+      <div>
+        <h1 class="vista-titulo">Productos de reventa</h1>
+        <p style="font-size:12px;color:var(--txt3);margin-top:4px">
+          Productos que se compran ya terminados (no se producen en fën) — igual entran a la lista pública para B2B/B2C.
+        </p>
+      </div>
+      <button class="btn-primario" onclick="abrirFormProductoReventa()">
+        <i class="ti ti-plus"></i> Nuevo producto
+      </button>
+    </div>
+    <div id="lista-productos-reventa"><p style="color:var(--txt3)">Cargando...</p></div>
+  `;
+  mostrarVista('productos-reventa');
+
+  let productos = [];
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_productos_reventa' }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' });
+    const data = await res.json();
+    productos = data.productos || [];
+  } catch(e) {
+    toast('No se pudieron cargar los productos de reventa', 'error');
+  }
+  App._productosReventa = productos;
+  renderListaProductosReventa();
+}
+
+function renderListaProductosReventa() {
+  const cont = document.getElementById('lista-productos-reventa');
+  const productos = (App._productosReventa || []).filter(p => p.activo !== 'no');
+
+  if (!productos.length) {
+    cont.innerHTML = `<div class="empty-state"><i class="ti ti-shopping-cart"></i><h2>Sin productos de reventa todavía</h2></div>`;
+    return;
+  }
+
+  cont.innerHTML = `
+    <div class="card">
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:var(--bg)">
+          <th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Producto</th>
+          <th style="text-align:right;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Costo por unidad</th>
+          <th style="text-align:right;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Stock</th>
+          <th style="padding:8px 12px"></th>
+        </tr></thead>
+        <tbody>
+          ${productos.map(p => {
+            const stock = parseFloat(p.stock_actual) || 0;
+            const stockMin = parseFloat(p.stock_minimo) || 0;
+            const stockBajo = stockMin > 0 && stock <= stockMin;
+            return `
+            <tr style="border-top:1px solid var(--border)">
+              <td style="padding:10px 12px">
+                <div style="font-weight:600;font-size:13px">${p.nombre}</div>
+                <div style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace">${p.ID_reventa} · compra por ${p.unidad_compra}</div>
+              </td>
+              <td style="text-align:right;padding:10px 12px;font-family:'DM Mono',monospace">${clp(p.costo_por_unidad)}</td>
+              <td style="text-align:right;padding:10px 12px">
+                <span style="font-family:'DM Mono',monospace;${stockBajo ? 'color:#C62828;font-weight:700' : ''}">${stock}</span>
+                ${stockBajo ? '<div style="font-size:10px;color:#C62828"><i class="ti ti-alert-triangle"></i> Stock bajo</div>' : ''}
+              </td>
+              <td style="text-align:right;padding:10px 12px;white-space:nowrap">
+                <button class="btn-secundario" style="font-size:12px;padding:5px 10px;margin-right:4px" onclick="abrirAjusteStockReventa('${p.ID_reventa}','${(p.nombre||'').replace(/'/g,"\\'")}')">
+                  <i class="ti ti-adjustments"></i> Stock
+                </button>
+                <button class="btn-secundario" style="font-size:12px;padding:5px 10px" onclick="abrirFormProductoReventa('${p.ID_reventa}')">
+                  <i class="ti ti-pencil"></i>
+                </button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function abrirFormProductoReventa(idExistente) {
+  const p = idExistente ? (App._productosReventa || []).find(x => x.ID_reventa === idExistente) : null;
+
+  const nombre = prompt('Nombre del producto:', p?.nombre || '');
+  if (nombre === null || !nombre.trim()) return;
+
+  const unidadCompra = prompt(
+    'Unidad de compra (ej: un, 24un, kg, 500ml):',
+    p?.unidad_compra || 'un'
+  );
+  if (unidadCompra === null) return;
+
+  const costoNeto = prompt(
+    `Precio neto (sin IVA) del paquete completo de "${nombre}":`,
+    p?.costo_neto || ''
+  );
+  if (costoNeto === null) return;
+  const neto = parseFloat(costoNeto);
+  if (isNaN(neto) || neto < 0) { toast('Precio inválido', 'error'); return; }
+
+  (async () => {
+    let resp;
+    if (p) {
+      resp = await escribirEnSheet('editar_producto_reventa', {
+        ID_reventa: p.ID_reventa, nombre: nombre.trim(), costo_neto: neto, unidad_compra: unidadCompra.trim().toLowerCase()
+      });
+    } else {
+      const stockInicial = prompt(`Stock inicial de "${nombre}" (cuántas unidades tiene hoy):`, '0');
+      resp = await escribirEnSheet('crear_producto_reventa', {
+        nombre: nombre.trim(), costo_neto: neto, unidad_compra: unidadCompra.trim().toLowerCase(),
+        stock_actual: parseFloat(stockInicial) || 0
+      });
+    }
+    if (resp?.ok) {
+      toast(resp.msg);
+      renderVistaProductosReventa();
+    } else {
+      toast('Error: ' + (resp?.msg || ''), 'error');
+    }
+  })();
+}
+
+function abrirAjusteStockReventa(id, nombre) {
+  const p = (App._productosReventa || []).find(x => x.ID_reventa === id);
+  const stockActual = parseFloat(p?.stock_actual) || 0;
+
+  const nuevoValor = prompt(
+    `Stock actual de "${nombre}": ${stockActual}\n\n` +
+    `Escriba el nuevo conteo exacto (ej. después de recibir una compra o hacer inventario físico):`,
+    stockActual
+  );
+  if (nuevoValor === null) return;
+  const val = parseFloat(nuevoValor);
+  if (isNaN(val) || val < 0) { toast('Cantidad inválida', 'error'); return; }
+
+  (async () => {
+    const resp = await escribirEnSheet('ajustar_stock_reventa', { ID_reventa: id, modo: 'fijar', cantidad: val });
+    if (resp?.ok) {
+      toast(`Stock de "${nombre}" actualizado a ${resp.stock_actual}`);
+      if (p) p.stock_actual = resp.stock_actual;
+      renderListaProductosReventa();
+    } else {
+      toast('Error: ' + (resp?.msg || ''), 'error');
+    }
+  })();
+}
+
 async function renderVistaCorreosContacto() {
   const vista = document.getElementById('vista-correos-contacto');
   vista.innerHTML = '<div class="vista-header"><h1 class="vista-titulo">Correos de contacto</h1></div><p style="color:var(--txt3)">Cargando...</p>';
