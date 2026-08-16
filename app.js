@@ -4087,17 +4087,21 @@ function fechaRealDiaSemana(diaIdx) {
 // ── BOL: ESTIMACIÓN DEMANDA ──────────────────────────────────
 // Promedios B2B históricos (dic 2025 – jul 2026, 7 meses)
 const BOL_ESTIMACION_B2B = {
-  'Croissant clásico': { Lun:71.6, Mar:104.7, Mié:86.6, Jue:66.2, Vie:76.4, Sáb:58.1, Dom:0 },
-  'Croissant mini':    { Lun:10.7, Mar:6.5,   Mié:12.9, Jue:2.6,  Vie:12.0, Sáb:0,    Dom:0 },
+  'Croissant':         { Lun:71.6, Mar:104.7, Mié:86.6, Jue:66.2, Vie:76.4, Sáb:58.1, Dom:0 },
+  'Croissant Mini':    { Lun:10.7, Mar:6.5,   Mié:12.9, Jue:2.6,  Vie:12.0, Sáb:0,    Dom:0 },
   'Pan de chocolate':  { Lun:0.9,  Mar:2.4,   Mié:1.6,  Jue:1.1,  Vie:0.6,  Sáb:1.6,  Dom:0 },
+  // Pañuelo y Palmeritas: aún no subidas a producción — se dejan con este nombre
+  // a propósito, para que calcen solas apenas se creen con el mismo nombre en fën.
   'Pañuelo':           { Lun:0,    Mar:2.4,   Mié:0,    Jue:0,    Vie:3.3,  Sáb:0,    Dom:0 },
   'Palmeritas':        { Lun:0.7,  Mar:1.1,   Mié:1.3,  Jue:0,    Vie:0.6,  Sáb:0,    Dom:0 },
 };
 
 // Promedios B2C históricos (jun 2025 – jun 2026, 1 año de datos reales)
 const BOL_ESTIMACION_B2C = {
-  'Croissant clásico': { Lun:6.4,  Mar:7.1,  Mié:5.7,  Jue:5.9,  Vie:8.1,  Sáb:6.4,  Dom:3.0 },
+  'Croissant':         { Lun:6.4,  Mar:7.1,  Mié:5.7,  Jue:5.9,  Vie:8.1,  Sáb:6.4,  Dom:3.0 },
   'Pan de chocolate':  { Lun:4.8,  Mar:3.6,  Mié:3.6,  Jue:5.1,  Vie:5.2,  Sáb:3.7,  Dom:1.9 },
+  // Las 4 siguientes: aún no subidas a producción — mismo criterio, nombre intacto
+  // a propósito para que calcen solas cuando se creen.
   'Croissant relleno': { Lun:0.9,  Mar:1.8,  Mié:1.8,  Jue:3.0,  Vie:2.1,  Sáb:1.4,  Dom:0.4 },
   'Pañuelo':           { Lun:1.3,  Mar:1.8,  Mié:1.9,  Jue:2.0,  Vie:1.9,  Sáb:1.3,  Dom:0.6 },
   'Palmeritas':        { Lun:1.9,  Mar:2.6,  Mié:2.0,  Jue:2.4,  Vie:3.5,  Sáb:2.1,  Dom:0.6 },
@@ -4111,33 +4115,32 @@ const BOL_DIAS_NOMBRES = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 const PAN_ESTIMACION_B2C = {
   'Ciabatta': { Lun:92.61, Mar:67.43, Mié:64.2, Jue:61.88, Vie:70.22, Sáb:56.84, Dom:10.0 },
   'Marraqueta': { Lun:9.18, Mar:21.05, Mié:20.96, Jue:19.88, Vie:21.42, Sáb:15.0, Dom:1.24 },
-  'Hogaza Clásica': { Lun:10.79, Mar:7.84, Mié:6.89, Jue:6.32, Vie:7.05, Sáb:6.31, Dom:1.25 },
-  'Hogaza Multigrano': { Lun:9.38, Mar:9.16, Mié:7.11, Jue:6.77, Vie:7.22, Sáb:5.84, Dom:0.89 },
-  'Molde Integral (60%)': { Lun:8.96, Mar:7.09, Mié:5.71, Jue:5.91, Vie:6.96, Sáb:4.8, Dom:0.75 },
-  'Focaccia': { Lun:3.71, Mar:4.16, Mié:3.14, Jue:3.52, Vie:3.44, Sáb:2.38, Dom:0.13 },
+  'Hogaza clásica': { Lun:10.79, Mar:7.84, Mié:6.89, Jue:6.32, Vie:7.05, Sáb:6.31, Dom:1.25 },
+  'Hogaza multigrano': { Lun:9.38, Mar:9.16, Mié:7.11, Jue:6.77, Vie:7.22, Sáb:5.84, Dom:0.89 },
+  'Molde integral': { Lun:8.96, Mar:7.09, Mié:5.71, Jue:5.91, Vie:6.96, Sáb:4.8, Dom:0.75 },
+  'Focaccia Tomate': { Lun:3.71, Mar:4.16, Mié:3.14, Jue:3.52, Vie:3.44, Sáb:2.38, Dom:0.13 },
   'Baguette': { Lun:1.5, Mar:2.77, Mié:2.82, Jue:3.12, Vie:3.02, Sáb:2.69, Dom:0.69 },
   'Coliza': { Lun:1.5, Mar:1.48, Mié:1.93, Jue:2.18, Vie:2.07, Sáb:0.31, Dom:0.09 },
   'Focaccia Pesto': { Lun:1.09, Mar:1.38, Mié:1.46, Jue:1.57, Vie:1.47, Sáb:1.04, Dom:0.11 },
+  // Aún no subida a producción — nombre intacto a propósito para que calce sola al crearla.
   'Baguette Sésamo': { Lun:0.14, Mar:0.48, Mié:0.61, Jue:0.54, Vie:0.65, Sáb:0.47, Dom:0.04 },
-  'Hallulla Integral': { Lun:0.39, Mar:0.09, Mié:0.57, Jue:0.54, Vie:0.56, Sáb:0.31, Dom:0.07 },
-  'Hogaza Choco Nuez': { Lun:0.29, Mar:0.41, Mié:0.39, Jue:0.3, Vie:0.56, Sáb:0.4, Dom:0.04 },
-  'Hogaza Tomate Albahaca': { Lun:0.23, Mar:0.05, Mié:0.27, Jue:0.5, Vie:0.56, Sáb:0.31, Dom:0.07 },
-  'Hallullas': { Lun:0.0, Mar:0.0, Mié:0.0, Jue:0.0, Vie:0.49, Sáb:0.4, Dom:0.0 },
-  '80% Integral': { Lun:0.04, Mar:0.0, Mié:0.07, Jue:0.12, Vie:0.25, Sáb:0.18, Dom:0.02 },
-  'Ciabatta Integral': { Lun:0.0, Mar:0.0, Mié:0.0, Jue:0.34, Vie:0.07, Sáb:0.0, Dom:0.0 },
-  'Molde Blanco': { Lun:0.02, Mar:0.04, Mié:0.18, Jue:0.12, Vie:0.0, Sáb:0.0, Dom:0.0 },
-  'Pan De Campo': { Lun:0.09, Mar:0.0, Mié:0.0, Jue:0.02, Vie:0.11, Sáb:0.05, Dom:0.09 },
+  'Hogaza choco-nuez': { Lun:0.29, Mar:0.41, Mié:0.39, Jue:0.3, Vie:0.56, Sáb:0.4, Dom:0.04 },
+  'Hogaza Tomate-Orégano': { Lun:0.23, Mar:0.05, Mié:0.27, Jue:0.5, Vie:0.56, Sáb:0.31, Dom:0.07 },
+  'Molde blanco': { Lun:0.02, Mar:0.04, Mié:0.18, Jue:0.12, Vie:0.0, Sáb:0.0, Dom:0.0 },
+  // Descartadas a propósito (no corresponden a productos vigentes que valga la pena rescatar):
+  // Hallulla Integral, Hallullas, 80% Integral, Ciabatta Integral, Pan De Campo.
 };
 
 // Promedios B2B históricos PAN (dic 2025 – jul 2026)
+// Nota: "Ciabatta", "Ciabatta kG" y "Ciabatta Mini" se fusionaron en una sola fila
+// ("Ciabatta") — es la misma receta de producción, solo se vende en 3 formatos
+// distintos (mismo criterio ya aplicado en toda la reconciliación con B2B/B2C).
 const PAN_ESTIMACION_B2B = {
-  'Ciabatta': { Lun:79.3, Mar:102.52, Mié:81.16, Jue:63.26, Vie:67.58, Sáb:47.06, Dom:0.0 },
-  'Hogaza Clásica': { Lun:22.87, Mar:42.77, Mié:26.39, Jue:20.03, Vie:22.87, Sáb:15.19, Dom:3.03 },
-  'Hogaza Multigrano': { Lun:23.43, Mar:15.23, Mié:20.84, Jue:15.39, Vie:18.1, Sáb:14.61, Dom:1.33 },
-  'Molde Blanco': { Lun:8.63, Mar:5.55, Mié:6.19, Jue:4.52, Vie:5.48, Sáb:5.1, Dom:2.0 },
-  'Ciabatta kG': { Lun:4.19, Mar:4.04, Mié:5.32, Jue:3.86, Vie:3.73, Sáb:4.66, Dom:0.0 },
-  'Ciabatta Mini': { Lun:2.17, Mar:4.1, Mié:1.94, Jue:1.61, Vie:0.0, Sáb:0.0, Dom:0.0 },
-  'Molde Integral (60%)': { Lun:2.27, Mar:3.03, Mié:1.45, Jue:1.06, Vie:0.9, Sáb:0.0, Dom:0.0 },
+  'Ciabatta': { Lun:85.66, Mar:110.66, Mié:88.42, Jue:68.73, Vie:71.31, Sáb:51.72, Dom:0.0 },
+  'Hogaza clásica': { Lun:22.87, Mar:42.77, Mié:26.39, Jue:20.03, Vie:22.87, Sáb:15.19, Dom:3.03 },
+  'Hogaza multigrano': { Lun:23.43, Mar:15.23, Mié:20.84, Jue:15.39, Vie:18.1, Sáb:14.61, Dom:1.33 },
+  'Molde blanco': { Lun:8.63, Mar:5.55, Mié:6.19, Jue:4.52, Vie:5.48, Sáb:5.1, Dom:2.0 },
+  'Molde integral': { Lun:2.27, Mar:3.03, Mié:1.45, Jue:1.06, Vie:0.9, Sáb:0.0, Dom:0.0 },
   'Focaccia Tomate': { Lun:1.03, Mar:0.74, Mié:1.65, Jue:0.61, Vie:1.13, Sáb:0.94, Dom:0.0 },
   'Focaccia Pesto': { Lun:0.63, Mar:0.68, Mié:0.52, Jue:0.84, Vie:0.87, Sáb:1.16, Dom:0.0 },
   'Baguette': { Lun:0.0, Mar:0.13, Mié:0.0, Jue:0.16, Vie:0.0, Sáb:0.0, Dom:0.0 },
@@ -7917,41 +7920,6 @@ async function renderVistaCostos() {
       ` : ''}
     </div>
 
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-head"><i class="ti ti-arrows-left-right"></i> Mapeo de nombres (receta ↔ ventas B2C/B2B)</div>
-      <p style="font-size:11px;color:var(--txt3);padding:10px 16px 0">
-        Si el volumen de un producto aparece en "—", su nombre en Ventas B2C/B2B no coincide con el nombre de la receta. Agréguelo aquí.
-      </p>
-      <div style="padding:10px 16px 0">
-        <button class="btn-secundario" onclick="sincronizarMapeoUI(this)" style="font-size:12px">
-          <i class="ti ti-refresh"></i> Traer nombres desde Maestro de recetas
-        </button>
-      </div>
-      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:16px">
-        <div class="campo">
-          <label>Nombre en la receta</label>
-          <select id="mp-nombre-receta" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px;min-width:180px">
-            <option value="">— Seleccionar —</option>
-          </select>
-        </div>
-        <div class="campo">
-          <label>Nombre en Ventas B2C <span style="font-weight:400;color:var(--txt3)">(sistema viejo — el que usa el cálculo hoy)</span></label>
-          <input type="text" id="mp-nombre-b2c" placeholder="Ej: Croissant" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
-        </div>
-        <div class="campo">
-          <label>Nombre en Ventas B2C <span style="font-weight:400;color:var(--txt3)">(sistema nuevo — referencia a futuro)</span></label>
-          <input type="text" id="mp-nombre-b2c-nuevo" placeholder="Ej: Croissant clásico" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
-        </div>
-        <div class="campo">
-          <label>Nombre en Ventas B2B</label>
-          <input type="text" id="mp-nombre-b2b" placeholder="Ej: Croissant clásico" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
-        </div>
-        <button class="btn-secundario" onclick="guardarMapeoUI(this)">
-          <i class="ti ti-plus"></i> Agregar/actualizar
-        </button>
-      </div>
-      <div id="mp-lista" style="padding:0 16px 16px;font-size:12px;color:var(--txt2)"></div>
-    </div>
     ${!ec.length ? `
       <div class="empty-state">
         <i class="ti ti-chart-bar-off"></i>
@@ -7997,121 +7965,20 @@ async function renderVistaCostos() {
       </div>`}
   `;
   mostrarVista('costos');
-  renderListaMapeo();
-  poblarSelectRecetasMapeo();
-}
-
-async function poblarSelectRecetasMapeo() {
-  const sel = document.getElementById('mp-nombre-receta');
-  if (!sel) return;
-  const maestro = await Cache.get('Maestro_recetas', () => leerHoja('Maestro_recetas'));
-  const nombres = [...new Set(
-    maestro.filter(r => r.tipo_receta !== 'sub_receta' && r.nombre).map(r => r.nombre)
-  )].sort();
-  sel.innerHTML = '<option value="">— Seleccionar —</option>' +
-    nombres.map(n => `<option value="${n}">${n}</option>`).join('');
-}
-
-async function renderListaMapeo() {
-  const el = document.getElementById('mp-lista');
-  if (!el) return;
-  const mapeo = await cargarMapeoProductos();
-  if (!mapeo.length) { el.innerHTML = '<p style="color:var(--txt3)">Sin equivalencias guardadas todavía.</p>'; return; }
-  el.innerHTML = `
-    <table style="width:100%;border-collapse:collapse;margin-top:8px">
-      <thead><tr>
-        <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Receta</th>
-        <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--txt3)">B2C (viejo)</th>
-        <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--txt3)">B2C (nuevo)</th>
-        <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--txt3)">B2B</th>
-      </tr></thead>
-      <tbody>
-        ${mapeo.map(m => `<tr style="border-top:1px solid var(--border);cursor:pointer" onclick="cargarFilaMapeo('${m.nombre_receta.replace(/'/g,"\\'")}')">
-          <td style="padding:6px 8px">${m.nombre_receta}</td>
-          <td style="padding:6px 8px${!m.nombre_B2C ? ';color:#C62828' : ''}">${m.nombre_B2C || '— sin completar'}</td>
-          <td style="padding:6px 8px;color:var(--txt3)">${m.nombre_B2C_nuevo || '—'}</td>
-          <td style="padding:6px 8px${!m.nombre_B2B ? ';color:#C62828' : ''}">${m.nombre_B2B || '— sin completar'}</td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
-  `;
-}
-
-function cargarFilaMapeo(nombreReceta) {
-  const m = (App._mapeoProductos || []).find(x => x.nombre_receta === nombreReceta);
-  if (!m) return;
-  document.getElementById('mp-nombre-receta').value = m.nombre_receta || '';
-  document.getElementById('mp-nombre-b2c').value = m.nombre_B2C || '';
-  document.getElementById('mp-nombre-b2c-nuevo').value = m.nombre_B2C_nuevo || '';
-  document.getElementById('mp-nombre-b2b').value = m.nombre_B2B || '';
-}
-
-async function sincronizarMapeoUI(btn) {
-  bloquearBtn(btn, 'Sincronizando...');
-  try {
-    const payload = encodeURIComponent(JSON.stringify({ accion: 'sincronizar_mapeo' }));
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
-    const data = await res.json();
-    if (data.ok) {
-      toast(data.msg);
-      App._mapeoProductos = null;
-      renderListaMapeo();
-    } else {
-      toast('Error: ' + (data.msg||''), 'error');
-    }
-  } catch(e) {
-    toast('No se pudo sincronizar', 'error');
-  }
-  desbloquearBtn(btn, '<i class="ti ti-refresh"></i> Traer nombres desde Maestro de recetas', true);
-}
-
-async function guardarMapeoUI(btn) {
-  const nombre_receta = document.getElementById('mp-nombre-receta').value.trim();
-  const nombre_B2C = document.getElementById('mp-nombre-b2c').value.trim();
-  const nombre_B2C_nuevo = document.getElementById('mp-nombre-b2c-nuevo').value.trim();
-  const nombre_B2B = document.getElementById('mp-nombre-b2b').value.trim();
-  if (!nombre_receta) { toast('Ingresa el nombre de la receta', 'error'); return; }
-  bloquearBtn(btn, 'Guardando...');
-  try {
-    await escribirEnSheet('guardar_mapeo_producto', { registro: { nombre_receta, nombre_B2C, nombre_B2C_nuevo, nombre_B2B } });
-    App._mapeoProductos = null; // forzar recarga
-    document.getElementById('mp-nombre-receta').value = '';
-    document.getElementById('mp-nombre-b2c').value = '';
-    document.getElementById('mp-nombre-b2c-nuevo').value = '';
-    document.getElementById('mp-nombre-b2b').value = '';
-    toast('Equivalencia guardada');
-    renderListaMapeo();
-  } catch(e) {
-    toast('Error al guardar', 'error');
-  }
-  desbloquearBtn(btn, '<i class="ti ti-plus"></i> Agregar/actualizar', true);
 }
 
 // Calcula el volumen mensual REAL de un área (suma B2C + B2B de todos los productos,
 // proyectado a los días reales del mes) usando la Estimación de demanda ya construida.
 // Devuelve null si el área no tiene estimación (ej. Pastelería aún no la tiene) —
 // en ese caso calcularEC cae de vuelta al criterio anterior (porciones_base).
-// Carga (con caché en memoria) la tabla de equivalencias de nombres de producto
-async function cargarMapeoProductos() {
-  if (App._mapeoProductos) return App._mapeoProductos;
-  try {
-    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_mapeo_productos' }));
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
-    const data = await res.json();
-    App._mapeoProductos = data.filas || [];
-  } catch(e) {
-    App._mapeoProductos = [];
-  }
-  return App._mapeoProductos;
-}
-
+//
 // Igual que calcularVolumenMensualArea, pero devuelve el detalle por producto
-// (B2C y B2B por separado), traduciendo nombres de venta -> nombre de receta
-// usando Mapeo_productos cuando existe (si no hay mapeo, usa el nombre tal cual).
+// (B2C y B2B por separado). Los nombres en ESTIMACION_POR_AREA ya fueron
+// renombrados para coincidir exactamente con el nombre vigente de cada receta
+// en el Maestro — ya no hace falta traducir vía Mapeo_productos (eliminado).
 async function calcularVolumenMensualPorProducto(areaCodigo, mesStr) {
   const est = ESTIMACION_POR_AREA[areaCodigo];
   if (!est) return {};
-  const mapeo = await cargarMapeoProductos();
 
   const [anio, mesNum] = mesStr.split('-').map(Number);
   if (!anio || !mesNum) return {};
@@ -8124,14 +7991,10 @@ async function calcularVolumenMensualPorProducto(areaCodigo, mesStr) {
     conteoDia[nombresDia[dia]]++;
   }
 
-  function nombreRecetaPara(nombreEstimacion, canal) {
-    const fila = mapeo.find(m => (canal === 'b2c' ? m.nombre_B2C : m.nombre_B2B) === nombreEstimacion);
-    return fila ? fila.nombre_receta : nombreEstimacion;
-  }
-
+  // Los nombres en ESTIMACION_POR_AREA ya coinciden exactamente con el nombre
+  // vigente de la receta en el Maestro — no hace falta traducir/mapear nada.
   const resultado = {};
-  function acumular(nombreEstimacion, canal, valor) {
-    const nombreReceta = nombreRecetaPara(nombreEstimacion, canal);
+  function acumular(nombreReceta, canal, valor) {
     if (!resultado[nombreReceta]) resultado[nombreReceta] = { b2c: 0, b2b: 0 };
     resultado[nombreReceta][canal] += valor;
   }
