@@ -374,6 +374,7 @@ function renderSidebar() {
       { id: 'config-costeo',  icon: 'ti-settings-dollar',       label: 'Config de costeo (Fase 2)' },
       { id: 'correos-contacto', icon: 'ti-mail', label: 'Correos de contacto' },
       { id: 'productos-reventa', icon: 'ti-shopping-cart', label: 'Productos de reventa' },
+      { id: 'ventas-mensuales', icon: 'ti-report-money', label: 'Ventas mensuales (B2B/B2C)' },
     ].forEach(item => nav.appendChild(crearNavItem(item)));
 
     // Area shortcuts for admin
@@ -447,6 +448,7 @@ function navegarA(vistaId) {
     case 'config-costeo':       renderVistaConfigCosteo();   break;
     case 'correos-contacto':    renderVistaCorreosContacto(); break;
     case 'productos-reventa':   renderVistaProductosReventa(); break;
+    case 'ventas-mensuales':    renderVistaVentasMensuales(); break;
     default: mostrarVista('empty');
   }
 }
@@ -7494,6 +7496,136 @@ let _gastosSincronizados = null;
 
 // ── ADMIN: CORREOS DE CONTACTO POR ÁREA ────────────────────────
 // ── ADMIN: PRODUCTOS DE REVENTA ────────────────────────────────
+// ── ADMIN: VENTAS MENSUALES CONSOLIDADAS (Fase 3) ──────────────
+async function renderVistaVentasMensuales() {
+  const vista = document.getElementById('vista-ventas-mensuales');
+  vista.innerHTML = `
+    <div class="vista-header"><h1 class="vista-titulo">Ventas mensuales (B2B/B2C)</h1></div>
+    <p style="font-size:12px;color:var(--txt3);margin-bottom:16px">
+      Trae la agregación mensual de ventas que B2B y B2C publican como CSV — para calcular margen de contribución real
+      cruzando esto con Estructuras de costo. No reemplaza la Estimación de demanda (esa sigue siendo la foto histórica).
+    </p>
+    <div id="ventas-mensuales-contenido"><p style="color:var(--txt3)">Cargando...</p></div>
+  `;
+  mostrarVista('ventas-mensuales');
+
+  let urls = { b2b: '', b2c: '' };
+  let ventas = [];
+  try {
+    const payloadUrls = encodeURIComponent(JSON.stringify({ accion: 'leer_urls_ventas_csv' }));
+    const resUrls = await fetch(FEN.WEBAPP_URL + '?payload=' + payloadUrls, { cache: 'no-store' });
+    urls = (await resUrls.json()).urls || urls;
+
+    const payloadVentas = encodeURIComponent(JSON.stringify({ accion: 'leer_ventas_mensuales' }));
+    const resVentas = await fetch(FEN.WEBAPP_URL + '?payload=' + payloadVentas, { cache: 'no-store' });
+    ventas = (await resVentas.json()).ventas || [];
+  } catch(e) {
+    toast('No se pudo cargar la configuración actual', 'error');
+  }
+
+  const cont = document.getElementById('ventas-mensuales-contenido');
+
+  // Resumen: último mes sincronizado por canal, y total de filas
+  const mesesPorCanal = {};
+  ventas.forEach(v => {
+    if (!mesesPorCanal[v.canal] || v.mes > mesesPorCanal[v.canal]) mesesPorCanal[v.canal] = v.mes;
+  });
+
+  cont.innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head"><i class="ti ti-link"></i> Links de los CSV publicados</div>
+      <div style="padding:16px">
+        <div class="campo" style="margin-bottom:14px">
+          <label>Link CSV — B2B</label>
+          <input type="text" id="url-ventas-b2b" value="${urls.b2b || ''}" placeholder="https://docs.google.com/.../output=csv"
+            style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <div class="campo" style="margin-bottom:14px">
+          <label>Link CSV — B2C</label>
+          <input type="text" id="url-ventas-b2c" value="${urls.b2c || ''}" placeholder="https://docs.google.com/.../output=csv"
+            style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <button class="btn-secundario" onclick="guardarUrlsVentasUI(this)">
+          <i class="ti ti-device-floppy"></i> Guardar links
+        </button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head"><i class="ti ti-refresh"></i> Sincronizar</div>
+      <div style="padding:16px">
+        <button class="btn-primario" onclick="sincronizarVentasMensualesUI(this)">
+          <i class="ti ti-download"></i> Sincronizar ventas ahora
+        </button>
+        <p style="font-size:11px;color:var(--txt3);margin-top:10px">
+          ${Object.keys(mesesPorCanal).length
+            ? Object.entries(mesesPorCanal).map(([canal, mes]) => `Último mes recibido de ${canal}: <strong>${mes}</strong>`).join(' · ')
+            : 'Todavía no se ha sincronizado nada.'}
+        </p>
+      </div>
+    </div>
+
+    ${ventas.length ? `
+    <div class="card">
+      <div class="card-head"><i class="ti ti-table"></i> Ventas consolidadas (${ventas.length} filas)</div>
+      <div style="overflow-x:auto;max-height:400px;overflow-y:auto">
+        <table class="tabla-vista">
+          <thead><tr>
+            <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3);background:var(--bg)">ID receta</th>
+            <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Área</th>
+            <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Canal</th>
+            <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Mes</th>
+            <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Cantidad</th>
+            <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Monto neto</th>
+          </tr></thead>
+          <tbody>
+            ${ventas.sort((a,b) => b.mes.localeCompare(a.mes)).map(v => `
+              <tr style="border-top:1px solid var(--border)">
+                <td style="padding:6px 14px;font-size:12px;font-family:'DM Mono',monospace">${v.ID_receta}</td>
+                <td style="padding:6px 14px;font-size:12px">${v.área || '—'}</td>
+                <td style="padding:6px 14px;font-size:12px">${v.canal}</td>
+                <td style="padding:6px 14px;font-size:12px">${v.mes}</td>
+                <td style="padding:6px 14px;font-size:12px;text-align:right;font-family:'DM Mono',monospace">${parseFloat(v.cantidad_vendida).toLocaleString('es-CL')}</td>
+                <td style="padding:6px 14px;font-size:12px;text-align:right;font-family:'DM Mono',monospace">${clp(v.monto_neto)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>` : ''}
+  `;
+}
+
+async function guardarUrlsVentasUI(btn) {
+  const b2b = document.getElementById('url-ventas-b2b')?.value.trim() || '';
+  const b2c = document.getElementById('url-ventas-b2c')?.value.trim() || '';
+  bloquearBtn(btn, 'Guardando...');
+  try {
+    await escribirEnSheet('guardar_urls_ventas_csv', { b2b, b2c });
+    toast('Links guardados');
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+  }
+  desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar links', true);
+}
+
+async function sincronizarVentasMensualesUI(btn) {
+  bloquearBtn(btn, 'Sincronizando...');
+  try {
+    const resp = await escribirEnSheet('sincronizar_ventas_mensuales', {});
+    if (resp?.ok) {
+      toast(resp.msg);
+      renderVistaVentasMensuales();
+    } else {
+      toast('Error: ' + (resp?.msg || ''), 'error');
+      desbloquearBtn(btn, '<i class="ti ti-download"></i> Sincronizar ventas ahora', true);
+    }
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+    desbloquearBtn(btn, '<i class="ti ti-download"></i> Sincronizar ventas ahora', true);
+  }
+}
+
 async function renderVistaProductosReventa() {
   const vista = document.getElementById('vista-productos-reventa');
   vista.innerHTML = `
