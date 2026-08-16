@@ -7806,18 +7806,24 @@ async function renderVistaConfigCosteo() {
             <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">% Util. B2C</th>
             <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">% Util. B2B</th>
             <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3)">Fuente</th>
+            <th style="padding:8px 14px"></th>
           </tr></thead>
           <tbody>
             ${_configCosteoFilas.map(f => `
-              <tr style="border-top:1px solid var(--border);cursor:pointer" onclick="cargarFilaConfigCosteo('${f.area}','${f.mes}')">
-                <td style="padding:8px 14px;font-size:12px">${FEN.AREAS[f.area]?.nombre || f.area}</td>
-                <td style="padding:8px 14px;font-size:12px">${f.mes}</td>
-                <td style="padding:8px 14px;font-size:12px;text-align:right">${clp(f.costos_fijos_monto||0)}</td>
-                <td style="padding:8px 14px;font-size:12px;text-align:right">${clp(f.remuneracion_monto||0)}</td>
-                <td style="padding:8px 14px;font-size:12px;text-align:right">${f.merma_pct||0}%</td>
-                <td style="padding:8px 14px;font-size:12px;text-align:right">${f.utilidad_b2c_pct||0}%</td>
-                <td style="padding:8px 14px;font-size:12px;text-align:right">${f.utilidad_b2b_pct||0}%</td>
-                <td style="padding:8px 14px;font-size:12px;color:var(--txt3)">${f.fuente||''}</td>
+              <tr style="border-top:1px solid var(--border)">
+                <td style="padding:8px 14px;font-size:12px;cursor:pointer" onclick="cargarFilaConfigCosteo('${f.area}','${f.mes}')">${FEN.AREAS[f.area]?.nombre || f.area}</td>
+                <td style="padding:8px 14px;font-size:12px;cursor:pointer" onclick="cargarFilaConfigCosteo('${f.area}','${f.mes}')">${f.mes}</td>
+                <td style="padding:8px 14px;font-size:12px;text-align:right;cursor:pointer" onclick="cargarFilaConfigCosteo('${f.area}','${f.mes}')">${clp(f.costos_fijos_monto||0)}</td>
+                <td style="padding:8px 14px;font-size:12px;text-align:right;cursor:pointer" onclick="cargarFilaConfigCosteo('${f.area}','${f.mes}')">${clp(f.remuneracion_monto||0)}</td>
+                <td style="padding:8px 14px;font-size:12px;text-align:right;cursor:pointer" onclick="cargarFilaConfigCosteo('${f.area}','${f.mes}')">${f.merma_pct||0}%</td>
+                <td style="padding:8px 14px;font-size:12px;text-align:right;cursor:pointer" onclick="cargarFilaConfigCosteo('${f.area}','${f.mes}')">${f.utilidad_b2c_pct||0}%</td>
+                <td style="padding:8px 14px;font-size:12px;text-align:right;cursor:pointer" onclick="cargarFilaConfigCosteo('${f.area}','${f.mes}')">${f.utilidad_b2b_pct||0}%</td>
+                <td style="padding:8px 14px;font-size:12px;color:var(--txt3);cursor:pointer" onclick="cargarFilaConfigCosteo('${f.area}','${f.mes}')">${f.fuente||''}</td>
+                <td style="padding:8px 14px;text-align:right">
+                  <button class="btn-secundario" style="font-size:11px;padding:3px 8px;color:#C62828;border-color:#EF9A9A" onclick="eliminarFilaConfigCosteo(${f._fila},this)" title="Eliminar esta configuración">
+                    <i class="ti ti-trash"></i>
+                  </button>
+                </td>
               </tr>
             `).join('')}
           </tbody>
@@ -7826,6 +7832,24 @@ async function renderVistaConfigCosteo() {
       </div>
     </div>
   `;
+}
+
+async function eliminarFilaConfigCosteo(fila, btn) {
+  if (!confirm('¿Eliminar esta configuración guardada? No se puede deshacer.')) return;
+  bloquearBtn(btn, '');
+  try {
+    const resp = await escribirEnSheet('eliminar_config_costeo_fila', { fila });
+    if (resp?.ok) {
+      toast(resp.msg);
+      renderVistaConfigCosteo();
+    } else {
+      toast('Error: ' + (resp?.msg || ''), 'error');
+      desbloquearBtn(btn, '<i class="ti ti-trash"></i>', false);
+    }
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+    desbloquearBtn(btn, '<i class="ti ti-trash"></i>', false);
+  }
 }
 
 async function sincronizarGastosArea() {
@@ -7888,6 +7912,28 @@ async function renderVistaCostos() {
   const hoy = new Date();
   const mesActual = App._ecMesActual || `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
   const areaActual = App._ecAreaActual || Object.keys(FEN.AREAS)[0];
+
+  // Productos de esa área, para el selector "calcular solo 1 producto"
+  const maestro = await Cache.get('Maestro_recetas', () => leerHoja('Maestro_recetas'));
+  const nombreAreaCompleto = { PAN:'Panadería', BOL:'Bollería', CAF:'Cafetería', PAS:'Pastelería' }[areaActual] || areaActual;
+  const productosArea = maestro
+    .filter(r => r['área'] === nombreAreaCompleto && r.tipo_receta !== 'sub_receta')
+    .sort((a,b) => (a.nombre||'').localeCompare(b.nombre||'', 'es'));
+
+  // Configs guardadas para esa área/mes — si hay más de una, se deja elegir cuál usar
+  let configsDisponibles = [];
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_config_costeo', area: areaActual, mes: mesActual }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' });
+    const data = await res.json();
+    configsDisponibles = data.filas || [];
+  } catch(e) {}
+  App._ecConfigsDisponibles = configsDisponibles;
+
+  // Agrupar EC_productos por área, para no mezclar cálculos de distintas áreas en una sola tabla
+  const ecPorArea = {};
+  ec.forEach(r => { (ecPorArea[r.área] = ecPorArea[r.área] || []).push(r); });
+
   vista.innerHTML = `
     <div class="vista-header"><h1 class="vista-titulo">Estructuras de costo</h1></div>
     <div class="card" style="margin-bottom:16px">
@@ -7895,21 +7941,38 @@ async function renderVistaCostos() {
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:16px">
         <div class="campo">
           <label>Área</label>
-          <select id="ec-area" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+          <select id="ec-area" onchange="App._ecAreaActual=this.value;renderVistaCostos()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
             ${Object.entries(FEN.AREAS).map(([cod,a]) => `<option value="${cod}" ${cod===areaActual?'selected':''}>${a.nombre}</option>`).join('')}
           </select>
         </div>
         <div class="campo">
           <label>Mes (YYYY-MM)</label>
-          <input type="text" id="ec-mes" value="${mesActual}" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+          <input type="text" id="ec-mes" value="${mesActual}" onchange="App._ecMesActual=this.value;renderVistaCostos()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
         </div>
+        <div class="campo">
+          <label>Producto <span style="font-weight:400;color:var(--txt3)">(opcional)</span></label>
+          <select id="ec-producto" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px;min-width:200px">
+            <option value="">— Todos los productos del área —</option>
+            ${productosArea.map(p => `<option value="${p.ID_receta}">${p.nombre}</option>`).join('')}
+          </select>
+        </div>
+        ${configsDisponibles.length > 1 ? `
+        <div class="campo">
+          <label style="color:#E65100">⚠ Hay ${configsDisponibles.length} configs guardadas — elija cuál usar</label>
+          <select id="ec-config-fila" style="padding:8px 12px;border:1px solid #FFB74D;border-radius:var(--r-sm);font-family:inherit;font-size:13px;min-width:260px">
+            ${configsDisponibles.map(c => `<option value="${c._fila}">
+              Fijos: ${clp(c.costos_fijos_monto)} · Merma: ${c.merma_pct||'—'}% · Util B2C: ${c.utilidad_b2c_pct||'—'}% ${c.fecha_actualizacion ? '· ' + new Date(c.fecha_actualizacion).toLocaleDateString('es-CL') : ''}
+            </option>`).join('')}
+          </select>
+        </div>` : ''}
         <button class="btn-primario" onclick="calcularECUI(this)">
-          <i class="ti ti-refresh"></i> Calcular estructuras de costo
+          <i class="ti ti-refresh"></i> Calcular
         </button>
         <span id="ec-calc-estado" style="font-size:12px;color:var(--txt3)"></span>
       </div>
       <p style="font-size:11px;color:var(--txt3);padding:0 16px 14px">
         Requiere que ya exista una Config de costeo guardada para esa área/mes (costos fijos, remuneración, %merma, %utilidad).
+        Si elige un producto específico, igual se prorratea con el volumen del área completa — solo se calcula/guarda ese producto.
       </p>
       ${App._ecVolumenInfo && App._ecVolumenInfo.area === areaActual && App._ecVolumenInfo.mes === mesActual ? `
         <div style="margin:0 16px 14px;padding:10px 14px;background:${App._ecVolumenInfo.esReal ? '#E8F5E9' : '#FFF3E0'};border-radius:var(--r-md);font-size:12px;color:${App._ecVolumenInfo.esReal ? '#2E7D32' : '#E65100'}">
@@ -7925,14 +7988,18 @@ async function renderVistaCostos() {
         <i class="ti ti-chart-bar-off"></i>
         <h2>Sin datos</h2>
         <p>Calcule las estructuras de costo arriba, o espere a que se aprueben recetas.</p>
-      </div>` : `
-      <div class="card">
-        <div class="card-head"><i class="ti ti-calculator"></i> Todos los productos</div>
+      </div>` : Object.entries(ecPorArea).map(([areaNombre, filas]) => `
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head" style="display:flex;justify-content:space-between;align-items:center">
+          <span><i class="ti ti-calculator"></i> ${areaNombre} <span style="font-weight:400;color:var(--txt3)">(${filas.length} producto${filas.length!==1?'s':''})</span></span>
+          <button class="btn-secundario" style="font-size:11px;padding:4px 10px;color:#C62828;border-color:#EF9A9A" onclick="borrarCalculosArea('${areaNombre}',this)">
+            <i class="ti ti-trash"></i> Borrar cálculos de ${areaNombre}
+          </button>
+        </div>
         <div style="overflow-x:auto">
         <table class="tabla-vista">
           <thead><tr>
             <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Producto</th>
-            <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Área</th>
             <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Vol. B2C/mes</th>
             <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Vol. B2B/mes</th>
             <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">MP+Insumos</th>
@@ -7945,9 +8012,11 @@ async function renderVistaCostos() {
             <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Util. %</th>
           </tr></thead>
           <tbody>
-            ${ec.map(r => `<tr>
-              <td class="td-nombre">${r.nombre}</td>
-              <td style="font-size:13px;color:var(--txt2)">${r.área}</td>
+            ${filas.map(r => `<tr>
+              <td class="td-nombre">
+                ${r.nombre}
+                <span style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:4px">${r.ID_receta}</span>
+              </td>
               <td class="td-num" style="color:var(--txt2)">${r.meta_B2C_mes ? parseFloat(r.meta_B2C_mes).toLocaleString('es-CL') : '—'}</td>
               <td class="td-num" style="color:var(--txt2)">${r.meta_B2B_mes ? parseFloat(r.meta_B2B_mes).toLocaleString('es-CL') : '—'}</td>
               <td class="td-num">${clp((parseFloat(r.costo_MP_unit)||0) + (parseFloat(r.costo_insumos_unit)||0))}</td>
@@ -7962,9 +8031,28 @@ async function renderVistaCostos() {
           </tbody>
         </table>
         </div>
-      </div>`}
+      </div>`).join('')}
   `;
   mostrarVista('costos');
+}
+
+async function borrarCalculosArea(areaNombre, btn) {
+  if (!confirm(`¿Borrar todos los cálculos de "${areaNombre}" en Estructuras de costo?\n\nEsto no afecta las recetas ni sus costos — solo borra esta tabla de precios sugeridos, se puede volver a calcular cuando quiera.`)) return;
+  bloquearBtn(btn, 'Borrando...');
+  try {
+    const resp = await escribirEnSheet('eliminar_ec_por_area', { area: areaNombre });
+    if (resp?.ok) {
+      toast(resp.msg);
+      Cache.invalidar('EC_productos');
+      renderVistaCostos();
+    } else {
+      toast('Error: ' + (resp?.msg || ''), 'error');
+      desbloquearBtn(btn, '<i class="ti ti-trash"></i> Borrar cálculos de ' + areaNombre, false);
+    }
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+    desbloquearBtn(btn, '<i class="ti ti-trash"></i> Borrar cálculos de ' + areaNombre, false);
+  }
 }
 
 // Calcula el volumen mensual REAL de un área (suma B2C + B2B de todos los productos,
@@ -8046,6 +8134,9 @@ function calcularVolumenMensualArea(areaCodigo, mesStr) {
 async function calcularECUI(btn) {
   const area = document.getElementById('ec-area').value;
   const mes = document.getElementById('ec-mes').value.trim();
+  const idRecetaUnico = document.getElementById('ec-producto')?.value || '';
+  const filaConfigEl = document.getElementById('ec-config-fila');
+  const filaConfig = filaConfigEl ? filaConfigEl.value : '';
   App._ecAreaActual = area;
   App._ecMesActual = mes;
   const estadoEl = document.getElementById('ec-calc-estado');
@@ -8053,13 +8144,17 @@ async function calcularECUI(btn) {
   try {
     const volumenReal = calcularVolumenMensualArea(area, mes);
     const volumenPorProducto = await calcularVolumenMensualPorProducto(area, mes);
-    const payload = encodeURIComponent(JSON.stringify({ accion: 'calcular_ec', area, mes, volumenTotalReal: volumenReal, volumenPorProducto }));
+    const payload = encodeURIComponent(JSON.stringify({
+      accion: 'calcular_ec', area, mes, volumenTotalReal: volumenReal, volumenPorProducto,
+      ID_receta: idRecetaUnico || undefined,
+      filaConfig: filaConfig || undefined
+    }));
     const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (data.ok) {
       App._ecVolumenInfo = { area, mes, volumen: volumenReal, esReal: !!volumenReal, msg: data.msg };
       Cache.invalidar('EC_productos');
-      desbloquearBtn(btn, '<i class="ti ti-refresh"></i> Calcular estructuras de costo', true);
+      desbloquearBtn(btn, '<i class="ti ti-refresh"></i> Calcular', true);
       renderVistaCostos();
       return;
     } else {
@@ -8068,7 +8163,7 @@ async function calcularECUI(btn) {
   } catch(e) {
     estadoEl.textContent = 'No se pudo calcular: ' + e.message;
   }
-  desbloquearBtn(btn, '<i class="ti ti-refresh"></i> Calcular estructuras de costo', true);
+  desbloquearBtn(btn, '<i class="ti ti-refresh"></i> Calcular', true);
 }
 
 // ── ADMIN: MAESTRO ────────────────────────────────────────────
