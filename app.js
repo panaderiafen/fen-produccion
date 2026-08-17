@@ -8073,14 +8073,31 @@ async function sincronizarGastosArea() {
   const estadoEl = document.getElementById('cc-sync-estado');
   estadoEl.textContent = 'Sincronizando...';
   try {
-    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_gastos_area', mes }));
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_gastos_area_prorrateo', mes }));
     const res  = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (!data.ok) { estadoEl.textContent = 'Error: ' + (data.msg||''); return; }
+
     const areaData = data.datos?.[area] || { fijos: 0, remuneracion: 0 };
-    document.getElementById('cc-fijos').value = Math.round(areaData.fijos);
-    document.getElementById('cc-remuneracion').value = Math.round(areaData.remuneracion);
-    estadoEl.textContent = `✓ Sincronizado (${mes})`;
+    const general = data.general || { fijos: 0, remuneracion: 0 };
+    const participacionArea = data.participacion?.[area] || 0;
+    const fijosGeneralProrrateado = Math.round(general.fijos * participacionArea);
+    const remuneracionGeneralProrrateado = Math.round(general.remuneracion * participacionArea);
+
+    const fijosFinal = Math.round(areaData.fijos) + fijosGeneralProrrateado;
+    const remuneracionFinal = Math.round(areaData.remuneracion) + remuneracionGeneralProrrateado;
+
+    document.getElementById('cc-fijos').value = fijosFinal;
+    document.getElementById('cc-remuneracion').value = remuneracionFinal;
+
+    const hayGeneral = general.fijos > 0 || general.remuneracion > 0;
+    const sinVentasParaProrratear = hayGeneral && !data.totalVentasMes;
+    estadoEl.innerHTML = `✓ Sincronizado (${mes})` + (hayGeneral ? `
+      <div style="margin-top:6px;padding:8px 10px;background:${sinVentasParaProrratear ? '#FFF3E0' : '#E3F2FD'};border-radius:var(--r-sm);font-size:11px;color:${sinVentasParaProrratear ? '#E65100' : '#1565C0'}">
+        ${sinVentasParaProrratear
+          ? `⚠ Hay $${general.fijos.toLocaleString('es-CL')} en gastos generales (sin área — arriendo, vehículo, gas, etc.) para este mes, pero no hay ventas sincronizadas para prorratearlos. No se agregaron a este cálculo — sincronice "Ventas mensuales" primero.`
+          : `ℹ Incluye ${(participacionArea*100).toFixed(1)}% de los gastos generales del mes (arriendo, vehículo, gas, etc. — $${general.fijos.toLocaleString('es-CL')} en total), prorrateado según la participación de ${FEN.AREAS[area]?.nombre || area} en las ventas totales: +$${fijosGeneralProrrateado.toLocaleString('es-CL')} fijos${remuneracionGeneralProrrateado ? ` / +$${remuneracionGeneralProrrateado.toLocaleString('es-CL')} remuneración` : ''}.`}
+      </div>` : '');
   } catch(e) {
     estadoEl.textContent = 'No se pudo conectar al Registro de Gastos';
   }
