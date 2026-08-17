@@ -363,19 +363,57 @@ function renderSidebar() {
     }
     items.forEach(item => nav.appendChild(crearNavItem(item)));
   } else {
-    [
-      { id: 'aprobaciones',   icon: 'ti-check-circle',         label: 'Aprobaciones'         },
-      { id: 'materias-primas',icon: 'ti-list',                  label: 'Materias primas'     },
-      { id: 'maestro-admin',  icon: 'ti-book',                  label: 'Maestro de recetas'  },
-      { id: 'costos',         icon: 'ti-chart-bar',             label: 'Estructuras de costo'},
-      { id: 'estimacion-bol', icon: 'ti-chart-arrows-vertical', label: 'Estimación de demanda' },
-      { id: 'analisis-merma', icon: 'ti-trash',                 label: 'Análisis de $ merma' },
-      { id: 'auditoria-costos', icon: 'ti-shield-check',        label: 'Auditoría de costos' },
-      { id: 'config-costeo',  icon: 'ti-settings-dollar',       label: 'Config de costeo (Fase 2)' },
-      { id: 'correos-contacto', icon: 'ti-mail', label: 'Correos de contacto' },
-      { id: 'productos-reventa', icon: 'ti-shopping-cart', label: 'Productos de reventa' },
-      { id: 'ventas-mensuales', icon: 'ti-report-money', label: 'Ventas mensuales (B2B/B2C)' },
-    ].forEach(item => nav.appendChild(crearNavItem(item)));
+    const grupos = [
+      { id: 'flujo-diario', label: 'Flujo diario', icon: 'ti-list-check', items: [
+        { id: 'aprobaciones',    icon: 'ti-check-circle', label: 'Aprobaciones' },
+        { id: 'materias-primas', icon: 'ti-list',         label: 'Materias primas' },
+      ]},
+      { id: 'catalogo', label: 'Catálogo', icon: 'ti-books', items: [
+        { id: 'maestro-admin',     icon: 'ti-book',           label: 'Maestro de recetas' },
+        { id: 'productos-reventa', icon: 'ti-shopping-cart',  label: 'Productos de reventa' },
+      ]},
+      { id: 'costeo', label: 'Costeo (Fase 2)', icon: 'ti-settings-dollar', items: [
+        { id: 'config-costeo',    icon: 'ti-settings-dollar', label: 'Config de costeo' },
+        { id: 'costos',           icon: 'ti-chart-bar',       label: 'Estructuras de costo' },
+        { id: 'auditoria-costos', icon: 'ti-shield-check',    label: 'Auditoría de costos' },
+      ]},
+      { id: 'analisis', label: 'Análisis y reportes', icon: 'ti-chart-bar', items: [
+        { id: 'estimacion-bol',    icon: 'ti-chart-arrows-vertical', label: 'Estimación de demanda' },
+        { id: 'analisis-merma',    icon: 'ti-trash',                 label: 'Análisis de $ merma' },
+        { id: 'ventas-mensuales',  icon: 'ti-report-money',          label: 'Ventas mensuales (B2B/B2C)' },
+      ]},
+      { id: 'configuracion', label: 'Configuración', icon: 'ti-adjustments', items: [
+        { id: 'correos-contacto', icon: 'ti-mail', label: 'Correos de contacto' },
+      ]},
+    ];
+
+    // Recordar qué grupos están abiertos entre renders — por defecto, abrir el
+    // grupo que contiene la vista actual (para que no se sienta "perdida" al entrar)
+    if (!App._gruposAbiertos) {
+      App._gruposAbiertos = {};
+      const grupoConVistaActual = grupos.find(g => g.items.some(it => it.id === App.vistaActual));
+      App._gruposAbiertos[(grupoConVistaActual || grupos[0]).id] = true;
+    }
+
+    grupos.forEach(grupo => {
+      const abierto = !!App._gruposAbiertos[grupo.id];
+      const header = document.createElement('button');
+      header.className = 'nav-grupo-header';
+      header.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;padding:10px 12px;background:none;border:none;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--txt3)';
+      header.innerHTML = `<i class="ti ${grupo.icon}"></i> <span style="flex:1;text-align:left">${grupo.label}</span> <i class="ti ${abierto ? 'ti-chevron-down' : 'ti-chevron-right'}" style="font-size:14px"></i>`;
+      header.onclick = () => {
+        App._gruposAbiertos[grupo.id] = !App._gruposAbiertos[grupo.id];
+        renderSidebar();
+      };
+      nav.appendChild(header);
+
+      if (abierto) {
+        const cont = document.createElement('div');
+        cont.style.cssText = 'padding-left:6px;margin-bottom:6px';
+        grupo.items.forEach(item => cont.appendChild(crearNavItem(item)));
+        nav.appendChild(cont);
+      }
+    });
 
     // Area shortcuts for admin
     const divider = document.createElement('div');
@@ -414,6 +452,25 @@ function navegarA(vistaId) {
   // Cancelar navegación automática pendiente
   if (App._navTimer) { clearTimeout(App._navTimer); App._navTimer = null; }
   App.vistaActual = vistaId;
+
+  // Si el ítem pertenece a un grupo de Admin que está cerrado, abrirlo — así el
+  // sidebar siempre queda coherente con la vista actual, sin importar si la
+  // navegación vino de un clic en el menú o de otro botón dentro de la app.
+  if (App.rol === 'admin' && App._gruposAbiertos) {
+    const gruposAdmin = [
+      { id: 'flujo-diario', items: ['aprobaciones','materias-primas'] },
+      { id: 'catalogo', items: ['maestro-admin','productos-reventa'] },
+      { id: 'costeo', items: ['config-costeo','costos','auditoria-costos'] },
+      { id: 'analisis', items: ['estimacion-bol','analisis-merma','ventas-mensuales'] },
+      { id: 'configuracion', items: ['correos-contacto'] },
+    ];
+    const grupo = gruposAdmin.find(g => g.items.includes(vistaId));
+    if (grupo && !App._gruposAbiertos[grupo.id]) {
+      App._gruposAbiertos[grupo.id] = true;
+      renderSidebar();
+    }
+  }
+
   actualizarNavActivo(vistaId);
   document.querySelectorAll('.vista').forEach(v => v.classList.remove('active'));
   switch(vistaId) {
