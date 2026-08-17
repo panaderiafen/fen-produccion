@@ -376,6 +376,7 @@ function renderSidebar() {
         { id: 'config-costeo',    icon: 'ti-settings-dollar', label: 'Config de costeo' },
         { id: 'costos',           icon: 'ti-chart-bar',       label: 'Estructuras de costo' },
         { id: 'auditoria-costos', icon: 'ti-shield-check',    label: 'Auditoría de costos' },
+        { id: 'inversiones',      icon: 'ti-building-bank',   label: 'Inversiones' },
       ]},
       { id: 'analisis', label: 'Análisis y reportes', icon: 'ti-chart-bar', items: [
         { id: 'estimacion-bol',    icon: 'ti-chart-arrows-vertical', label: 'Estimación de demanda' },
@@ -460,7 +461,7 @@ function navegarA(vistaId) {
     const gruposAdmin = [
       { id: 'flujo-diario', items: ['aprobaciones','materias-primas'] },
       { id: 'catalogo', items: ['maestro-admin','productos-reventa'] },
-      { id: 'costeo', items: ['config-costeo','costos','auditoria-costos'] },
+      { id: 'costeo', items: ['config-costeo','costos','auditoria-costos','inversiones'] },
       { id: 'analisis', items: ['estimacion-bol','analisis-merma','ventas-mensuales'] },
       { id: 'configuracion', items: ['correos-contacto'] },
     ];
@@ -502,6 +503,7 @@ function navegarA(vistaId) {
     case 'estimacion-bol':      renderVistaEstimacionDemanda();  break;
     case 'analisis-merma':      renderVistaAnalisisMerma();  break;
     case 'auditoria-costos':    renderVistaAuditoriaCostos(); break;
+    case 'inversiones':         renderVistaInversiones(); break;
     case 'config-costeo':       renderVistaConfigCosteo();   break;
     case 'correos-contacto':    renderVistaCorreosContacto(); break;
     case 'productos-reventa':   renderVistaProductosReventa(); break;
@@ -7709,6 +7711,143 @@ async function sincronizarVentasMensualesUI(btn) {
   }
 }
 
+// ── ADMIN: INVERSIONES Y DEPRECIACIÓN ──────────────────────────
+async function renderVistaInversiones() {
+  const vista = document.getElementById('vista-inversiones');
+  vista.innerHTML = `
+    <div class="vista-header">
+      <div>
+        <h1 class="vista-titulo">Inversiones</h1>
+        <p style="font-size:12px;color:var(--txt3);margin-top:4px">
+          Bienes de mayor valor (hornos, vehículos, remodelaciones) — se reparten en cuotas mensuales de depreciación
+          a lo largo de su vida útil, y esa cuota se suma a los gastos generales del costeo. La vida útil (cuántos
+          meses/años dura el bien para efectos tributarios) confírmela con su contador — acá solo se hace el cálculo.
+        </p>
+      </div>
+      <button class="btn-primario" onclick="abrirFormInversion()">
+        <i class="ti ti-plus"></i> Nueva inversión
+      </button>
+    </div>
+    <div id="lista-inversiones"><p style="color:var(--txt3)">Cargando...</p></div>
+  `;
+  mostrarVista('inversiones');
+
+  let inversiones = [];
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_inversiones' }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' });
+    inversiones = (await res.json()).inversiones || [];
+  } catch(e) {
+    toast('No se pudieron cargar las inversiones', 'error');
+  }
+  App._inversiones = inversiones;
+  renderListaInversiones();
+}
+
+function renderListaInversiones() {
+  const cont = document.getElementById('lista-inversiones');
+  const inversiones = App._inversiones || [];
+
+  if (!inversiones.length) {
+    cont.innerHTML = `<div class="empty-state"><i class="ti ti-building-bank"></i><h2>Sin inversiones registradas todavía</h2></div>`;
+    return;
+  }
+
+  const hoy = new Date();
+  const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+
+  cont.innerHTML = `
+    <div class="card">
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:var(--bg)">
+          <th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Inversión</th>
+          <th style="text-align:right;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Monto total</th>
+          <th style="text-align:right;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Vida útil</th>
+          <th style="text-align:right;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Cuota mensual</th>
+          <th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Área</th>
+          <th style="padding:8px 12px"></th>
+        </tr></thead>
+        <tbody>
+          ${inversiones.map(inv => {
+            const activa = inv.activa !== 'no';
+            return `
+            <tr style="border-top:1px solid var(--border);${activa?'':'opacity:.5'}">
+              <td style="padding:10px 12px">
+                <div style="font-weight:600;font-size:13px">${inv.nombre}</div>
+                <div style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace">${inv.ID_inversion} · compra: ${inv.fecha_compra || '—'}${!activa ? ' · INACTIVA' : ''}</div>
+              </td>
+              <td style="text-align:right;padding:10px 12px;font-family:'DM Mono',monospace">${clp(inv.monto_total)}</td>
+              <td style="text-align:right;padding:10px 12px">${inv.vida_util_meses} meses</td>
+              <td style="text-align:right;padding:10px 12px;font-family:'DM Mono',monospace">${clp(inv.depreciacion_mensual)}</td>
+              <td style="padding:10px 12px">${inv['área'] ? (FEN.AREAS[inv['área']]?.nombre || inv['área']) : '<span style="color:var(--txt3)">Compartida (prorrateada)</span>'}</td>
+              <td style="text-align:right;padding:10px 12px;white-space:nowrap">
+                <button class="btn-secundario" style="font-size:12px;padding:5px 10px;margin-right:4px" onclick="abrirFormInversion('${inv.ID_inversion}')">
+                  <i class="ti ti-pencil"></i>
+                </button>
+                <button class="btn-secundario" style="font-size:12px;padding:5px 10px" onclick="toggleActivaInversion('${inv.ID_inversion}',${activa})">
+                  <i class="ti ti-${activa?'circle-x':'circle-check'}"></i>
+                </button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function abrirFormInversion(idExistente) {
+  const inv = idExistente ? (App._inversiones || []).find(x => x.ID_inversion === idExistente) : null;
+
+  const nombre = prompt('Nombre de la inversión (ej: "Horno rotatorio Panadería"):', inv?.nombre || '');
+  if (nombre === null || !nombre.trim()) return;
+
+  const monto = prompt('Monto total pagado (neto, todo junto — no la cuota mensual del crédito si la compró en cuotas):', inv?.monto_total || '');
+  if (monto === null) return;
+  const montoNum = parseFloat(monto);
+  if (isNaN(montoNum) || montoNum <= 0) { toast('Monto inválido', 'error'); return; }
+
+  const fechaCompra = prompt('Fecha de compra (AAAA-MM-DD):', inv?.fecha_compra || new Date().toISOString().slice(0,10));
+  if (fechaCompra === null) return;
+
+  const vidaUtil = prompt('Vida útil en MESES (confirme este número con su contador — ej: un horno puede ser 60-120 meses según normativa):', inv?.vida_util_meses || '');
+  if (vidaUtil === null) return;
+  const vidaUtilNum = parseFloat(vidaUtil);
+  if (isNaN(vidaUtilNum) || vidaUtilNum <= 0) { toast('Vida útil inválida', 'error'); return; }
+
+  const areaTexto = Object.entries(FEN.AREAS).map(([cod,a]) => `${cod}=${a.nombre}`).join(', ');
+  const area = prompt(
+    `¿Es de un área específica, o compartida entre todas?\n\nEscriba el código si es de una sola área (${areaTexto}), o deje vacío si es compartida (ej: vehículo de reparto, remodelación general) — se prorrateará por ventas.`,
+    inv?.['área'] || ''
+  );
+  if (area === null) return;
+
+  (async () => {
+    const payload = { nombre: nombre.trim(), monto_total: montoNum, fecha_compra: fechaCompra, vida_util_meses: vidaUtilNum, area: area.trim().toUpperCase() };
+    const resp = inv
+      ? await escribirEnSheet('editar_inversion', { ID_inversion: inv.ID_inversion, ...payload })
+      : await escribirEnSheet('crear_inversion', payload);
+    if (resp?.ok) {
+      toast(resp.msg);
+      renderVistaInversiones();
+    } else {
+      toast('Error: ' + (resp?.msg || ''), 'error');
+    }
+  })();
+}
+
+async function toggleActivaInversion(id, estaActiva) {
+  const accion = estaActiva ? 'desactivar' : 'reactivar';
+  if (!confirm(`¿${accion === 'desactivar' ? 'Desactivar' : 'Reactivar'} esta inversión? ${accion === 'desactivar' ? 'Deja de sumar depreciación a los gastos generales.' : ''}`)) return;
+  const resp = await escribirEnSheet('editar_inversion', { ID_inversion: id, activa: estaActiva ? 'no' : 'si' });
+  if (resp?.ok) {
+    toast('Inversión ' + (estaActiva ? 'desactivada' : 'reactivada'));
+    renderVistaInversiones();
+  } else {
+    toast('Error: ' + (resp?.msg || ''), 'error');
+  }
+}
+
 async function renderVistaProductosReventa() {
   const vista = document.getElementById('vista-productos-reventa');
   vista.innerHTML = `
@@ -8092,11 +8231,19 @@ async function sincronizarGastosArea() {
 
     const hayGeneral = general.fijos > 0 || general.remuneracion > 0;
     const sinVentasParaProrratear = hayGeneral && !data.totalVentasMes;
-    estadoEl.innerHTML = `✓ Sincronizado (${mes})` + (hayGeneral ? `
+    const depreArea = data.depreciacionIncluida?.porArea?.[area] || 0;
+    const depreGeneral = data.depreciacionIncluida?.general || 0;
+    const hayDepreciacion = depreArea > 0 || depreGeneral > 0;
+    estadoEl.innerHTML = `✓ Sincronizado (${mes})`
+      + (hayGeneral ? `
       <div style="margin-top:6px;padding:8px 10px;background:${sinVentasParaProrratear ? '#FFF3E0' : '#E3F2FD'};border-radius:var(--r-sm);font-size:11px;color:${sinVentasParaProrratear ? '#E65100' : '#1565C0'}">
         ${sinVentasParaProrratear
           ? `⚠ Hay $${general.fijos.toLocaleString('es-CL')} en gastos generales (sin área — arriendo, vehículo, gas, etc.) para este mes, pero no hay ventas sincronizadas para prorratearlos. No se agregaron a este cálculo — sincronice "Ventas mensuales" primero.`
           : `ℹ Incluye ${(participacionArea*100).toFixed(1)}% de los gastos generales del mes (arriendo, vehículo, gas, etc. — $${general.fijos.toLocaleString('es-CL')} en total), prorrateado según la participación de ${FEN.AREAS[area]?.nombre || area} en las ventas totales: +$${fijosGeneralProrrateado.toLocaleString('es-CL')} fijos${remuneracionGeneralProrrateado ? ` / +$${remuneracionGeneralProrrateado.toLocaleString('es-CL')} remuneración` : ''}.`}
+      </div>` : '')
+      + (hayDepreciacion ? `
+      <div style="margin-top:6px;padding:8px 10px;background:#F3E5F5;border-radius:var(--r-sm);font-size:11px;color:#6A1B9A">
+        🏗 Incluye depreciación de inversiones: ${depreArea > 0 ? `$${Math.round(depreArea).toLocaleString('es-CL')} directa de esta área` : ''}${depreArea > 0 && depreGeneral > 0 ? ' + ' : ''}${depreGeneral > 0 ? `$${Math.round(depreGeneral*participacionArea).toLocaleString('es-CL')} de su parte prorrateada de inversiones compartidas` : ''}.
       </div>` : '');
   } catch(e) {
     estadoEl.textContent = 'No se pudo conectar al Registro de Gastos';
