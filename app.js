@@ -8241,9 +8241,20 @@ async function sincronizarGastosArea() {
 
     const areaData = data.datos?.[area] || { fijos: 0, remuneracion: 0 };
     const general = data.general || { fijos: 0, remuneracion: 0 };
+    const generalPorEtiqueta = data.generalPorEtiqueta || {};
     const participacionArea = data.participacion?.[area] || 0;
+    const ventasArea = data.ventasPorArea?.[area] || 0;
+    const totalVentasMes = data.totalVentasMes || 0;
+    const depreArea = data.depreciacionIncluida?.porArea?.[area] || 0;
+    const depreGeneral = data.depreciacionIncluida?.general || 0;
+
     const fijosGeneralProrrateado = Math.round(general.fijos * participacionArea);
     const remuneracionGeneralProrrateado = Math.round(general.remuneracion * participacionArea);
+    const depreGeneralProrrateada = Math.round(depreGeneral * participacionArea);
+
+    // areaData.fijos ya incluye depreArea (se sumó en el backend) — lo separamos
+    // solo para mostrarlo, sin alterar el total real que se guarda
+    const fijosPropiosSinDepre = Math.round(areaData.fijos) - Math.round(depreArea);
 
     const fijosFinal = Math.round(areaData.fijos) + fijosGeneralProrrateado;
     const remuneracionFinal = Math.round(areaData.remuneracion) + remuneracionGeneralProrrateado;
@@ -8251,22 +8262,75 @@ async function sincronizarGastosArea() {
     document.getElementById('cc-fijos').value = fijosFinal;
     document.getElementById('cc-remuneracion').value = remuneracionFinal;
 
-    const hayGeneral = general.fijos > 0 || general.remuneracion > 0;
-    const sinVentasParaProrratear = hayGeneral && !data.totalVentasMes;
-    const depreArea = data.depreciacionIncluida?.porArea?.[area] || 0;
-    const depreGeneral = data.depreciacionIncluida?.general || 0;
-    const hayDepreciacion = depreArea > 0 || depreGeneral > 0;
-    estadoEl.innerHTML = `✓ Sincronizado (${mes})`
-      + (hayGeneral ? `
-      <div style="margin-top:6px;padding:8px 10px;background:${sinVentasParaProrratear ? '#FFF3E0' : '#E3F2FD'};border-radius:var(--r-sm);font-size:11px;color:${sinVentasParaProrratear ? '#E65100' : '#1565C0'}">
-        ${sinVentasParaProrratear
-          ? `⚠ Hay $${general.fijos.toLocaleString('es-CL')} en gastos generales (sin área — arriendo, vehículo, gas, etc.) para este mes, pero no hay ventas sincronizadas para prorratearlos. No se agregaron a este cálculo — sincronice "Ventas mensuales" primero.`
-          : `ℹ Incluye ${(participacionArea*100).toFixed(1)}% de los gastos generales del mes (arriendo, vehículo, gas, etc. — $${general.fijos.toLocaleString('es-CL')} en total), prorrateado según la participación de ${FEN.AREAS[area]?.nombre || area} en las ventas totales: +$${fijosGeneralProrrateado.toLocaleString('es-CL')} fijos${remuneracionGeneralProrrateado ? ` / +$${remuneracionGeneralProrrateado.toLocaleString('es-CL')} remuneración` : ''}.`}
-      </div>` : '')
-      + (hayDepreciacion ? `
-      <div style="margin-top:6px;padding:8px 10px;background:#F3E5F5;border-radius:var(--r-sm);font-size:11px;color:#6A1B9A">
-        🏗 Incluye depreciación de inversiones: ${depreArea > 0 ? `$${Math.round(depreArea).toLocaleString('es-CL')} directa de esta área` : ''}${depreArea > 0 && depreGeneral > 0 ? ' + ' : ''}${depreGeneral > 0 ? `$${Math.round(depreGeneral*participacionArea).toLocaleString('es-CL')} de su parte prorrateada de inversiones compartidas` : ''}.
-      </div>` : '');
+    const sinVentasParaProrratear = (general.fijos > 0 || general.remuneracion > 0) && !totalVentasMes;
+    const nombreArea = FEN.AREAS[area]?.nombre || area;
+
+    const filaDesglose = (label, monto, nota) => `
+      <tr style="border-top:1px solid var(--border)">
+        <td style="padding:6px 10px;font-size:12px">${label}</td>
+        <td style="padding:6px 10px;font-size:12px;text-align:right;font-family:'DM Mono',monospace">${clp(monto)}</td>
+        <td style="padding:6px 10px;font-size:11px;color:var(--txt3)">${nota||''}</td>
+      </tr>`;
+
+    let html = `✓ Sincronizado (${mes})`;
+
+    if (sinVentasParaProrratear) {
+      html += `
+        <div style="margin-top:8px;padding:8px 10px;background:#FFF3E0;border-radius:var(--r-sm);font-size:11px;color:#E65100">
+          ⚠ Hay $${general.fijos.toLocaleString('es-CL')} en gastos compartidos para este mes, pero no hay ventas sincronizadas
+          para prorratearlos — no se agregaron a este cálculo. Sincronice "Ventas mensuales" primero.
+        </div>`;
+    }
+
+    html += `
+      <div class="card" style="margin-top:10px">
+        <div class="card-head" style="font-size:12px"><i class="ti ti-list-details"></i> Desglose completo — ${nombreArea}, ${mes}</div>
+        <table style="width:100%;border-collapse:collapse">
+          <tbody>
+            ${filaDesglose('Ventas del área este mes', ventasArea, totalVentasMes ? `${(participacionArea*100).toFixed(1)}% de $${totalVentasMes.toLocaleString('es-CL')} total` : 'sin ventas sincronizadas')}
+          </tbody>
+        </table>
+        <div style="padding:8px 10px 2px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Costos fijos</div>
+        <table style="width:100%;border-collapse:collapse">
+          <tbody>
+            ${filaDesglose(`Propios de ${nombreArea}`, fijosPropiosSinDepre, 'Registro de Gastos, área = ' + area)}
+            ${Object.entries(generalPorEtiqueta).map(([etiqueta, g]) =>
+              g.fijos > 0 ? filaDesglose(
+                `Compartidos — ${etiqueta}`,
+                Math.round(g.fijos * participacionArea),
+                `${(participacionArea*100).toFixed(1)}% de $${Math.round(g.fijos).toLocaleString('es-CL')} total`
+              ) : ''
+            ).join('')}
+            ${depreArea > 0 ? filaDesglose('Depreciación — inversión propia', depreArea, 'directa de ' + nombreArea) : ''}
+            ${depreGeneralProrrateada > 0 ? filaDesglose('Depreciación — inversiones compartidas', depreGeneralProrrateada, `${(participacionArea*100).toFixed(1)}% de $${Math.round(depreGeneral).toLocaleString('es-CL')} total`) : ''}
+            <tr style="border-top:2px solid var(--border);font-weight:700">
+              <td style="padding:6px 10px;font-size:12px">Total costos fijos</td>
+              <td style="padding:6px 10px;font-size:12px;text-align:right;font-family:'DM Mono',monospace">${clp(fijosFinal)}</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="padding:8px 10px 2px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Remuneración</div>
+        <table style="width:100%;border-collapse:collapse">
+          <tbody>
+            ${filaDesglose(`Propia de ${nombreArea}`, areaData.remuneracion, 'Registro de Gastos, área = ' + area)}
+            ${Object.entries(generalPorEtiqueta).map(([etiqueta, g]) =>
+              g.remuneracion > 0 ? filaDesglose(
+                `Compartida — ${etiqueta}`,
+                Math.round(g.remuneracion * participacionArea),
+                `${(participacionArea*100).toFixed(1)}% de $${Math.round(g.remuneracion).toLocaleString('es-CL')} total`
+              ) : ''
+            ).join('')}
+            <tr style="border-top:2px solid var(--border);font-weight:700">
+              <td style="padding:6px 10px;font-size:12px">Total remuneración</td>
+              <td style="padding:6px 10px;font-size:12px;text-align:right;font-family:'DM Mono',monospace">${clp(remuneracionFinal)}</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>`;
+
+    estadoEl.innerHTML = html;
   } catch(e) {
     estadoEl.textContent = 'No se pudo conectar al Registro de Gastos';
   }
