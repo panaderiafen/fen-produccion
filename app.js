@@ -8108,8 +8108,9 @@ async function renderVistaConfigCosteo() {
         </div>
         <div class="campo">
           <label>Mes (YYYY-MM)</label>
-          <input type="text" id="cc-mes" value="${mesActual}" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+          <input type="text" id="cc-mes" value="${mesActual}" onchange="verificarVentasSincronizadasParaMes()" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
         </div>
+        <div id="cc-aviso-ventas" class="campo full"></div>
         <div class="campo full">
           <button class="btn-secundario" onclick="sincronizarGastosArea()">
             <i class="ti ti-cloud-download"></i> Sincronizar desde Registro de Gastos
@@ -8186,6 +8187,7 @@ async function renderVistaConfigCosteo() {
       </div>
     </div>
   `;
+  verificarVentasSincronizadasParaMes();
 }
 
 async function eliminarFilaConfigCosteo(fila, btn) {
@@ -8204,6 +8206,26 @@ async function eliminarFilaConfigCosteo(fila, btn) {
     toast('Error: ' + e.message, 'error');
     desbloquearBtn(btn, '<i class="ti ti-trash"></i>', false);
   }
+}
+
+async function verificarVentasSincronizadasParaMes() {
+  const mes = document.getElementById('cc-mes')?.value.trim();
+  const cont = document.getElementById('cc-aviso-ventas');
+  if (!mes || !cont) return;
+  cont.innerHTML = '';
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_ventas_mensuales' }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' });
+    const ventas = (await res.json()).ventas || [];
+    const hayVentasDelMes = ventas.some(v => v.mes === mes);
+    if (!hayVentasDelMes) {
+      cont.innerHTML = `
+        <div style="padding:8px 10px;background:#FFF3E0;border-radius:var(--r-sm);font-size:11px;color:#E65100">
+          ⚠ No hay ventas sincronizadas para <strong>${mes}</strong> todavía — los gastos compartidos (arriendo, vehículo, gas, etc.)
+          no se van a poder prorratear hasta que sincronice "Ventas mensuales (B2B/B2C)" para este mes primero.
+        </div>`;
+    }
+  } catch(e) {}
 }
 
 async function sincronizarGastosArea() {
