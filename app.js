@@ -7942,24 +7942,31 @@ function abrirFormProductoReventa(idExistente) {
   if (unidadCompra === null) return;
 
   const costoNeto = prompt(
-    `Precio neto (sin IVA) del paquete completo de "${nombre}":`,
+    `Precio neto (sin IVA) del paquete completo de "${nombre}" (0 si no aplica, ej. un servicio):`,
     p?.costo_neto || ''
   );
   if (costoNeto === null) return;
   const neto = parseFloat(costoNeto);
   if (isNaN(neto) || neto < 0) { toast('Precio inválido', 'error'); return; }
 
+  const area = prompt(
+    `¿A qué categoría pertenece? Deje "Reventa" para productos comprados y revendidos (ej. barras de chocolate).\n` +
+    `Use otra palabra para servicios que no son productos físicos (ej. "Servicios" para Despacho):`,
+    p?.area || 'Reventa'
+  );
+  if (area === null) return;
+
   (async () => {
     let resp;
     if (p) {
       resp = await escribirEnSheet('editar_producto_reventa', {
-        ID_reventa: p.ID_reventa, nombre: nombre.trim(), costo_neto: neto, unidad_compra: unidadCompra.trim().toLowerCase()
+        ID_reventa: p.ID_reventa, nombre: nombre.trim(), costo_neto: neto, unidad_compra: unidadCompra.trim().toLowerCase(), area: area.trim()
       });
     } else {
-      const stockInicial = prompt(`Stock inicial de "${nombre}" (cuántas unidades tiene hoy):`, '0');
+      const stockInicial = prompt(`Stock inicial de "${nombre}" (cuántas unidades tiene hoy — 0 si no aplica):`, '0');
       resp = await escribirEnSheet('crear_producto_reventa', {
         nombre: nombre.trim(), costo_neto: neto, unidad_compra: unidadCompra.trim().toLowerCase(),
-        stock_actual: parseFloat(stockInicial) || 0
+        stock_actual: parseFloat(stockInicial) || 0, area: area.trim()
       });
     }
     if (resp?.ok) {
@@ -8279,6 +8286,17 @@ async function sincronizarGastosArea() {
         <div style="margin-top:8px;padding:8px 10px;background:#FFF3E0;border-radius:var(--r-sm);font-size:11px;color:#E65100">
           ⚠ Hay $${general.fijos.toLocaleString('es-CL')} en gastos compartidos para este mes, pero no hay ventas sincronizadas
           para prorratearlos — no se agregaron a este cálculo. Sincronice "Ventas mensuales" primero.
+        </div>`;
+    }
+
+    const bencinaInfo = data.bencinaDescuento;
+    if (bencinaInfo && bencinaInfo.bencinaTotal > 0) {
+      html += `
+        <div style="margin-top:8px;padding:8px 10px;background:#E8F5E9;border-radius:var(--r-sm);font-size:11px;color:#2E7D32">
+          ⛽ Bencina del mes: $${Math.round(bencinaInfo.bencinaTotal).toLocaleString('es-CL')} — de eso,
+          $${Math.round(bencinaInfo.descuento).toLocaleString('es-CL')} ya quedó cubierto por el despacho cobrado a clientes
+          ($${Math.round(bencinaInfo.despachoTotal).toLocaleString('es-CL')} ese mes).
+          Solo el resto ($${Math.round(bencinaInfo.bencinaNeta).toLocaleString('es-CL')}) se prorratea entre las áreas.
         </div>`;
     }
 
