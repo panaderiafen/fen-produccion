@@ -7523,6 +7523,16 @@ async function renderVistaVentasMensuales() {
     toast('No se pudo cargar la configuración actual', 'error');
   }
 
+  // Nombre para mostrar junto al ID — cruza Maestro de recetas y productos de reventa
+  const nombrePorId = {};
+  try {
+    const maestro = await Cache.get('Maestro_recetas', () => leerHoja('Maestro_recetas'));
+    maestro.forEach(r => { nombrePorId[r.ID_receta] = r.nombre; });
+    const payloadReventa = encodeURIComponent(JSON.stringify({ accion: 'leer_productos_reventa' }));
+    const resReventa = await fetch(FEN.WEBAPP_URL + '?payload=' + payloadReventa, { cache: 'no-store' });
+    ((await resReventa.json()).productos || []).forEach(p => { nombrePorId[p.ID_reventa] = p.nombre; });
+  } catch(e) {}
+
   const cont = document.getElementById('ventas-mensuales-contenido');
 
   // Resumen: último mes sincronizado por canal, y total de filas
@@ -7593,7 +7603,10 @@ async function renderVistaVentasMensuales() {
                 <tbody>
                   ${filas.sort((a,b) => b.mes.localeCompare(a.mes) || a.ID_receta.localeCompare(b.ID_receta)).map(v => `
                     <tr style="border-top:1px solid var(--border)">
-                      <td style="padding:6px 14px;font-size:12px;font-family:'DM Mono',monospace">${v.ID_receta}</td>
+                      <td style="padding:6px 14px;font-size:12px">
+                        ${nombrePorId[v.ID_receta] || '<span style="color:var(--txt3)">(sin nombre — revisar)</span>'}
+                        <span style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:4px">${v.ID_receta}</span>
+                      </td>
                       <td style="padding:6px 14px;font-size:12px">${v.mes}</td>
                       <td style="padding:6px 14px;font-size:12px;text-align:right;font-family:'DM Mono',monospace">${parseFloat(v.cantidad_vendida).toLocaleString('es-CL')}</td>
                       <td style="padding:6px 14px;font-size:12px;text-align:right;font-family:'DM Mono',monospace">${clp(v.monto_neto)}</td>
