@@ -7565,34 +7565,47 @@ async function renderVistaVentasMensuales() {
       </div>
     </div>
 
-    ${ventas.length ? `
-    <div class="card">
-      <div class="card-head"><i class="ti ti-table"></i> Ventas consolidadas (${ventas.length} filas)</div>
-      <div style="overflow-x:auto;max-height:400px;overflow-y:auto">
-        <table class="tabla-vista">
-          <thead><tr>
-            <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3);background:var(--bg)">ID receta</th>
-            <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Área</th>
-            <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Canal</th>
-            <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Mes</th>
-            <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Cantidad</th>
-            <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Monto neto</th>
-          </tr></thead>
-          <tbody>
-            ${ventas.sort((a,b) => b.mes.localeCompare(a.mes)).map(v => `
-              <tr style="border-top:1px solid var(--border)">
-                <td style="padding:6px 14px;font-size:12px;font-family:'DM Mono',monospace">${v.ID_receta}</td>
-                <td style="padding:6px 14px;font-size:12px">${v.área || '—'}</td>
-                <td style="padding:6px 14px;font-size:12px">${v.canal}</td>
-                <td style="padding:6px 14px;font-size:12px">${v.mes}</td>
-                <td style="padding:6px 14px;font-size:12px;text-align:right;font-family:'DM Mono',monospace">${parseFloat(v.cantidad_vendida).toLocaleString('es-CL')}</td>
-                <td style="padding:6px 14px;font-size:12px;text-align:right;font-family:'DM Mono',monospace">${clp(v.monto_neto)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>` : ''}
+    ${ventas.length ? (() => {
+      // Agrupar por área, y dentro de cada área por canal (B2B primero, B2C después)
+      const porArea = {};
+      ventas.forEach(v => {
+        const area = v.área || 'Sin área (revisar)';
+        (porArea[area] = porArea[area] || []).push(v);
+      });
+      return Object.entries(porArea).sort(([a],[b]) => a.localeCompare(b,'es')).map(([area, filasArea]) => {
+        const porCanal = { B2B: [], B2C: [] };
+        filasArea.forEach(v => (porCanal[v.canal] = porCanal[v.canal] || []).push(v));
+        return `
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-head">
+            <i class="ti ti-table"></i> ${area} <span style="font-weight:400;color:var(--txt3)">(${filasArea.length} fila${filasArea.length!==1?'s':''})</span>
+          </div>
+          ${Object.entries(porCanal).filter(([,filas]) => filas.length).map(([canal, filas]) => `
+            <div style="padding:10px 16px 4px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--txt3);letter-spacing:.4px">${canal}</div>
+            <div style="overflow-x:auto">
+              <table class="tabla-vista">
+                <thead><tr>
+                  <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3);background:var(--bg)">ID receta</th>
+                  <th style="text-align:left;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Mes</th>
+                  <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Cantidad</th>
+                  <th style="text-align:right;padding:8px 14px;font-size:10px;text-transform:uppercase;color:var(--txt3);background:var(--bg)">Monto neto</th>
+                </tr></thead>
+                <tbody>
+                  ${filas.sort((a,b) => b.mes.localeCompare(a.mes) || a.ID_receta.localeCompare(b.ID_receta)).map(v => `
+                    <tr style="border-top:1px solid var(--border)">
+                      <td style="padding:6px 14px;font-size:12px;font-family:'DM Mono',monospace">${v.ID_receta}</td>
+                      <td style="padding:6px 14px;font-size:12px">${v.mes}</td>
+                      <td style="padding:6px 14px;font-size:12px;text-align:right;font-family:'DM Mono',monospace">${parseFloat(v.cantidad_vendida).toLocaleString('es-CL')}</td>
+                      <td style="padding:6px 14px;font-size:12px;text-align:right;font-family:'DM Mono',monospace">${clp(v.monto_neto)}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `).join('')}
+        </div>`;
+      }).join('');
+    })() : ''}
   `;
 }
 
