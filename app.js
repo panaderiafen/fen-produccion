@@ -8104,6 +8104,8 @@ async function renderVistaConfigCosteo() {
       Costos fijos y remuneración por área, sincronizados desde el Registro de Gastos. Merma y utilidad objetivo se ingresan manualmente mientras se acumula historial real.
     </p>
 
+    <div id="cc-resumen-mes"></div>
+
     <div class="card" style="margin-bottom:16px">
       <div class="card-head"><i class="ti ti-refresh"></i> Sincronizar y editar</div>
       <div class="form-grid" style="padding:16px">
@@ -8115,7 +8117,7 @@ async function renderVistaConfigCosteo() {
         </div>
         <div class="campo">
           <label>Mes (YYYY-MM)</label>
-          <input type="text" id="cc-mes" value="${mesActual}" onchange="verificarVentasSincronizadasParaMes()" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+          <input type="text" id="cc-mes" value="${mesActual}" onchange="verificarVentasSincronizadasParaMes(); renderResumenVentasMes();" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
         </div>
         <div id="cc-aviso-ventas" class="campo full"></div>
         <div class="campo full">
@@ -8195,6 +8197,7 @@ async function renderVistaConfigCosteo() {
     </div>
   `;
   verificarVentasSincronizadasParaMes();
+  renderResumenVentasMes();
 }
 
 async function eliminarFilaConfigCosteo(fila, btn) {
@@ -8212,6 +8215,52 @@ async function eliminarFilaConfigCosteo(fila, btn) {
   } catch(e) {
     toast('Error: ' + e.message, 'error');
     desbloquearBtn(btn, '<i class="ti ti-trash"></i>', false);
+  }
+}
+
+async function renderResumenVentasMes() {
+  const mes = document.getElementById('cc-mes')?.value.trim();
+  const cont = document.getElementById('cc-resumen-mes');
+  if (!mes || !cont) return;
+  cont.innerHTML = `<p style="color:var(--txt3);font-size:12px;margin-bottom:16px">Cargando resumen de ventas...</p>`;
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_resumen_ventas_mes', mes }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' });
+    const data = await res.json();
+    if (!data.ok || !data.totalGeneral) {
+      cont.innerHTML = `<div class="card" style="margin-bottom:16px"><p style="padding:16px;font-size:12px;color:var(--txt3)">Sin ventas sincronizadas para ${mes} todavía.</p></div>`;
+      return;
+    }
+    const areas = Object.keys(FEN.AREAS);
+    cont.innerHTML = `
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head"><i class="ti ti-chart-pie"></i> Resumen de ventas — ${mes} (todas las áreas)</div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:var(--bg)">
+            <th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Área</th>
+            <th style="text-align:right;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Ventas del mes</th>
+            <th style="text-align:right;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">% participación</th>
+          </tr></thead>
+          <tbody>
+            ${areas.map(cod => {
+              const monto = data.totalPorArea?.[cod] || 0;
+              const pct = data.participacion?.[cod] || 0;
+              return `<tr style="border-top:1px solid var(--border)">
+                <td style="padding:8px 12px;font-size:13px">${FEN.AREAS[cod].nombre}</td>
+                <td style="padding:8px 12px;font-size:13px;text-align:right;font-family:'DM Mono',monospace">${clp(monto)}</td>
+                <td style="padding:8px 12px;font-size:13px;text-align:right;font-family:'DM Mono',monospace">${(pct*100).toFixed(1)}%</td>
+              </tr>`;
+            }).join('')}
+            <tr style="border-top:2px solid var(--border);font-weight:700">
+              <td style="padding:8px 12px;font-size:13px">Total</td>
+              <td style="padding:8px 12px;font-size:13px;text-align:right;font-family:'DM Mono',monospace">${clp(data.totalGeneral)}</td>
+              <td style="padding:8px 12px;font-size:13px;text-align:right;font-family:'DM Mono',monospace">100%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>`;
+  } catch(e) {
+    cont.innerHTML = '';
   }
 }
 
