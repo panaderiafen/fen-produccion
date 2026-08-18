@@ -5898,7 +5898,6 @@ async function eliminarSolicitudMP(mpId, nombre, btn) {
     await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     App.materiasPrimas = App.materiasPrimas.filter(m => m.ID_MP !== mpId);
     Cache.invalidar('mp_maestro');
-    await cargarMP();
     toast(`Solicitud "${nombre}" eliminada`);
     renderVistaMP();
   } catch(e) {
@@ -5931,7 +5930,6 @@ async function notificarJefaMP(mpId, nombre, btn) {
   // Force reload MP from Sheet to avoid stale cache
   App.materiasPrimas = App.materiasPrimas.map(m => m.ID_MP === mpId ? {...m, estado: 'recibida'} : m);
   Cache.invalidar('mp_maestro');
-  await cargarMP();
   renderVistaMP(); // re-renders the view, button feedback resets naturally
 }
 
@@ -6092,7 +6090,6 @@ async function confirmarAsignarMP(btn) {
   toast(`Asignado "${nombreExist}" — aviso enviado a la jefa`);
   desbloquearBtn(btn, '<i class="ti ti-check"></i> Confirmar asignación', true);
   Cache.invalidar('mp_maestro');
-  await cargarMP();
   renderVistaMP();
 }
 
@@ -6325,8 +6322,9 @@ async function renombrarMPUI(mpId, nombreActual) {
     const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     const data = await res.json();
     if (data.ok) {
+      const mpLocal = App.materiasPrimas.find(m => m.ID_MP === mpId);
+      if (mpLocal) mpLocal.nombre = nuevoNombre.trim();
       Cache.invalidar('mp_maestro');
-      await cargarMP();
       const detalle = data.recetas && data.recetas.length ? '\n\nRecetas actualizadas:\n' + data.recetas.join('\n') : '\n\n(no estaba siendo usada en ninguna receta)';
       alert('✓ ' + data.msg + detalle);
       renderVistaMP();
@@ -6467,7 +6465,6 @@ async function cambiarTipoMP(mpId, tipoActual, nombre) {
   if (item) item.tipo = nuevoTipo;
   toast(`"${nombre}" ahora es ${etiqueta}`);
   Cache.invalidar('mp_maestro');
-  await cargarMP();
   renderVistaMP();
 }
 
@@ -9610,7 +9607,6 @@ async function gestionarAreasMP(mpId) {
   escribirEnSheet('editar_mp', { ID_MP: mpId, areas_habilitadas: val });
   mp.areas_habilitadas = val;
   Cache.invalidar('mp_maestro');
-  await cargarMP();
   toast('Áreas actualizadas');
   renderVistaMP();
 }
@@ -9624,7 +9620,6 @@ async function toggleEstadoMP(mpId, estadoActual) {
   await escribirEnSheet('editar_mp', { ID_MP: mpId, estado: nuevoEstado });
   mp.estado = nuevoEstado;
   Cache.invalidar('mp_maestro');
-  await cargarMP();
   toast(`MP ${accion === 'desactivar' ? 'desactivada' : 'activada'}`);
   renderVistaMP();
 }
