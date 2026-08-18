@@ -33,8 +33,12 @@ const FEN = {
 // ── Leer hoja como array de objetos ─────────────────────────
 async function leerHoja(nombreHoja) {
   try {
-    const url = FEN.csvUrl(nombreHoja);
-    const res = await fetch(url);
+    // cache: 'no-store' evita que el navegador sirva una copia vieja del CSV — y el
+    // parámetro &_=timestamp asegura que ni siquiera la URL se vea "igual" a una
+    // ya cacheada (Google GVIZ a veces cachea agresivamente del lado del servidor
+    // también, esto ayuda a que se trate como una consulta nueva).
+    const url = FEN.csvUrl(nombreHoja) + '&_=' + Date.now();
+    const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) throw new Error('No se pudo leer la hoja: ' + nombreHoja);
     const texto = await res.text();
     return csvAObjetos(texto);
