@@ -5971,10 +5971,20 @@ async function aprobarMP(mpId, btn) {
   await escribirEnSheet('editar_campo_mp', { ID_MP: mpId, campo: 'estado', valor: 'activa' });
 
   if (costoNeto !== null) {
-    await escribirEnSheet('editar_campo_mp', { ID_MP: mpId, campo: 'unidad_compra', valor: unidadCompra });
-    await escribirEnSheet('editar_mp', { ID_MP: mpId, costo_neto: costoNeto });
+    // Un solo llamado con unidad_compra + costo_neto juntos — así editarMP() calcula
+    // el costo por gramo con el dato correcto de una sola pasada, sin depender de que
+    // una escritura previa ya haya quedado guardada al momento de leerla.
+    const respAprobacion = await escribirEnSheet('editar_mp', { ID_MP: mpId, costo_neto: costoNeto, unidad_compra: unidadCompra });
     mp.unidad_compra = unidadCompra;
     mp.costo_neto = costoNeto;
+    if (respAprobacion?.recetasActualizadas?.length) {
+      alert(
+        `✓ "${mp.nombre}" aprobada.\n\n` +
+        `Se recalculó el costo automáticamente en ${respAprobacion.recetasActualizadas.length} receta(s) que ya la usaban:\n\n` +
+        respAprobacion.recetasActualizadas.join('\n') +
+        `\n\nQuedaron pendientes de aprobación — van a aparecerle en Aprobaciones.`
+      );
+    }
   }
 
   const areaCode = mp.area_codigo || mp.areas_habilitadas?.split(',')?.[0] || '';
@@ -6419,11 +6429,9 @@ async function cambiarUnidadCompra(mpId, unidadActual, nombre) {
   const item = App.materiasPrimas.find(m => m.ID_MP === mpId);
   if (!item) return;
 
-  // 1. Actualizar la unidad de compra
-  await escribirEnSheet('editar_campo_mp', { ID_MP: mpId, campo: 'unidad_compra', valor: nuevaUnidad });
-  // 2. Volver a enviar el costo_neto para que el backend recalcule costo_bruto/por_kg/por_gramo
-  //    ya con la unidad correcta (evita que quede desfasado el costo por unidad/gramo)
-  const resp = await escribirEnSheet('editar_mp', { ID_MP: mpId, costo_neto: item.costo_neto || 0 });
+  // Un solo llamado con unidad_compra + costo_neto juntos — evita depender de que
+  // una escritura previa separada ya haya quedado guardada al momento de leerla.
+  const resp = await escribirEnSheet('editar_mp', { ID_MP: mpId, costo_neto: item.costo_neto || 0, unidad_compra: nuevaUnidad });
 
   item.unidad_compra = nuevaUnidad;
   const bruto = (parseFloat(item.costo_neto) || 0) * 1.19;
