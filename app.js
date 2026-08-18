@@ -5898,6 +5898,7 @@ async function eliminarSolicitudMP(mpId, nombre, btn) {
     await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
     App.materiasPrimas = App.materiasPrimas.filter(m => m.ID_MP !== mpId);
     Cache.invalidar('mp_maestro');
+    await cargarMP();
     toast(`Solicitud "${nombre}" eliminada`);
     renderVistaMP();
   } catch(e) {
@@ -5930,6 +5931,7 @@ async function notificarJefaMP(mpId, nombre, btn) {
   // Force reload MP from Sheet to avoid stale cache
   App.materiasPrimas = App.materiasPrimas.map(m => m.ID_MP === mpId ? {...m, estado: 'recibida'} : m);
   Cache.invalidar('mp_maestro');
+  await cargarMP();
   renderVistaMP(); // re-renders the view, button feedback resets naturally
 }
 
@@ -6002,6 +6004,7 @@ async function aprobarMP(mpId, btn) {
   mp.estado = 'activa';
   toast(`"${mp.nombre}" aprobada — aviso enviado a la jefa`);
   Cache.invalidar('mp_maestro');
+  await cargarMP();
   renderVistaMP();
 }
 
@@ -6089,6 +6092,7 @@ async function confirmarAsignarMP(btn) {
   toast(`Asignado "${nombreExist}" — aviso enviado a la jefa`);
   desbloquearBtn(btn, '<i class="ti ti-check"></i> Confirmar asignación', true);
   Cache.invalidar('mp_maestro');
+  await cargarMP();
   renderVistaMP();
 }
 
@@ -6322,6 +6326,7 @@ async function renombrarMPUI(mpId, nombreActual) {
     const data = await res.json();
     if (data.ok) {
       Cache.invalidar('mp_maestro');
+      await cargarMP();
       const detalle = data.recetas && data.recetas.length ? '\n\nRecetas actualizadas:\n' + data.recetas.join('\n') : '\n\n(no estaba siendo usada en ninguna receta)';
       alert('✓ ' + data.msg + detalle);
       renderVistaMP();
@@ -6447,6 +6452,7 @@ async function cambiarUnidadCompra(mpId, unidadActual, nombre) {
     );
   }
   Cache.invalidar('mp_maestro');
+  await cargarMP();
   renderVistaMP();
 }
 
@@ -6461,6 +6467,7 @@ async function cambiarTipoMP(mpId, tipoActual, nombre) {
   if (item) item.tipo = nuevoTipo;
   toast(`"${nombre}" ahora es ${etiqueta}`);
   Cache.invalidar('mp_maestro');
+  await cargarMP();
   renderVistaMP();
 }
 
@@ -9385,6 +9392,7 @@ async function fusionarMPUI(mpIdEliminar, nombreActual) {
     const data = await res.json();
     if (data.ok) {
       Cache.invalidar('mp_maestro');
+      await cargarMP();
       const detalle = data.recetas && data.recetas.length ? '\n\nRecetas a re-aprobar:\n' + data.recetas.join('\n') : '';
       alert('✓ ' + data.msg + detalle);
       renderVistaMP();
@@ -9441,10 +9449,11 @@ async function editarImpuestosMP(mpId) {
     );
   }
   Cache.invalidar('mp_maestro');
+  await cargarMP();
   renderVistaMP();
 }
 
-function editarMP(mpId) {
+async function editarMP(mpId) {
   const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
   if (!mp) return;
 
@@ -9507,6 +9516,7 @@ function editarMP(mpId) {
   if (payload.observaciones !== undefined) mp.observaciones = payload.observaciones;
   toast(fletePct > 0 ? `Precio actualizado: $${precio} + flete $${fletePct} = ${clp(precioFinal)}` : 'Precio actualizado');
   Cache.invalidar('mp_maestro');
+  await cargarMP();
   renderVistaMP();
 }
 
@@ -9578,12 +9588,13 @@ async function crearMPAdmin(btn) {
     unidad_compra: unidadCompra, areas_habilitadas: areasHabilitadas
   });
   Cache.invalidar('mp_maestro');
+  await cargarMP();
   cerrarModalCrearMPAdmin();
   toast(`"${nombre}" creada`);
   renderVistaMP();
 }
 
-function gestionarAreasMP(mpId) {
+async function gestionarAreasMP(mpId) {
   const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
   if (!mp) return;
   const areas = ['PAN','BOL','PAS','CAF'];
@@ -9599,6 +9610,7 @@ function gestionarAreasMP(mpId) {
   escribirEnSheet('editar_mp', { ID_MP: mpId, areas_habilitadas: val });
   mp.areas_habilitadas = val;
   Cache.invalidar('mp_maestro');
+  await cargarMP();
   toast('Áreas actualizadas');
   renderVistaMP();
 }
@@ -9612,6 +9624,7 @@ async function toggleEstadoMP(mpId, estadoActual) {
   await escribirEnSheet('editar_mp', { ID_MP: mpId, estado: nuevoEstado });
   mp.estado = nuevoEstado;
   Cache.invalidar('mp_maestro');
+  await cargarMP();
   toast(`MP ${accion === 'desactivar' ? 'desactivada' : 'activada'}`);
   renderVistaMP();
 }
