@@ -377,6 +377,7 @@ function renderSidebar() {
         { id: 'costos',           icon: 'ti-chart-bar',       label: 'Estructuras de costo' },
         { id: 'auditoria-costos', icon: 'ti-shield-check',    label: 'Auditoría de costos' },
         { id: 'inversiones',      icon: 'ti-building-bank',   label: 'Inversiones' },
+        { id: 'rentabilidad-real', icon: 'ti-scale',          label: 'Rentabilidad real' },
       ]},
       { id: 'analisis', label: 'Análisis y reportes', icon: 'ti-chart-bar', items: [
         { id: 'estimacion-bol',    icon: 'ti-chart-arrows-vertical', label: 'Estimación de demanda' },
@@ -461,7 +462,7 @@ function navegarA(vistaId) {
     const gruposAdmin = [
       { id: 'flujo-diario', items: ['aprobaciones','materias-primas'] },
       { id: 'catalogo', items: ['maestro-admin','productos-reventa'] },
-      { id: 'costeo', items: ['config-costeo','costos','auditoria-costos','inversiones'] },
+      { id: 'costeo', items: ['config-costeo','costos','auditoria-costos','inversiones','rentabilidad-real'] },
       { id: 'analisis', items: ['estimacion-bol','analisis-merma','ventas-mensuales'] },
       { id: 'configuracion', items: ['correos-contacto'] },
     ];
@@ -504,6 +505,7 @@ function navegarA(vistaId) {
     case 'analisis-merma':      renderVistaAnalisisMerma();  break;
     case 'auditoria-costos':    renderVistaAuditoriaCostos(); break;
     case 'inversiones':         renderVistaInversiones(); break;
+    case 'rentabilidad-real':   renderVistaRentabilidadReal(); break;
     case 'config-costeo':       renderVistaConfigCosteo();   break;
     case 'correos-contacto':    renderVistaCorreosContacto(); break;
     case 'productos-reventa':   renderVistaProductosReventa(); break;
@@ -7712,6 +7714,123 @@ async function sincronizarVentasMensualesUI(btn) {
 }
 
 // ── ADMIN: INVERSIONES Y DEPRECIACIÓN ──────────────────────────
+// ── ADMIN: RENTABILIDAD REAL (precio real vs. costo real, por producto) ──────
+// Pregunta inversa a Estructuras de costo: en vez de "dado el costo, ¿a qué
+// precio vender?", responde "dado lo que realmente estoy vendiendo y cobrando,
+// ¿me conviene ese precio?" — cruza Ventas_mensuales_consolidadas (precio real
+// = monto_neto / cantidad_vendida) con EC_productos (costo real calculado).
+async function renderVistaRentabilidadReal() {
+  const vista = document.getElementById('vista-rentabilidad-real');
+  const hoy = new Date();
+  const mesActual = App._rentMesActual || `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+
+  vista.innerHTML = `
+    <div class="vista-header"><h1 class="vista-titulo">Rentabilidad real</h1></div>
+    <p style="font-size:12px;color:var(--txt3);margin-bottom:16px">
+      Compara el precio real que está cobrando (promedio real de las ventas) contra el costo real calculado —
+      para saber si le sale a cuenta vender a ese precio, no cuánto debería cobrar. Requiere que ya haya calculado
+      "Estructuras de costo" para el mes que elija.
+    </p>
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;gap:10px;align-items:flex-end;padding:16px;flex-wrap:wrap">
+        <div class="campo">
+          <label>Mes (YYYY-MM)</label>
+          <input type="text" id="rent-mes" value="${mesActual}" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <button class="btn-primario" onclick="calcularRentabilidadRealUI(this)">
+          <i class="ti ti-scale"></i> Calcular
+        </button>
+      </div>
+    </div>
+    <div id="rentabilidad-resultado"></div>
+  `;
+  mostrarVista('rentabilidad-real');
+}
+
+async function calcularRentabilidadRealUI(btn) {
+  const mes = document.getElementById('rent-mes').value.trim();
+  App._rentMesActual = mes;
+  const cont = document.getElementById('rentabilidad-resultado');
+  bloquearBtn(btn, 'Calculando...');
+  cont.innerHTML = '<p style="color:var(--txt3)">Cargando...</p>';
+
+  try {
+    const [ecTodas, ventasRes] = await Promise.all([
+      leerHoja('EC_productos'),
+      fetch(FEN.WEBAPP_URL + '?payload=' + encodeURIComponent(JSON.stringify({ accion: 'leer_ventas_mensuales' })), { cache: 'no-store' }).then(r => r.json())
+    ]);
+
+    const ec = ecTodas.filter(r => r.mes === mes);
+    const ventas = (ventasRes.ventas || []).filter(v => v.mes === mes);
+    const ecPorId = {};
+    ec.forEach(r => { ecPorId[r.ID_receta] = r; });
+
+    if (!ventas.length) {
+      cont.innerHTML = `<div class="empty-state"><i class="ti ti-scale"></i><h2>Sin ventas sincronizadas para ${mes}</h2></div>`;
+      desbloquearBtn(btn, '<i class="ti ti-scale"></i> Calcular', true);
+      return;
+    }
+
+    const filas = ventas.map(v => {
+      const ecRow = ecPorId[v.ID_receta];
+      const cantidad = parseFloat(v.cantidad_vendida) || 0;
+      const montoNeto = parseFloat(v.monto_neto) || 0;
+      const precioReal = cantidad > 0 ? montoNeto / cantidad : 0;
+      const costoReal = ecRow ? parseFloat(ecRow.total_costo_prod) || 0 : null;
+      const margenMonto = costoReal !== null ? precioReal - costoReal : null;
+      const margenPct = (costoReal !== null && precioReal > 0) ? (margenMonto / precioReal) * 100 : null;
+      const objetivoPct = ecRow ? parseFloat(v.canal === 'B2B' ? ecRow['utilidad_B2B_%'] : ecRow['utilidad_B2C_%']) : null;
+      const cumple = (margenPct !== null && objetivoPct !== null && !isNaN(objetivoPct)) ? margenPct >= objetivoPct : null;
+      return {
+        nombre: ecRow?.nombre || v.ID_receta, ID_receta: v.ID_receta, área: v['área'] || ecRow?.área || '—',
+        canal: v.canal, cantidad, precioReal, costoReal, margenMonto, margenPct, objetivoPct, cumple
+      };
+    }).sort((a,b) => (a.margenPct ?? 999) - (b.margenPct ?? 999)); // peores primero, para verlos de inmediato
+
+    const sinCosto = filas.filter(f => f.costoReal === null).length;
+
+    cont.innerHTML = `
+      ${sinCosto ? `<div style="padding:10px 14px;background:#FFF3E0;border-radius:var(--r-md);font-size:12px;color:#E65100;margin-bottom:14px">
+        ⚠ ${sinCosto} producto(s) sin costo calculado para ${mes} — calcule "Estructuras de costo" primero para ese mes, para verlos completos.
+      </div>` : ''}
+      <div class="card">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:var(--bg)">
+            <th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Producto</th>
+            <th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Canal</th>
+            <th style="text-align:right;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Precio real</th>
+            <th style="text-align:right;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Costo real</th>
+            <th style="text-align:right;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Margen $</th>
+            <th style="text-align:right;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Margen %</th>
+            <th style="text-align:right;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Objetivo</th>
+            <th style="text-align:center;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">¿Cumple?</th>
+          </tr></thead>
+          <tbody>
+            ${filas.map(f => `
+              <tr style="border-top:1px solid var(--border);${f.cumple === false ? 'background:#FFEBEE' : ''}">
+                <td style="padding:8px 12px;font-size:13px">
+                  ${f.nombre}
+                  <span style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:4px">${f.ID_receta}</span>
+                </td>
+                <td style="padding:8px 12px;font-size:12px">${f.canal}</td>
+                <td style="padding:8px 12px;font-size:13px;text-align:right;font-family:'DM Mono',monospace">${clp(f.precioReal)}</td>
+                <td style="padding:8px 12px;font-size:13px;text-align:right;font-family:'DM Mono',monospace">${f.costoReal !== null ? clp(f.costoReal) : '—'}</td>
+                <td style="padding:8px 12px;font-size:13px;text-align:right;font-family:'DM Mono',monospace">${f.margenMonto !== null ? clp(f.margenMonto) : '—'}</td>
+                <td style="padding:8px 12px;font-size:13px;text-align:right;font-family:'DM Mono',monospace;font-weight:600">${f.margenPct !== null ? f.margenPct.toFixed(1)+'%' : '—'}</td>
+                <td style="padding:8px 12px;font-size:12px;text-align:right;color:var(--txt3)">${f.objetivoPct !== null && !isNaN(f.objetivoPct) ? f.objetivoPct.toFixed(1)+'%' : '—'}</td>
+                <td style="padding:8px 12px;text-align:center">
+                  ${f.cumple === true ? '<span style="color:#2E7D32"><i class="ti ti-check"></i></span>' : f.cumple === false ? '<span style="color:#C62828"><i class="ti ti-x"></i></span>' : '—'}
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  } catch(e) {
+    cont.innerHTML = `<p style="color:#C62828">Error: ${e.message}</p>`;
+  }
+  desbloquearBtn(btn, '<i class="ti ti-scale"></i> Calcular', true);
+}
+
 async function renderVistaInversiones() {
   const vista = document.getElementById('vista-inversiones');
   vista.innerHTML = `
