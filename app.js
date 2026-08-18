@@ -7809,8 +7809,8 @@ async function calcularRentabilidadRealUI(btn) {
             ${filas.map(f => `
               <tr style="border-top:1px solid var(--border);${f.cumple === false ? 'background:#FFEBEE' : ''}">
                 <td style="padding:8px 12px;font-size:13px">
-                  ${f.nombre}
-                  <span style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:4px">${f.ID_receta}</span>
+                  <div>${f.nombre}</div>
+                  <div style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace">${f.ID_receta}</div>
                 </td>
                 <td style="padding:8px 12px;font-size:12px">${f.canal}</td>
                 <td style="padding:8px 12px;font-size:13px;text-align:right;font-family:'DM Mono',monospace">${clp(f.precioReal)}</td>
