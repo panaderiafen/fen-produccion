@@ -1431,6 +1431,32 @@ function toggleUnidadTipo(sel) {
   const input = tr.querySelector('input[data-modo]');
   if (!input) return;
   const modo = sel.value;
+
+  // "Unidades" solo tiene sentido para MP que se compran contables (ej. "un",
+  // "180un" — huevos). Para MP que se compran por peso/volumen (kg, g, lt, ml),
+  // el costo guardado es un valor real por gramo — mezclarlo con "Unidades" no
+  // tiene conversión correcta, así que queda bloqueado. Si de verdad necesita
+  // esa MP medida por peso (ej. "Huevo kg" en vez de por unidad), se soluciona
+  // creando una MP nueva con esa unidad de compra — no forzando esta.
+  if (modo === 'unidades') {
+    const mpSelect = tr.querySelector('select');
+    const mpId = mpSelect?.value;
+    const mp = mpId ? App.materiasPrimas.find(m => m.ID_MP === mpId) : null;
+    if (mp) {
+      const unidadCompra = (mp.unidad_compra || 'kg').toLowerCase().replace(/[\d.]/g, '').trim();
+      const esContable = unidadCompra === 'un' || unidadCompra === 'unidad' || unidadCompra === 'unidades';
+      if (!esContable) {
+        alert(
+          `"${mp.nombre}" se compra por ${mp.unidad_compra} (peso/volumen), no por unidad — no se puede usar en modo "Unidades" acá.\n\n` +
+          `Si necesita esta misma MP medida por peso en otra receta, y por unidad en esta, tiene que solicitarse` +
+          ` como una MP nueva con esa unidad de compra (ej. "${mp.nombre} (kg)") — use "+ Solicitar/habilitar MP...".`
+        );
+        sel.value = 'gramos';
+        return toggleUnidadTipo(sel);
+      }
+    }
+  }
+
   input.dataset.modo = modo;
   input.placeholder = modo === 'unidades' ? '1' : '0';
   input.step = modo === 'unidades' ? '1' : '0.01';
