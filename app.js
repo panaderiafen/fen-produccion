@@ -6615,11 +6615,7 @@ function construirListaCompraRellenos(candidatas) {
 
     ingredientes.forEach(ing => {
       const totalGramos = (parseFloat(ing.gramos) || 0) * factor;
-      if (!totalesMP[ing.id]) {
-        const mp = App.materiasPrimas.find(m => m.ID_MP === ing.id);
-        totalesMP[ing.id] = { nombre: ing.nombre, gramos: 0, unidadCompra: (mp?.unidad_compra || 'kg').toLowerCase() };
-      }
-      totalesMP[ing.id].gramos += totalGramos;
+      expandirIngredienteRecursivo(ing.id, totalGramos, totalesMP);
     });
   });
 
@@ -6642,7 +6638,7 @@ function construirListaCompraRellenos(candidatas) {
               ? `${Math.ceil(it.gramos)} un`
               : it.gramos >= 1000 ? `${(it.gramos/1000).toFixed(2)} kg` : `${Math.round(it.gramos)} g`;
             return `<tr>
-              <td class="td-nombre">${it.nombre}</td>
+              <td class="td-nombre">${it.nombre}${it.sinDesarmar ? ' <span style="color:#E65100;font-size:10px" title="No se encontró la receta detallada de esta sub-receta — falta desglosar en MP real">⚠ sin desglosar</span>' : ''}</td>
               <td class="td-num" style="font-weight:600">${display}</td>
             </tr>`;
           }).join('')}
@@ -6830,6 +6826,47 @@ async function renderVistaPlanPSPC() {
 // Suma, a través de todos los Productos Simples planificados en la semana, cuánta
 // MP se necesita en total — ingredientes directos, sin pasar por sub-recetas
 // (los PS por definición no las llevan).
+// Desarma un ingrediente en sus componentes reales de compra — si es una MP normal,
+// se acumula directo; si es una sub-receta, busca SU receta y repite el proceso con
+// sus propios ingredientes (escalados según qué fracción del lote se está usando),
+// hasta llegar a materias primas reales. Así una lista de compra nunca muestra
+// "Masa Base: 5000g" — muestra la harina/agua/levadura reales que hay que comprar,
+// sin importar cuántas capas de sub-recetas haya en el medio (ej. Poolish dentro
+// de Masa Base dentro de un producto final).
+function expandirIngredienteRecursivo(mpId, gramosUsados, acumulador) {
+  if (!mpId || !gramosUsados) return;
+  const mp = App.materiasPrimas.find(m => m.ID_MP === mpId);
+  const esSubReceta = mp && mp.tipo === 'sub_receta';
+
+  if (!esSubReceta) {
+    if (!acumulador[mpId]) {
+      acumulador[mpId] = { nombre: mp?.nombre || mpId, gramos: 0, unidadCompra: (mp?.unidad_compra || 'kg').toLowerCase() };
+    }
+    acumulador[mpId].gramos += gramosUsados;
+    return;
+  }
+
+  const recetaSR = App.recetas.find(r => r.ID_receta === mpId);
+  if (!recetaSR) {
+    // No se encontró el detalle de la sub-receta — se deja como línea aparte,
+    // marcada, en vez de perder el dato silenciosamente.
+    if (!acumulador[mpId]) acumulador[mpId] = { nombre: mp.nombre, gramos: 0, unidadCompra: 'kg', sinDesarmar: true };
+    acumulador[mpId].gramos += gramosUsados;
+    return;
+  }
+
+  let ingredientesSR = [];
+  try { ingredientesSR = JSON.parse(recetaSR.ingredientes_JSON || '[]'); } catch(e) {}
+  const totalBaseGramos = ingredientesSR.reduce((s, ing) => s + (parseFloat(ing.gramos) || 0), 0);
+  if (!totalBaseGramos) return;
+
+  const factorEscala = gramosUsados / totalBaseGramos;
+  ingredientesSR.forEach(ing => {
+    const gramosEscalados = (parseFloat(ing.gramos) || 0) * factorEscala;
+    expandirIngredienteRecursivo(ing.id, gramosEscalados, acumulador);
+  });
+}
+
 function construirListaCompraPS() {
   const entradasPS = (_planPSPCCache || []).filter(p => p.tipo_preparacion === 'producto_simple');
   if (!entradasPS.length) return '';
@@ -6846,11 +6883,7 @@ function construirListaCompraPS() {
     ingredientes.forEach(ing => {
       const gramosPorUnidad = (parseFloat(ing.gramos) || 0) / porciones;
       const totalGramos = gramosPorUnidad * cantidadSemana;
-      if (!totalesMP[ing.id]) {
-        const mp = App.materiasPrimas.find(m => m.ID_MP === ing.id);
-        totalesMP[ing.id] = { nombre: ing.nombre, gramos: 0, unidadCompra: (mp?.unidad_compra || 'kg').toLowerCase() };
-      }
-      totalesMP[ing.id].gramos += totalGramos;
+      expandirIngredienteRecursivo(ing.id, totalGramos, totalesMP);
     });
   });
 
@@ -6871,7 +6904,7 @@ function construirListaCompraPS() {
               ? `${Math.ceil(it.gramos)} un`
               : it.gramos >= 1000 ? `${(it.gramos/1000).toFixed(2)} kg` : `${Math.round(it.gramos)} g`;
             return `<tr>
-              <td class="td-nombre">${it.nombre}</td>
+              <td class="td-nombre">${it.nombre}${it.sinDesarmar ? ' <span style="color:#E65100;font-size:10px" title="No se encontró la receta detallada de esta sub-receta — falta desglosar en MP real">⚠ sin desglosar</span>' : ''}</td>
               <td class="td-num" style="font-weight:600">${display}</td>
             </tr>`;
           }).join('')}
