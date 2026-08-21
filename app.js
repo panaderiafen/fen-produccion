@@ -7684,10 +7684,18 @@ async function renderVistaVentasMensuales() {
       return Object.entries(porArea).sort(([a],[b]) => a.localeCompare(b,'es')).map(([area, filasArea]) => {
         const porCanal = { B2B: [], B2C: [] };
         filasArea.forEach(v => (porCanal[v.canal] = porCanal[v.canal] || []).push(v));
+        const totalB2B = porCanal.B2B.reduce((s,v) => s + (parseFloat(v.monto_neto)||0), 0);
+        const totalB2C = porCanal.B2C.reduce((s,v) => s + (parseFloat(v.monto_neto)||0), 0);
+        const totalArea = totalB2B + totalB2C;
         return `
         <div class="card" style="margin-bottom:16px">
-          <div class="card-head">
-            <i class="ti ti-table"></i> ${area} <span style="font-weight:400;color:var(--txt3)">(${filasArea.length} fila${filasArea.length!==1?'s':''})</span>
+          <div class="card-head" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <span><i class="ti ti-table"></i> ${area} <span style="font-weight:400;color:var(--txt3)">(${filasArea.length} fila${filasArea.length!==1?'s':''})</span></span>
+            <span style="font-size:12px;font-weight:600;display:flex;gap:14px">
+              ${totalB2B > 0 ? `<span style="color:var(--txt2)">B2B: ${clp(totalB2B)}</span>` : ''}
+              ${totalB2C > 0 ? `<span style="color:var(--txt2)">B2C: ${clp(totalB2C)}</span>` : ''}
+              <span>Total: ${clp(totalArea)}</span>
+            </span>
           </div>
           ${Object.entries(porCanal).filter(([,filas]) => filas.length).map(([canal, filas]) => `
             <div style="padding:10px 16px 4px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--txt3);letter-spacing:.4px">${canal}</div>
