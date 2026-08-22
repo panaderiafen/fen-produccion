@@ -6954,7 +6954,7 @@ async function eliminarPlanPSPCUI(fila) {
 
 // ── BOL: PLANIFICACIÓN DIARIA DE MASA BASE ──────────────────────
 let _planMasaBaseCache = null;
-let _tandasSubRecetaMBCache = null;
+let _planDescongelacionMasaCache = null;
 
 async function renderVistaPlanMasaBase() {
   const vista = document.getElementById('vista-plan-masa-base');
@@ -6969,13 +6969,14 @@ async function renderVistaPlanMasaBase() {
   } catch(e) {
     _planMasaBaseCache = [];
   }
+
   try {
-    const payload2 = encodeURIComponent(JSON.stringify({ accion: 'leer_tandas_subreceta_masa_base' }));
-    const res2 = await fetch(FEN.WEBAPP_URL + '?payload=' + payload2, { redirect: 'follow', cache: 'no-store' });
-    const data2 = await res2.json();
-    _tandasSubRecetaMBCache = data2.filas || [];
+    const payload3 = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_descongelacion_masa' }));
+    const res3 = await fetch(FEN.WEBAPP_URL + '?payload=' + payload3, { redirect: 'follow', cache: 'no-store' });
+    const data3 = await res3.json();
+    _planDescongelacionMasaCache = data3.filas || [];
   } catch(e) {
-    _tandasSubRecetaMBCache = [];
+    _planDescongelacionMasaCache = [];
   }
 
   const masasBase = App.recetas.filter(r =>
@@ -6986,9 +6987,24 @@ async function renderVistaPlanMasaBase() {
   const cfg = cargarConfigSubrecetas();
   const bolCfg = cfg.bol || {};
   const capacidadCongelador = bolCfg.capacidad_congelacion_masas || 40;
-  const stockActual = bolCfg.stock_masas || {};
-  const salidasMasas = bolCfg.salidas_masas || {};
-  const stockTotalActual = masasBase.reduce((s,r) => s + (parseInt(stockActual[r.ID_receta]) || 0), 0);
+  const stockInicial = bolCfg.stock_masas || {};
+
+  // Stock proyectado día a día = stock inicial + elaborado ese día − descongelado ese
+  // día (acumulado desde el lunes). Se calcula solo, no hay que ir a contar cada vez.
+  const stockDiarioPorMasa = {};
+  masasBase.forEach(r => {
+    let acumulado = parseFloat(stockInicial[r.ID_receta]) || 0;
+    stockDiarioPorMasa[r.ID_receta] = dias.map(d => {
+      const elaborado = parseFloat(_planMasaBaseCache.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
+      const descongelado = parseFloat(_planDescongelacionMasaCache.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
+      acumulado = acumulado + elaborado - descongelado;
+      return { dia: d, elaborado, descongelado, stock: acumulado };
+    });
+  });
+  const stockFinalTotal = masasBase.reduce((s,r) => {
+    const serie = stockDiarioPorMasa[r.ID_receta];
+    return s + (serie.length ? serie[serie.length-1].stock : 0);
+  }, 0);
 
   vista.innerHTML = `
     <div class="vista-header"><h1 class="vista-titulo">Planificación Masas Base</h1></div>
@@ -6998,27 +7014,72 @@ async function renderVistaPlanMasaBase() {
         <i class="ti ti-snowflake" style="color:#6A1B9A"></i> Stock congelado
       </div>
       <div style="padding:14px 16px">
-        <p style="font-size:13px;font-weight:700;margin-bottom:10px;color:${stockTotalActual > capacidadCongelador ? '#C62828' : '#2E7D32'}">
-          ${stockTotalActual} / ${capacidadCongelador} espacios ocupados
-          ${stockTotalActual > capacidadCongelador ? ' — ⚠️ sobre capacidad' : ''}
+        <p style="font-size:13px;font-weight:700;margin-bottom:10px;color:${stockFinalTotal > capacidadCongelador ? '#C62828' : '#2E7D32'}">
+          Proyectado al cierre de la semana: ${stockFinalTotal} / ${capacidadCongelador} espacios
+          ${stockFinalTotal > capacidadCongelador ? ' — ⚠️ sobre capacidad' : ''}
         </p>
-        ${masasBase.map(r => `
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
-            <span style="font-size:12px">${r.nombre}</span>
-            <div style="display:flex;gap:6px;align-items:center">
-              <input type="number" id="stock-actual-${r.ID_receta}" min="0" step="1" value="${stockActual[r.ID_receta] || 0}"
-                style="max-width:70px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px" placeholder="0">
-              <button class="btn-secundario" style="font-size:10px;padding:4px 8px" onclick="guardarStockActualMasa('${r.ID_receta}')">
-                <i class="ti ti-device-floppy"></i>
-              </button>
+        ${masasBase.map(r => {
+          const serie = stockDiarioPorMasa[r.ID_receta];
+          return `
+          <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <span style="font-size:12px;font-weight:600">${r.nombre}</span>
+              <div style="display:flex;gap:6px;align-items:center">
+                <label style="font-size:10px;color:var(--txt3)">Stock inicial (lunes):</label>
+                <input type="number" id="stock-actual-${r.ID_receta}" min="0" step="1" value="${stockInicial[r.ID_receta] || 0}"
+                  style="max-width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px" placeholder="0">
+                <button class="btn-secundario" style="font-size:10px;padding:4px 8px" onclick="guardarStockActualMasa('${r.ID_receta}')">
+                  <i class="ti ti-device-floppy"></i>
+                </button>
+              </div>
             </div>
-          </div>
-        `).join('')}
+            <div style="overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse;font-size:10px;min-width:400px">
+                <thead><tr>
+                  ${dias.map(d => `<th style="padding:3px 4px;text-align:center;color:var(--txt3);font-weight:600">${d}</th>`).join('')}
+                </tr></thead>
+                <tbody><tr>
+                  ${serie.map(s => `<td style="padding:3px 4px;text-align:center;font-family:'DM Mono',monospace;${s.stock > capacidadCongelador ? 'color:#C62828;font-weight:700' : ''}">${s.stock}</td>`).join('')}
+                </tr></tbody>
+              </table>
+            </div>
+          </div>`;
+        }).join('')}
         <p style="font-size:11px;color:var(--txt3);margin-top:8px">
-          Ajuste "Stock actual" manualmente cuando corresponda (ej. conteo físico). La capacidad máxima se configura en "Config sub recetas".
-          Empaste se planifica según cuántas masas de estas va a sacar a descongelar cada día — no nace de esta grilla.
+          El stock de cada día se calcula solo: stock inicial + lo elaborado − lo descongelado, acumulado desde el lunes.
+          Ajuste "Stock inicial" a mano solo si hace un conteo físico y no calza. Corre semana a semana, no se resetea.
         </p>
       </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head" style="background:#E3F2FD;color:#1565C0"><i class="ti ti-arrow-down-circle"></i> Plan de descongelación</div>
+      ${!masasBase.length ? '' : `
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;min-width:560px">
+          <thead><tr style="background:var(--bg)">
+            <th style="text-align:left;padding:9px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Receta</th>
+            ${dias.map(d => `<th style="text-align:center;padding:9px 6px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">${d}</th>`).join('')}
+          </tr></thead>
+          <tbody>
+            ${masasBase.map(r => `<tr style="border-top:1px solid var(--border)">
+                <td style="padding:8px 12px;font-size:12px">${r.nombre}</td>
+                ${dias.map(d => {
+                  const entrada = _planDescongelacionMasaCache.find(p => p.ID_receta === r.ID_receta && p.dia === d);
+                  return `<td style="padding:4px;text-align:center">
+                    <input type="number" min="0" step="1" value="${entrada ? entrada.cantidad_unidades : ''}" placeholder="0"
+                      style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;text-align:center;font-family:'DM Mono',monospace"
+                      onchange="guardarCeldaGrillaDescongelacion('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}','${d}',this.value)">
+                  </td>`;
+                }).join('')}
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`}
+      <p style="font-size:11px;color:var(--txt3);padding:10px 16px">
+        Cuántas masas de cada tipo saca a descongelar cada día — se descuenta solo del stock de arriba.
+        Empaste se elabora según lo que descongele acá, no nace de la grilla de elaboración.
+      </p>
     </div>
 
     <div class="card" style="margin-bottom:16px">
@@ -7057,8 +7118,16 @@ async function renderVistaPlanMasaBase() {
     <div id="lista-compra-masa-base-semana"></div>
   `;
 
-  renderTarjetasPorMasaBase(masasBase, dias, capacidadCongelador, stockTotalActual, salidasMasas);
+  renderTarjetasPorMasaBase(masasBase, dias);
   renderListaCompraMasaBaseSemana();
+}
+
+async function guardarCeldaGrillaDescongelacion(recetaId, nombre, dia, valor) {
+  const cantidad = parseFloat(valor) || 0;
+  await escribirEnSheet('guardar_celda_plan_descongelacion_masa', {
+    ID_receta: recetaId, nombre, dia, cantidad_unidades: cantidad
+  });
+  await renderVistaPlanMasaBase();
 }
 
 async function guardarCeldaGrillaMasaBase(recetaId, nombre, dia, valor, pesoUnidadG) {
@@ -7072,7 +7141,7 @@ async function guardarCeldaGrillaMasaBase(recetaId, nombre, dia, valor, pesoUnid
 // Tarjetas apiladas por MASA (no por día) — cada una resume el total semanal y,
 // para cada día con producción, las tandas de la masa madre + las sub-recetas
 // anidadas (ej. Poolish) con su propia división en tandas.
-function renderTarjetasPorMasaBase(masasBase, dias, capacidadCongelador, stockTotalActual, salidasMasas) {
+function renderTarjetasPorMasaBase(masasBase, dias) {
   const cont = document.getElementById('cards-masa-base');
   if (!cont) return;
 
@@ -7101,13 +7170,12 @@ function renderTarjetasPorMasaBase(masasBase, dias, capacidadCongelador, stockTo
         <span style="font-weight:400;font-size:12px;color:var(--txt3)">${totalUnidadesSemana} uni · ${totalKgSemana.toFixed(2)}kg esta semana</span>
       </div>
       <div style="padding:12px 16px">
-        ${dias.filter(d => entradas.some(e => e.dia === d)).map(d => {
+        ${dias.filter(d => entradas.some(e => e.dia === d)).map((d, idxDia) => {
           const it = entradas.find(e => e.dia === d);
-          const salidaHoy = parseInt(salidasMasas[d]) || 0;
           return `
-          <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+          <div style="padding:12px;margin-bottom:10px;background:${idxDia % 2 === 0 ? 'var(--bg)' : 'transparent'};border-radius:var(--r-md);border-left:3px solid var(--area-color, #6A1B9A)">
             <div style="display:flex;justify-content:space-between;align-items:center">
-              <span style="font-size:13px;font-weight:600">${d}</span>
+              <span style="font-size:13px;font-weight:700">${d}</span>
               <div style="display:flex;align-items:center;gap:8px">
                 <span style="font-size:12px;color:var(--txt3)">${it.cantidad_unidades} uni · ${(parseFloat(it.peso_total_g)/1000).toFixed(2)}kg</span>
                 <button class="btn-fila-del" onclick="eliminarPlanMasaBaseUI(${it._fila})" aria-label="Eliminar"><i class="ti ti-x"></i></button>
@@ -7120,16 +7188,10 @@ function renderTarjetasPorMasaBase(masasBase, dias, capacidadCongelador, stockTo
 
             ${subRecetasAnidadas.map(subIng => {
               const gramosNecesarios = (parseFloat(subIng.gramos)||0) * (parseFloat(it.cantidad_unidades)||0);
-              const claveSub = `${d}__${subIng.id}`;
               return `
               <div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">
-                <div style="display:flex;justify-content:space-between;align-items:center">
-                  <span style="font-size:12px">${subIng.nombre} necesario: <strong>${gramosNecesarios >= 1000 ? (gramosNecesarios/1000).toFixed(2)+'kg' : Math.round(gramosNecesarios)+'g'}</strong></span>
-                </div>
-                <button class="btn-secundario" style="width:100%;margin-top:4px;font-size:11px;padding:5px" onclick="toggleDetalleSubRecetaMasaBase('${claveSub}','${d}','${subIng.id}','${subIng.nombre.replace(/'/g,"\\'")}',${gramosNecesarios})">
-                  <i class="ti ti-list-details"></i> Dividir ${subIng.nombre} en tandas
-                </button>
-                <div id="detalle-sub-mb-${claveSub}" class="hidden" style="margin-top:6px"></div>
+                <span style="font-size:12px">${subIng.nombre} necesario: <strong>${gramosNecesarios >= 1000 ? (gramosNecesarios/1000).toFixed(2)+'kg' : Math.round(gramosNecesarios)+'g'}</strong></span>
+                <span style="font-size:11px;color:var(--txt3);display:block">Vea el desglose completo con "Ver receta" en cada tanda arriba.</span>
               </div>`;
             }).join('')}
           </div>`;
@@ -7137,84 +7199,6 @@ function renderTarjetasPorMasaBase(masasBase, dias, capacidadCongelador, stockTo
       </div>
     </div>`;
   }).join('');
-}
-
-// ── División en tandas de una sub-receta anidada (ej. Poolish), por día ────────
-function toggleDetalleSubRecetaMasaBase(claveSub, dia, subRecetaId, subRecetaNombre, gramosNecesarios) {
-  const cont = document.getElementById('detalle-sub-mb-' + claveSub);
-  if (!cont) return;
-  if (!cont.classList.contains('hidden')) { cont.classList.add('hidden'); return; }
-  cont.classList.remove('hidden');
-
-  const entrada = (_tandasSubRecetaMBCache || []).find(p => p.dia === dia && p.sub_receta_id === subRecetaId);
-  let tandas = [];
-  try { tandas = JSON.parse(entrada?.tandas_JSON || '[]'); } catch(e) {}
-  if (!Array.isArray(tandas)) tandas = [];
-
-  renderEditorTandasSubReceta(claveSub, dia, subRecetaId, subRecetaNombre, gramosNecesarios, tandas);
-}
-
-function renderEditorTandasSubReceta(claveSub, dia, subRecetaId, subRecetaNombre, gramosNecesarios, tandas) {
-  const cont = document.getElementById('detalle-sub-mb-' + claveSub);
-  if (!cont) return;
-
-  const sumaTandasG = tandas.reduce((s,t) => s + (parseFloat(t.gramos)||0), 0);
-  const diferenciaG = gramosNecesarios - sumaTandasG;
-
-  cont.innerHTML = `
-    <div style="background:var(--bg);border-radius:var(--r-md);padding:10px">
-      <p style="font-size:11px;font-weight:600;margin-bottom:6px">Dividir ${subRecetaNombre} en tandas libres (total: ${gramosNecesarios >= 1000 ? (gramosNecesarios/1000).toFixed(2)+'kg' : Math.round(gramosNecesarios)+'g'})</p>
-      ${tandas.map((t,i) => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0">
-          <span style="font-size:11px">Tanda ${i+1}: <strong>${t.gramos >= 1000 ? (t.gramos/1000).toFixed(2)+'kg' : Math.round(t.gramos)+'g'}</strong></span>
-          <button class="btn-fila-del" style="padding:2px" onclick="quitarTandaSubRecetaMasaBase('${claveSub}','${dia}','${subRecetaId}','${subRecetaNombre.replace(/'/g,"\\'")}',${gramosNecesarios},${i})"><i class="ti ti-x"></i></button>
-        </div>
-      `).join('')}
-      <div style="display:flex;gap:6px;align-items:center;margin-top:8px">
-        <input type="number" id="nueva-tanda-sub-${claveSub}" min="1" step="1" placeholder="gramos" style="max-width:90px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:11px">
-        <button class="btn-secundario" style="font-size:10px;padding:4px 10px" onclick="agregarTandaSubRecetaMasaBase('${claveSub}','${dia}','${subRecetaId}','${subRecetaNombre.replace(/'/g,"\\'")}',${gramosNecesarios})">
-          <i class="ti ti-plus"></i> Agregar tanda
-        </button>
-      </div>
-      <p style="font-size:10px;margin-top:6px;color:${Math.abs(diferenciaG) < 1 ? '#2E7D32' : '#C62828'}">
-        ${Math.abs(diferenciaG) < 1 ? '✓ Las tandas suman el total' : diferenciaG > 0 ? `Faltan ${Math.round(diferenciaG)}g por asignar` : `Sobran ${Math.round(Math.abs(diferenciaG))}g asignados de más`}
-      </p>
-    </div>
-  `;
-}
-
-async function agregarTandaSubRecetaMasaBase(claveSub, dia, subRecetaId, subRecetaNombre, gramosNecesarios) {
-  const input = document.getElementById('nueva-tanda-sub-' + claveSub);
-  const gramos = parseFloat(input?.value) || 0;
-  if (gramos <= 0) { toast('Ingresa una cantidad en gramos válida', 'error'); return; }
-
-  const entrada = (_tandasSubRecetaMBCache || []).find(p => p.dia === dia && p.sub_receta_id === subRecetaId);
-  let tandas = [];
-  try { tandas = JSON.parse(entrada?.tandas_JSON || '[]'); } catch(e) {}
-  if (!Array.isArray(tandas)) tandas = [];
-  tandas.push({ gramos });
-
-  await escribirEnSheet('guardar_tandas_subreceta_masa_base', {
-    dia, sub_receta_id: subRecetaId, sub_receta_nombre: subRecetaNombre, tandas_JSON: JSON.stringify(tandas)
-  });
-  if (entrada) entrada.tandas_JSON = JSON.stringify(tandas);
-  else _tandasSubRecetaMBCache.push({ dia, sub_receta_id: subRecetaId, sub_receta_nombre: subRecetaNombre, tandas_JSON: JSON.stringify(tandas) });
-
-  renderEditorTandasSubReceta(claveSub, dia, subRecetaId, subRecetaNombre, gramosNecesarios, tandas);
-}
-
-async function quitarTandaSubRecetaMasaBase(claveSub, dia, subRecetaId, subRecetaNombre, gramosNecesarios, index) {
-  const entrada = (_tandasSubRecetaMBCache || []).find(p => p.dia === dia && p.sub_receta_id === subRecetaId);
-  let tandas = [];
-  try { tandas = JSON.parse(entrada?.tandas_JSON || '[]'); } catch(e) {}
-  tandas.splice(index, 1);
-
-  await escribirEnSheet('guardar_tandas_subreceta_masa_base', {
-    dia, sub_receta_id: subRecetaId, sub_receta_nombre: subRecetaNombre, tandas_JSON: JSON.stringify(tandas)
-  });
-  if (entrada) entrada.tandas_JSON = JSON.stringify(tandas);
-
-  renderEditorTandasSubReceta(claveSub, dia, subRecetaId, subRecetaNombre, gramosNecesarios, tandas);
 }
 
 // ── Lista de compra de MP — toda la semana, todas las masas juntas, desarmadas
@@ -7270,17 +7254,6 @@ function renderListaCompraMasaBaseSemana() {
     </div>`;
 }
 
-function guardarSalidaMasaDia(dia) {
-  const valor = parseInt(document.getElementById('salida-masa-' + dia)?.value) || 0;
-  const cfg = cargarConfigSubrecetas();
-  if (!cfg.bol) cfg.bol = {};
-  if (!cfg.bol.salidas_masas) cfg.bol.salidas_masas = {};
-  cfg.bol.salidas_masas[dia] = valor;
-  guardarConfigSubrecetas(cfg);
-  toast('Salida guardada');
-  renderVistaPlanMasaBase();
-}
-
 function guardarStockActualMasa(recetaId) {
   const valor = parseInt(document.getElementById('stock-actual-' + recetaId)?.value) || 0;
   const cfg = cargarConfigSubrecetas();
@@ -7301,7 +7274,7 @@ function toggleDetalleMasaBase(fila, recetaId, cantidadUnidades) {
   const entrada = (_planMasaBaseCache || []).find(p => p._fila === fila);
   let tandas = [];
   try { tandas = JSON.parse(entrada?.tandas_JSON || '[]'); } catch(e) {}
-  if (!Array.isArray(tandas) || !tandas.length) tandas = [{ unidades: cantidadUnidades }];
+  if (!Array.isArray(tandas)) tandas = [];
 
   renderEditorTandas(fila, recetaId, cantidadUnidades, tandas);
 }
@@ -7315,10 +7288,14 @@ function renderEditorTandas(fila, recetaId, cantidadUnidades, tandas) {
   const pesoUnidadG = parseFloat(entrada?.peso_unidad_g) || 0;
   const pesoTotalKg = (parseFloat(entrada?.peso_total_g) || 0) / 1000;
 
+  const sumaAsignada = tandas.reduce((s,t) => s + (parseFloat(t.unidades)||0), 0);
+  const restanteFinal = cantidadUnidades - sumaAsignada;
+  const completo = restanteFinal <= 0;
+
   cont.innerHTML = `
     <div style="background:var(--bg);border-radius:var(--r-md);padding:10px;margin-top:6px">
       <p style="font-size:11px;font-weight:600;margin-bottom:6px">Dividir en tandas libres (total: ${cantidadUnidades} uni · ${pesoTotalKg.toFixed(2)}kg)</p>
-      ${(() => {
+      ${!tandas.length ? `<p style="font-size:11px;color:var(--txt3);padding:4px 0">Sin tandas todavía — agregue la primera abajo.</p>` : (() => {
         let acumulado = 0;
         return tandas.map((t,i) => {
           acumulado += parseFloat(t.unidades) || 0;
@@ -7327,20 +7304,22 @@ function renderEditorTandas(fila, recetaId, cantidadUnidades, tandas) {
           return `
           <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0">
             <span style="font-size:11px">Tanda ${i+1}: <strong>${t.unidades} uni</strong> (${kgTanda.toFixed(2)}kg)
-              ${restante > 0 ? `<span style="color:#F57C00"> → quedan ${restante}</span>` : `<span style="color:#2E7D32"> ✓ completo</span>`}
+              ${restante > 0 ? `<span style="color:#F57C00"> → quedan ${restante}</span>` : restante < 0 ? `<span style="color:#C62828"> → ${Math.abs(restante)} de más</span>` : `<span style="color:#2E7D32"> ✓ completo</span>`}
             </span>
             <div style="display:flex;gap:4px">
               <button class="btn-secundario" style="font-size:9px;padding:2px 6px" onclick="verRecetaEscaladaTanda(${fila},'${recetaId}',${kgTanda},${i})">Ver receta</button>
-              ${tandas.length > 1 ? `<button class="btn-fila-del" style="padding:2px" onclick="quitarTandaMasaBase(${fila},'${recetaId}',${cantidadUnidades},${i})"><i class="ti ti-x"></i></button>` : ''}
+              <button class="btn-fila-del" style="padding:2px" onclick="quitarTandaMasaBase(${fila},'${recetaId}',${cantidadUnidades},${i})"><i class="ti ti-x"></i></button>
             </div>
           </div>
           <div id="tanda-receta-${fila}-${i}" class="hidden" style="margin:4px 0"></div>
         `;
         }).join('');
       })()}
-      <button class="btn-secundario" style="font-size:11px;padding:6px 12px;margin-top:8px;width:100%" onclick="agregarTandaMasaBase(${fila},'${recetaId}',${cantidadUnidades})">
-        <i class="ti ti-plus"></i> Agregar tanda
-      </button>
+      ${completo
+        ? `<p style="font-size:11px;color:#2E7D32;margin-top:8px"><i class="ti ti-circle-check"></i> Todas las unidades ya están asignadas — elimine una tanda si necesita reasignar.</p>`
+        : `<button class="btn-secundario" style="font-size:11px;padding:6px 12px;margin-top:8px;width:100%" onclick="agregarTandaMasaBase(${fila},'${recetaId}',${cantidadUnidades})">
+             <i class="ti ti-plus"></i> Agregar tanda (quedan ${restanteFinal})
+           </button>`}
     </div>
   `;
 }
@@ -7351,22 +7330,17 @@ async function agregarTandaMasaBase(fila, recetaId, cantidadUnidades) {
   try { tandas = JSON.parse(entrada?.tandas_JSON || '[]'); } catch(e) {}
   if (!Array.isArray(tandas)) tandas = [];
 
-  if (!tandas.length) {
-    // Primera tanda — parte con el total completo
-    tandas.push({ unidades: cantidadUnidades });
-  } else {
-    // Mismo criterio que Panadería: parte la tanda más grande por la mitad,
-    // en vez de pedir un número — así el total nunca se puede descuadrar.
-    let idxMax = 0;
-    tandas.forEach((t,i) => { if ((parseFloat(t.unidades)||0) > (parseFloat(tandas[idxMax].unidades)||0)) idxMax = i; });
-    const mitad = Math.floor((parseFloat(tandas[idxMax].unidades)||0) / 2);
-    if (mitad > 0) {
-      tandas[idxMax] = { unidades: tandas[idxMax].unidades - mitad };
-      tandas.push({ unidades: mitad });
-    } else {
-      tandas.push({ unidades: 0 });
-    }
-  }
+  const sumaAsignada = tandas.reduce((s,t) => s + (parseFloat(t.unidades)||0), 0);
+  const restante = cantidadUnidades - sumaAsignada;
+  if (restante <= 0) { toast('Ya están todas las unidades asignadas', 'error'); return; }
+
+  const valor = prompt(`¿Cuántas unidades lleva esta tanda? (quedan ${restante} sin asignar)`, restante);
+  if (valor === null) return;
+  const unidades = parseFloat(valor);
+  if (isNaN(unidades) || unidades <= 0) { toast('Cantidad inválida', 'error'); return; }
+  if (unidades > restante) { toast(`No puede asignar más de lo que queda (${restante})`, 'error'); return; }
+
+  tandas.push({ unidades });
 
   await guardarTandasEnSheet(fila, tandas);
   await renderVistaPlanMasaBase(); // re-render completo, para que la sección de sub-recetas anidadas vea la tanda nueva
