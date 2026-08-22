@@ -7301,7 +7301,7 @@ function toggleDetalleMasaBase(fila, recetaId, cantidadUnidades) {
   const entrada = (_planMasaBaseCache || []).find(p => p._fila === fila);
   let tandas = [];
   try { tandas = JSON.parse(entrada?.tandas_JSON || '[]'); } catch(e) {}
-  if (!Array.isArray(tandas)) tandas = [];
+  if (!Array.isArray(tandas) || !tandas.length) tandas = [{ unidades: cantidadUnidades }];
 
   renderEditorTandas(fila, recetaId, cantidadUnidades, tandas);
 }
@@ -7315,48 +7315,58 @@ function renderEditorTandas(fila, recetaId, cantidadUnidades, tandas) {
   const pesoUnidadG = parseFloat(entrada?.peso_unidad_g) || 0;
   const pesoTotalKg = (parseFloat(entrada?.peso_total_g) || 0) / 1000;
 
-  const sumaTandasUni = tandas.reduce((s,t) => s + (parseFloat(t.unidades)||0), 0);
-  const diferenciaUni = cantidadUnidades - sumaTandasUni;
-
   cont.innerHTML = `
     <div style="background:var(--bg);border-radius:var(--r-md);padding:10px;margin-top:6px">
       <p style="font-size:11px;font-weight:600;margin-bottom:6px">Dividir en tandas libres (total: ${cantidadUnidades} uni · ${pesoTotalKg.toFixed(2)}kg)</p>
-      ${tandas.map((t,i) => {
-        const kgTanda = (parseFloat(t.unidades)||0) * pesoUnidadG / 1000;
-        return `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0">
-          <span style="font-size:11px">Tanda ${i+1}: <strong>${t.unidades} uni</strong> (${kgTanda.toFixed(2)}kg)</span>
-          <div style="display:flex;gap:4px">
-            <button class="btn-secundario" style="font-size:9px;padding:2px 6px" onclick="verRecetaEscaladaTanda(${fila},'${recetaId}',${kgTanda},${i})">Ver receta</button>
-            <button class="btn-fila-del" style="padding:2px" onclick="quitarTandaMasaBase(${fila},'${recetaId}',${cantidadUnidades},${i})"><i class="ti ti-x"></i></button>
+      ${(() => {
+        let acumulado = 0;
+        return tandas.map((t,i) => {
+          acumulado += parseFloat(t.unidades) || 0;
+          const restante = cantidadUnidades - acumulado;
+          const kgTanda = (parseFloat(t.unidades)||0) * pesoUnidadG / 1000;
+          return `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0">
+            <span style="font-size:11px">Tanda ${i+1}: <strong>${t.unidades} uni</strong> (${kgTanda.toFixed(2)}kg)
+              ${restante > 0 ? `<span style="color:#F57C00"> → quedan ${restante}</span>` : `<span style="color:#2E7D32"> ✓ completo</span>`}
+            </span>
+            <div style="display:flex;gap:4px">
+              <button class="btn-secundario" style="font-size:9px;padding:2px 6px" onclick="verRecetaEscaladaTanda(${fila},'${recetaId}',${kgTanda},${i})">Ver receta</button>
+              ${tandas.length > 1 ? `<button class="btn-fila-del" style="padding:2px" onclick="quitarTandaMasaBase(${fila},'${recetaId}',${cantidadUnidades},${i})"><i class="ti ti-x"></i></button>` : ''}
+            </div>
           </div>
-        </div>
-        <div id="tanda-receta-${fila}-${i}" class="hidden" style="margin:4px 0"></div>
-      `;
-      }).join('')}
-      <div style="display:flex;gap:6px;align-items:center;margin-top:8px">
-        <input type="number" id="nueva-tanda-${fila}" min="1" step="1" placeholder="unidades" style="max-width:80px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:11px">
-        <button class="btn-secundario" style="font-size:10px;padding:4px 10px" onclick="agregarTandaMasaBase(${fila},'${recetaId}',${cantidadUnidades})">
-          <i class="ti ti-plus"></i> Agregar tanda
-        </button>
-      </div>
-      <p style="font-size:10px;margin-top:6px;color:${Math.abs(diferenciaUni) < 0.01 ? '#2E7D32' : '#C62828'}">
-        ${Math.abs(diferenciaUni) < 0.01 ? '✓ Las tandas suman el total' : diferenciaUni > 0 ? `Faltan ${diferenciaUni} unidades por asignar` : `Sobran ${Math.abs(diferenciaUni)} unidades asignadas de más`}
-      </p>
+          <div id="tanda-receta-${fila}-${i}" class="hidden" style="margin:4px 0"></div>
+        `;
+        }).join('');
+      })()}
+      <button class="btn-secundario" style="font-size:11px;padding:6px 12px;margin-top:8px;width:100%" onclick="agregarTandaMasaBase(${fila},'${recetaId}',${cantidadUnidades})">
+        <i class="ti ti-plus"></i> Agregar tanda
+      </button>
     </div>
   `;
 }
 
 async function agregarTandaMasaBase(fila, recetaId, cantidadUnidades) {
-  const input = document.getElementById('nueva-tanda-' + fila);
-  const unidades = parseFloat(input?.value) || 0;
-  if (unidades <= 0) { toast('Ingresa una cantidad de unidades válida', 'error'); return; }
-
   const entrada = (_planMasaBaseCache || []).find(p => p._fila === fila);
   let tandas = [];
   try { tandas = JSON.parse(entrada?.tandas_JSON || '[]'); } catch(e) {}
   if (!Array.isArray(tandas)) tandas = [];
-  tandas.push({ unidades });
+
+  if (!tandas.length) {
+    // Primera tanda — parte con el total completo
+    tandas.push({ unidades: cantidadUnidades });
+  } else {
+    // Mismo criterio que Panadería: parte la tanda más grande por la mitad,
+    // en vez de pedir un número — así el total nunca se puede descuadrar.
+    let idxMax = 0;
+    tandas.forEach((t,i) => { if ((parseFloat(t.unidades)||0) > (parseFloat(tandas[idxMax].unidades)||0)) idxMax = i; });
+    const mitad = Math.floor((parseFloat(tandas[idxMax].unidades)||0) / 2);
+    if (mitad > 0) {
+      tandas[idxMax] = { unidades: tandas[idxMax].unidades - mitad };
+      tandas.push({ unidades: mitad });
+    } else {
+      tandas.push({ unidades: 0 });
+    }
+  }
 
   await guardarTandasEnSheet(fila, tandas);
   await renderVistaPlanMasaBase(); // re-render completo, para que la sección de sub-recetas anidadas vea la tanda nueva
