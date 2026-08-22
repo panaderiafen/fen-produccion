@@ -6956,6 +6956,44 @@ async function eliminarPlanPSPCUI(fila) {
 let _planMasaBaseCache = null;
 let _planDescongelacionMasaCache = null;
 
+// Si esta es la primera vez que se entra en una semana nueva, calcula el stock
+// de cierre de la última semana registrada y lo usa como stock inicial de esta
+// semana — así nadie tiene que volver a contar ni reingresar nada cada lunes.
+// Si ya se había hecho el traspaso para esta semana, no hace nada (evita
+// recalcular en cada recarga de la pantalla).
+function avanzarStockSemanaMasaBase(masasBase, dias, semanaActual) {
+  const cfg = cargarConfigSubrecetas();
+  if (!cfg.bol) cfg.bol = {};
+  const semanaGuardada = cfg.bol.stock_masas_semana;
+
+  if (!semanaGuardada) {
+    // Primera vez que se usa el sistema — no hay semana anterior de la cual partir.
+    cfg.bol.stock_masas_semana = semanaActual;
+    guardarConfigSubrecetas(cfg);
+    return;
+  }
+  if (semanaGuardada === semanaActual) return; // ya está al día, nada que hacer
+
+  const stockPrevio = cfg.bol.stock_masas || {};
+  const planSemanaVieja = _planMasaBaseCache.filter(p => p.semana_ID === semanaGuardada);
+  const descongelacionSemanaVieja = _planDescongelacionMasaCache.filter(p => p.semana_ID === semanaGuardada);
+
+  const nuevoStock = {};
+  masasBase.forEach(r => {
+    let acumulado = parseFloat(stockPrevio[r.ID_receta]) || 0;
+    dias.forEach(d => {
+      const elaborado = parseFloat(planSemanaVieja.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
+      const descongelado = parseFloat(descongelacionSemanaVieja.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
+      acumulado = acumulado + elaborado - descongelado;
+    });
+    nuevoStock[r.ID_receta] = acumulado;
+  });
+
+  cfg.bol.stock_masas = nuevoStock;
+  cfg.bol.stock_masas_semana = semanaActual;
+  guardarConfigSubrecetas(cfg);
+}
+
 async function renderVistaPlanMasaBase() {
   const vista = document.getElementById('vista-plan-masa-base');
   vista.innerHTML = '<div class="vista-header"><h1 class="vista-titulo">Planificación Masas Base</h1></div><p style="color:var(--txt3)">Cargando...</p>';
@@ -6984,10 +7022,23 @@ async function renderVistaPlanMasaBase() {
     r.planificable_directo !== 'no' && r.planificable_directo !== false
   );
   const dias = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  const semanaActual = obtenerSemanaActual();
+
+  // Antes de mostrar nada: si esta es la primera vez que se entra en una semana
+  // nueva, heredar el stock inicial del cierre de la semana anterior — así nadie
+  // tiene que volver a contar ni reingresar nada cada lunes.
+  avanzarStockSemanaMasaBase(masasBase, dias, semanaActual);
+
   const cfg = cargarConfigSubrecetas();
   const bolCfg = cfg.bol || {};
   const capacidadCongelador = bolCfg.capacidad_congelacion_masas || 40;
   const stockInicial = bolCfg.stock_masas || {};
+
+  // Vistas de la semana actual — el cache completo (todas las semanas) se
+  // conserva en _planMasaBaseCache/_planDescongelacionMasaCache para poder
+  // calcular el cierre de semanas anteriores cuando corresponda.
+  const planSemana = _planMasaBaseCache.filter(p => p.semana_ID === semanaActual);
+  const descongelacionSemana = _planDescongelacionMasaCache.filter(p => p.semana_ID === semanaActual);
 
   // Stock proyectado día a día = stock inicial + elaborado ese día − descongelado ese
   // día (acumulado desde el lunes). Se calcula solo, no hay que ir a contar cada vez.
@@ -6995,8 +7046,8 @@ async function renderVistaPlanMasaBase() {
   masasBase.forEach(r => {
     let acumulado = parseFloat(stockInicial[r.ID_receta]) || 0;
     stockDiarioPorMasa[r.ID_receta] = dias.map(d => {
-      const elaborado = parseFloat(_planMasaBaseCache.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
-      const descongelado = parseFloat(_planDescongelacionMasaCache.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
+      const elaborado = parseFloat(planSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
+      const descongelado = parseFloat(descongelacionSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
       acumulado = acumulado + elaborado - descongelado;
       return { dia: d, elaborado, descongelado, stock: acumulado };
     });
@@ -7007,7 +7058,12 @@ async function renderVistaPlanMasaBase() {
   }, 0);
 
   vista.innerHTML = `
-    <div class="vista-header"><h1 class="vista-titulo">Planificación Masas Base</h1></div>
+    <div class="vista-header">
+      <div>
+        <h1 class="vista-titulo">Planificación Masas Base</h1>
+        <p style="font-size:12px;color:var(--txt3);margin-top:2px">Semana ${formatearEtiquetaSemana(obtenerSemanaHace(0))}</p>
+      </div>
+    </div>
 
     <div class="card" style="margin-bottom:16px">
       <div class="card-head" style="background:#F3E5F5;color:#4A148C">
@@ -7065,7 +7121,7 @@ async function renderVistaPlanMasaBase() {
             ${masasBase.map(r => `<tr style="border-top:1px solid var(--border)">
                 <td style="padding:8px 12px;font-size:12px">${r.nombre}</td>
                 ${dias.map(d => {
-                  const entrada = _planDescongelacionMasaCache.find(p => p.ID_receta === r.ID_receta && p.dia === d);
+                  const entrada = descongelacionSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d);
                   return `<td style="padding:4px;text-align:center">
                     <input type="number" min="0" step="1" value="${entrada ? entrada.cantidad_unidades : ''}" placeholder="0"
                       style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;text-align:center;font-family:'DM Mono',monospace"
@@ -7100,7 +7156,7 @@ async function renderVistaPlanMasaBase() {
                   ${!pesoUnidadG ? '<div style="font-size:10px;color:#C62828">⚠️ sin peso configurado</div>' : ''}
                 </td>
                 ${dias.map(d => {
-                  const entrada = _planMasaBaseCache.find(p => p.ID_receta === r.ID_receta && p.dia === d);
+                  const entrada = planSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d);
                   return `<td style="padding:4px;text-align:center">
                     <input type="number" min="0" step="1" value="${entrada ? entrada.cantidad_unidades : ''}" placeholder="0"
                       style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;text-align:center;font-family:'DM Mono',monospace"
@@ -7118,14 +7174,14 @@ async function renderVistaPlanMasaBase() {
     <div id="lista-compra-masa-base-semana"></div>
   `;
 
-  renderTarjetasPorMasaBase(masasBase, dias);
-  renderListaCompraMasaBaseSemana();
+  renderTarjetasPorMasaBase(masasBase, dias, planSemana);
+  renderListaCompraMasaBaseSemana(planSemana);
 }
 
 async function guardarCeldaGrillaDescongelacion(recetaId, nombre, dia, valor) {
   const cantidad = parseFloat(valor) || 0;
   await escribirEnSheet('guardar_celda_plan_descongelacion_masa', {
-    ID_receta: recetaId, nombre, dia, cantidad_unidades: cantidad
+    ID_receta: recetaId, nombre, dia, semana: obtenerSemanaActual(), cantidad_unidades: cantidad
   });
   await renderVistaPlanMasaBase();
 }
@@ -7133,7 +7189,7 @@ async function guardarCeldaGrillaDescongelacion(recetaId, nombre, dia, valor) {
 async function guardarCeldaGrillaMasaBase(recetaId, nombre, dia, valor, pesoUnidadG) {
   const cantidad = parseFloat(valor) || 0;
   await escribirEnSheet('guardar_celda_plan_masa_base', {
-    ID_receta: recetaId, nombre, dia, cantidad_unidades: cantidad, peso_unidad_g: pesoUnidadG
+    ID_receta: recetaId, nombre, dia, semana: obtenerSemanaActual(), cantidad_unidades: cantidad, peso_unidad_g: pesoUnidadG
   });
   await renderVistaPlanMasaBase();
 }
@@ -7141,18 +7197,18 @@ async function guardarCeldaGrillaMasaBase(recetaId, nombre, dia, valor, pesoUnid
 // Tarjetas apiladas por MASA (no por día) — cada una resume el total semanal y,
 // para cada día con producción, las tandas de la masa madre + las sub-recetas
 // anidadas (ej. Poolish) con su propia división en tandas.
-function renderTarjetasPorMasaBase(masasBase, dias) {
+function renderTarjetasPorMasaBase(masasBase, dias, planSemana) {
   const cont = document.getElementById('cards-masa-base');
   if (!cont) return;
 
-  const conProduccion = masasBase.filter(r => _planMasaBaseCache.some(p => p.ID_receta === r.ID_receta));
+  const conProduccion = masasBase.filter(r => planSemana.some(p => p.ID_receta === r.ID_receta));
   if (!conProduccion.length) {
     cont.innerHTML = `<div class="empty-state"><i class="ti ti-bread"></i><h2>Sin masas planificadas esta semana</h2><p>Complete la grilla de arriba para empezar.</p></div>`;
     return;
   }
 
   cont.innerHTML = conProduccion.map(r => {
-    const entradas = _planMasaBaseCache.filter(p => p.ID_receta === r.ID_receta);
+    const entradas = planSemana.filter(p => p.ID_receta === r.ID_receta);
     const totalUnidadesSemana = entradas.reduce((s,e) => s + (parseFloat(e.cantidad_unidades)||0), 0);
     const totalKgSemana = entradas.reduce((s,e) => s + (parseFloat(e.peso_total_g)||0), 0) / 1000;
 
@@ -7203,13 +7259,13 @@ function renderTarjetasPorMasaBase(masasBase, dias) {
 
 // ── Lista de compra de MP — toda la semana, todas las masas juntas, desarmadas
 // recursivamente hasta materia prima real (reutiliza expandirIngredienteRecursivo) ──
-function renderListaCompraMasaBaseSemana() {
+function renderListaCompraMasaBaseSemana(planSemana) {
   const cont = document.getElementById('lista-compra-masa-base-semana');
   if (!cont) return;
-  if (!_planMasaBaseCache.length) { cont.innerHTML = ''; return; }
+  if (!planSemana.length) { cont.innerHTML = ''; return; }
 
   const totalesMP = {};
-  _planMasaBaseCache.forEach(entrada => {
+  planSemana.forEach(entrada => {
     const r = App.recetas.find(x => x.ID_receta === entrada.ID_receta);
     if (!r) return;
     let ingredientes = [];
