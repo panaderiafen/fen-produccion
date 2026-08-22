@@ -1213,6 +1213,8 @@ function agregarIngrediente(data = {}) {
     || (data.unidad_receta === 'unidades');
   const usaMl = data.unidad_receta === 'ml';
 
+  const idCoincideConOpcion = !data.id || mpActivas.some(m => m.ID_MP === data.id) || subRecetas.some(m => m.ID_MP === data.id);
+
   tr.innerHTML = `
     <td>
       <select onchange="onChangeIngredienteSelect(this)">
@@ -1220,6 +1222,9 @@ function agregarIngrediente(data = {}) {
         ${options}
         <option value="__nueva__">+ Solicitar / habilitar MP...</option>
       </select>
+      ${data.id ? `<div style="font-size:9px;color:${idCoincideConOpcion ? 'var(--txt3)' : '#C62828'};font-family:'DM Mono',monospace;margin-top:2px">
+        ${data.id}${!idCoincideConOpcion ? ' ⚠ no coincide con ninguna opción activa — revise si hay MP duplicadas' : ''}
+      </div>` : ''}
     </td>
     ${esBOL ? `
     <td>
@@ -6846,7 +6851,11 @@ function expandirIngredienteRecursivo(mpId, gramosUsados, acumulador) {
     return;
   }
 
-  const recetaSR = App.recetas.find(r => r.ID_receta === mpId);
+  // Buscar por ID exacto primero — si no aparece (puede haber IDs viejos de
+  // sub-recetas duplicadas o renombradas), respaldo por nombre, igual que en
+  // el botón "Ver receta" de cada tanda.
+  let recetaSR = App.recetas.find(r => r.ID_receta === mpId);
+  if (!recetaSR) recetaSR = App.recetas.find(r => r.nombre === mp.nombre && r.tipo_receta === 'sub_receta');
   if (!recetaSR) {
     // No se encontró el detalle de la sub-receta — se deja como línea aparte,
     // marcada, en vez de perder el dato silenciosamente.
