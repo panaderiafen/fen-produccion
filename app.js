@@ -7416,17 +7416,76 @@ function verRecetaEscaladaTanda(fila, recetaId, tandaKg, index) {
   try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
 
   objetivo.classList.remove('hidden');
-  objetivo.innerHTML = `
+  objetivo.innerHTML = renderTablaIngredientesExpandible(ingredientes, factor, `${fila}-${index}`);
+}
+
+// Renderiza una tabla de ingredientes ya escalados — si un ingrediente es una
+// sub-receta, aparece como una fila desplegable (▸) que, al abrirla, muestra la
+// receta de ESA sub-receta también escalada. Funciona en cualquier profundidad de
+// anidamiento (una sub-receta dentro de otra), porque cada nivel se llama a sí mismo.
+function renderTablaIngredientesExpandible(ingredientes, factor, idPrefix) {
+  return `
     <table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:4px">
       <tbody>
-        ${ingredientes.map(ing => `
-          <tr>
-            <td style="padding:3px 6px;border-bottom:1px solid var(--border)">${ing.nombre}</td>
-            <td style="padding:3px 6px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace">${(parseFloat(ing.gramos||0) * factor).toFixed(1)}g</td>
-          </tr>`).join('')}
+        ${ingredientes.map((ing, i) => {
+          const gramos = (parseFloat(ing.gramos) || 0) * factor;
+          const mp = App.materiasPrimas.find(m => m.ID_MP === ing.id);
+          const esSubReceta = mp && mp.tipo === 'sub_receta';
+          const filaId = `${idPrefix}-${i}`;
+          if (esSubReceta) {
+            return `
+              <tr>
+                <td colspan="2" style="padding:3px 6px;border-bottom:1px solid var(--border)">
+                  <button style="background:none;border:none;padding:0;font-size:10px;color:var(--area-color, #6A1B9A);cursor:pointer;display:flex;justify-content:space-between;width:100%;font-family:inherit"
+                    onclick="toggleSubIngredienteExpandible('${filaId}','${ing.id}',${gramos})">
+                    <span id="chev-${filaId}"><i class="ti ti-chevron-right"></i> ${ing.nombre}</span>
+                    <span style="font-family:'DM Mono',monospace">${gramos.toFixed(1)}g</span>
+                  </button>
+                  <div id="sub-ing-${filaId}" class="hidden" style="padding-left:12px;margin-top:2px;border-left:2px solid var(--border)"></div>
+                </td>
+              </tr>`;
+          }
+          return `
+            <tr>
+              <td style="padding:3px 6px;border-bottom:1px solid var(--border)">${ing.nombre}</td>
+              <td style="padding:3px 6px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace">${gramos.toFixed(1)}g</td>
+            </tr>`;
+        }).join('')}
       </tbody>
     </table>
   `;
+}
+
+function toggleSubIngredienteExpandible(filaId, subRecetaMpId, gramosNecesarios) {
+  const cont = document.getElementById('sub-ing-' + filaId);
+  const chev = document.getElementById('chev-' + filaId);
+  if (!cont) return;
+
+  if (!cont.classList.contains('hidden')) {
+    cont.classList.add('hidden');
+    if (chev) chev.innerHTML = chev.innerHTML.replace('ti-chevron-down', 'ti-chevron-right');
+    return;
+  }
+  cont.classList.remove('hidden');
+  if (chev) chev.innerHTML = chev.innerHTML.replace('ti-chevron-right', 'ti-chevron-down');
+
+  const mp = App.materiasPrimas.find(m => m.ID_MP === subRecetaMpId);
+  // Buscar la receta detallada de esta sub-receta — primero por ID exacto, y si no
+  // se encuentra (pueden existir IDs viejos de sub-recetas renombradas), por nombre.
+  let subReceta = App.recetas.find(x => x.ID_receta === subRecetaMpId);
+  if (!subReceta && mp) subReceta = App.recetas.find(x => x.nombre === mp.nombre && x.tipo_receta === 'sub_receta');
+
+  if (!subReceta) {
+    cont.innerHTML = `<p style="font-size:9px;color:var(--txt3);padding:4px 0">No se encontró la receta detallada de esta sub-receta.</p>`;
+    return;
+  }
+
+  let ingredientesSub = [];
+  try { ingredientesSub = JSON.parse(subReceta.ingredientes_JSON || '[]'); } catch(e) {}
+  const pesoBaseSub = ingredientesSub.reduce((s,ing) => s + (parseFloat(ing.gramos)||0), 0);
+  const factorSub = pesoBaseSub > 0 ? gramosNecesarios / pesoBaseSub : 0;
+
+  cont.innerHTML = renderTablaIngredientesExpandible(ingredientesSub, factorSub, filaId);
 }
 
 async function eliminarPlanMasaBaseUI(fila) {
