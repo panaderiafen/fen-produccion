@@ -6954,7 +6954,7 @@ async function eliminarPlanPSPCUI(fila) {
 
 // ── BOL: PLANIFICACIÓN DIARIA DE MASA BASE ──────────────────────
 let _planMasaBaseCache = null;
-let _seleccionMasaBase = null;
+let _tandasSubRecetaMBCache = null;
 
 async function renderVistaPlanMasaBase() {
   const vista = document.getElementById('vista-plan-masa-base');
@@ -6968,6 +6968,14 @@ async function renderVistaPlanMasaBase() {
     _planMasaBaseCache = data.filas || [];
   } catch(e) {
     _planMasaBaseCache = [];
+  }
+  try {
+    const payload2 = encodeURIComponent(JSON.stringify({ accion: 'leer_tandas_subreceta_masa_base' }));
+    const res2 = await fetch(FEN.WEBAPP_URL + '?payload=' + payload2, { redirect: 'follow', cache: 'no-store' });
+    const data2 = await res2.json();
+    _tandasSubRecetaMBCache = data2.filas || [];
+  } catch(e) {
+    _tandasSubRecetaMBCache = [];
   }
 
   const masasBase = App.recetas.filter(r =>
@@ -7009,6 +7017,7 @@ async function renderVistaPlanMasaBase() {
         `).join('')}
         <p style="font-size:11px;color:var(--txt3);margin-top:8px">
           Ajuste "Stock actual" manualmente cuando corresponda (ej. conteo físico). La capacidad máxima se configura en "Config sub recetas".
+          Empaste se planifica según cuántas masas de estas va a sacar a descongelar cada día — no nace de esta grilla.
         </p>
       </div>
     </div>
@@ -7018,182 +7027,252 @@ async function renderVistaPlanMasaBase() {
     </p>
 
     <div class="card" style="margin-bottom:16px">
-      <div class="card-head"><i class="ti ti-bread"></i> Seleccionar masa base</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;padding:16px">
-        ${masasBase.map(r => `
-          <button data-id="${r.ID_receta}"
-            style="padding:10px 6px;border-radius:var(--r-md);border:2px solid ${_seleccionMasaBase?.ID_receta===r.ID_receta?'var(--area-color, #1565C0)':'var(--border)'};
-              background:${_seleccionMasaBase?.ID_receta===r.ID_receta?'var(--area-bg, #E3F2FD)':'var(--surface)'};cursor:pointer;text-align:center;font-size:12px"
-            onclick="seleccionarMasaBase('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}',${parseFloat(r.peso_unidad_mb_g)||0})">
-            ${r.nombre}<br><span style="font-size:10px;color:var(--txt3)">${r.peso_unidad_mb_g ? (parseFloat(r.peso_unidad_mb_g)/1000).toFixed(2)+'kg/uni' : '⚠️ sin peso configurado'}</span>
-          </button>
-        `).join('')}
-        ${!masasBase.length ? '<p style="color:var(--txt3);grid-column:1/-1">Sin recetas clasificadas como "Masa Base" todavía.</p>' : ''}
-      </div>
-      ${_seleccionMasaBase ? `
-      <div style="padding:0 16px 16px;border-top:1px solid var(--border);padding-top:16px">
-        <p style="font-size:13px;font-weight:600;margin-bottom:10px">Seleccionado: ${_seleccionMasaBase.nombre} (${(_seleccionMasaBase.pesoUnidad/1000).toFixed(2)}kg/unidad)</p>
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-          <label style="font-size:12px">Cantidad de unidades:</label>
-          <input type="number" id="cant-masa-base" min="1" step="1" style="max-width:100px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-sm)" placeholder="0" oninput="previewPesoMasaBase()">
-          <span id="preview-peso-masa-base" style="font-size:12px;color:var(--txt3)"></span>
-        </div>
-        <p style="font-size:11px;color:var(--txt3);margin-bottom:6px">Presione el día para ingresar al plan:</p>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${dias.map(d => `<button id="btn-dia-mb-${d}" class="btn-secundario" style="font-size:12px;padding:6px 14px" onclick="ingresarPlanMasaBase('${d}')">${d}</button>`).join('')}
-        </div>
-      </div>` : ''}
+      <div class="card-head"><i class="ti ti-bread"></i> Planificación semanal</div>
+      ${!masasBase.length ? `<p style="padding:16px;color:var(--txt3)">Sin recetas clasificadas como "Masa Base" todavía.</p>` : `
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;min-width:560px">
+          <thead><tr style="background:var(--bg)">
+            <th style="text-align:left;padding:9px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Receta</th>
+            ${dias.map(d => `<th style="text-align:center;padding:9px 6px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">${d}</th>`).join('')}
+          </tr></thead>
+          <tbody>
+            ${masasBase.map(r => {
+              const pesoUnidadG = parseFloat(r.peso_unidad_mb_g) || 0;
+              return `<tr style="border-top:1px solid var(--border)">
+                <td style="padding:8px 12px;font-size:12px">
+                  ${r.nombre}
+                  ${!pesoUnidadG ? '<div style="font-size:10px;color:#C62828">⚠️ sin peso configurado</div>' : ''}
+                </td>
+                ${dias.map(d => {
+                  const entrada = _planMasaBaseCache.find(p => p.ID_receta === r.ID_receta && p.dia === d);
+                  return `<td style="padding:4px;text-align:center">
+                    <input type="number" min="0" step="1" value="${entrada ? entrada.cantidad_unidades : ''}" placeholder="0"
+                      style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;text-align:center;font-family:'DM Mono',monospace"
+                      onchange="guardarCeldaGrillaMasaBase('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}','${d}',this.value,${pesoUnidadG})">
+                  </td>`;
+                }).join('')}
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`}
     </div>
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
-      ${dias.map(d => {
-        const items = _planMasaBaseCache.filter(p => p.dia === d);
-        const totalKgDia = items.reduce((s,it) => s + (parseFloat(it.peso_total_g)||0), 0) / 1000;
-        const totalUnidadesDia = items.reduce((s,it) => s + (parseFloat(it.cantidad_unidades)||0), 0);
-        const numTandas = totalKgDia > 0 ? Math.ceil(totalKgDia / maxPorTanda) : 0;
+    <div id="cards-masa-base"></div>
+    <div id="lista-compra-masa-base-semana"></div>
+  `;
 
-        // Preparar bloques de "sub-receta anidada por tanda" (ej. Poolish dentro de cada tanda de Masa Base)
-        const bloquesAnidados = [];
-        items.forEach(it => {
-          let tandas = [];
-          try { tandas = JSON.parse(it.tandas_JSON || '[]'); } catch(e) {}
-          if (!Array.isArray(tandas) || !tandas.length) return;
-          const r = App.recetas.find(x => x.ID_receta === it.ID_receta);
-          if (!r) return;
-          let ingredientesPropios = [];
-          try { ingredientesPropios = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
-          const subRecetasAnidadas = ingredientesPropios.filter(ing => {
-            const mp = App.materiasPrimas.find(m => m.ID_MP === ing.id);
-            return mp && mp.tipo === 'sub_receta';
-          });
-          if (!subRecetasAnidadas.length) return;
-          bloquesAnidados.push({ entradaFila: it._fila, recetaId: it.ID_receta, tandas, subRecetasAnidadas, pesoUnidadG: parseFloat(it.peso_unidad_g) || 0 });
-        });
+  renderTarjetasPorMasaBase(masasBase, dias, maxPorTanda, capacidadCongelador, stockTotalActual, salidasMasas);
+  renderListaCompraMasaBaseSemana();
+}
 
-        return `
-        <div class="card">
-          <div class="card-head" style="font-size:13px">${d}</div>
-          <div style="padding:10px 14px">
-            ${(() => {
-              const salidaHoy = parseInt(salidasMasas[d]) || 0;
-              const proyectado = stockTotalActual + totalUnidadesDia - salidaHoy;
-              const hayEspacio = proyectado <= capacidadCongelador;
-              return `
-              <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:2px solid var(--border)">
-                <label style="font-size:11px;color:var(--txt2)">¿Cuántas masas va a sacar a descongelar este día?</label>
-                <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
-                  <input type="number" id="salida-masa-${d}" min="0" step="1" value="${salidaHoy || ''}" placeholder="0"
-                    style="max-width:70px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px">
-                  <button class="btn-secundario" style="font-size:10px;padding:4px 8px" onclick="guardarSalidaMasaDia('${d}')">
-                    <i class="ti ti-device-floppy"></i> Guardar
-                  </button>
-                </div>
-                <p style="font-size:11px;color:var(--txt3);margin-top:6px">Según plan, ${totalUnidadesDia} masas pasan a congelación este día.</p>
-                ${items.length || salidaHoy ? `
-                  <p style="font-size:11px;margin-top:6px;color:${hayEspacio ? '#2E7D32' : '#C62828'}">
-                    <i class="ti ${hayEspacio ? 'ti-circle-check' : 'ti-alert-triangle'}"></i>
-                    ${hayEspacio ? 'Hay espacio' : 'No hay espacio suficiente'} — proyectado: ${proyectado}/${capacidadCongelador}
-                  </p>` : ''}
-              </div>`;
-            })()}
-            ${!items.length ? '<p style="color:var(--txt3);font-size:12px">Sin masas planificadas</p>' : items.map(it => `
-              <div style="padding:8px 0;border-bottom:1px solid var(--border)">
-                <div style="display:flex;justify-content:space-between;align-items:center">
-                  <div>
-                    <div style="font-size:12px;font-weight:600">${it.nombre}</div>
-                    <div style="font-size:11px;color:var(--txt3)">${it.cantidad_unidades} uni · Total ${(parseFloat(it.peso_total_g)/1000).toFixed(2)}kg</div>
-                  </div>
-                  <button class="btn-fila-del" onclick="eliminarPlanMasaBaseUI(${it._fila})" aria-label="Eliminar"><i class="ti ti-x"></i></button>
-                </div>
-                <button class="btn-primario" style="width:100%;margin-top:8px;font-size:12px;padding:8px" onclick="toggleDetalleMasaBase(${it._fila},'${it.ID_receta}',${it.cantidad_unidades})">
-                  <i class="ti ti-list-details"></i> Dividir en tandas / Ver receta escalada
-                </button>
-                <div id="detalle-masa-base-${it._fila}" class="hidden" style="margin-top:8px"></div>
+async function guardarCeldaGrillaMasaBase(recetaId, nombre, dia, valor, pesoUnidadG) {
+  const cantidad = parseFloat(valor) || 0;
+  await escribirEnSheet('guardar_celda_plan_masa_base', {
+    ID_receta: recetaId, nombre, dia, cantidad_unidades: cantidad, peso_unidad_g: pesoUnidadG
+  });
+  await renderVistaPlanMasaBase();
+}
+
+// Tarjetas apiladas por MASA (no por día) — cada una resume el total semanal y,
+// para cada día con producción, las tandas de la masa madre + las sub-recetas
+// anidadas (ej. Poolish) con su propia división en tandas.
+function renderTarjetasPorMasaBase(masasBase, dias, maxPorTanda, capacidadCongelador, stockTotalActual, salidasMasas) {
+  const cont = document.getElementById('cards-masa-base');
+  if (!cont) return;
+
+  const conProduccion = masasBase.filter(r => _planMasaBaseCache.some(p => p.ID_receta === r.ID_receta));
+  if (!conProduccion.length) {
+    cont.innerHTML = `<div class="empty-state"><i class="ti ti-bread"></i><h2>Sin masas planificadas esta semana</h2><p>Complete la grilla de arriba para empezar.</p></div>`;
+    return;
+  }
+
+  cont.innerHTML = conProduccion.map(r => {
+    const entradas = _planMasaBaseCache.filter(p => p.ID_receta === r.ID_receta);
+    const totalUnidadesSemana = entradas.reduce((s,e) => s + (parseFloat(e.cantidad_unidades)||0), 0);
+    const totalKgSemana = entradas.reduce((s,e) => s + (parseFloat(e.peso_total_g)||0), 0) / 1000;
+
+    let ingredientesPropios = [];
+    try { ingredientesPropios = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+    const subRecetasAnidadas = ingredientesPropios.filter(ing => {
+      const mp = App.materiasPrimas.find(m => m.ID_MP === ing.id);
+      return mp && mp.tipo === 'sub_receta';
+    });
+
+    return `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head" style="display:flex;justify-content:space-between;align-items:center">
+        <span><i class="ti ti-bread"></i> ${r.nombre}</span>
+        <span style="font-weight:400;font-size:12px;color:var(--txt3)">${totalUnidadesSemana} uni · ${totalKgSemana.toFixed(2)}kg esta semana</span>
+      </div>
+      <div style="padding:12px 16px">
+        ${dias.filter(d => entradas.some(e => e.dia === d)).map(d => {
+          const it = entradas.find(e => e.dia === d);
+          const salidaHoy = parseInt(salidasMasas[d]) || 0;
+          return `
+          <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:13px;font-weight:600">${d}</span>
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:12px;color:var(--txt3)">${it.cantidad_unidades} uni · ${(parseFloat(it.peso_total_g)/1000).toFixed(2)}kg</span>
+                <button class="btn-fila-del" onclick="eliminarPlanMasaBaseUI(${it._fila})" aria-label="Eliminar"><i class="ti ti-x"></i></button>
               </div>
-            `).join('')}
-            ${items.length ? `
-              <div style="margin-top:10px;padding-top:10px">
-                <p style="font-size:13px;font-weight:700">Total: ${totalKgDia.toFixed(2)}kg</p>
-                <p style="font-size:12px;color:${totalKgDia > maxPorTanda ? '#C62828' : '#2E7D32'}">
-                  <i class="ti ${totalKgDia > maxPorTanda ? 'ti-alert-triangle' : 'ti-circle-check'}"></i>
-                  ${numTandas} tanda${numTandas!==1?'s':''} necesaria${numTandas!==1?'s':''} (máx. ${maxPorTanda}kg c/u — usted decide cómo repartirlas)
-                </p>
-              </div>` : ''}
-            ${bloquesAnidados.length ? `
-              <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--border)">
-                <p style="font-size:11px;font-weight:600;color:var(--txt3);margin-bottom:6px">PREPARACIONES POR TANDA</p>
-                ${bloquesAnidados.map(b => b.tandas.map((t,i) => {
-                  const kgTanda = (parseFloat(t.unidades)||0) * b.pesoUnidadG / 1000;
-                  return b.subRecetasAnidadas.map(subIng => `
-                  <div style="margin-bottom:6px">
-                    <button class="btn-secundario" style="font-size:11px;padding:4px 10px;width:100%;text-align:left"
-                      onclick="toggleSubRecetaAnidada('${b.entradaFila}-${i}-${subIng.id}','${b.recetaId}','${subIng.id}',${kgTanda},${i})">
-                      <i class="ti ti-chevron-down"></i> ${subIng.nombre} — Tanda ${i+1} (${t.unidades} uni · ${kgTanda.toFixed(2)}kg)
-                    </button>
-                    <div id="anidada-${b.entradaFila}-${i}-${subIng.id}" class="hidden" style="margin-top:4px"></div>
-                  </div>
-                `).join('');
-                }).join('')).join('')}
-              </div>` : ''}
-          </div>
-        </div>`;
-      }).join('')}
+            </div>
+            <button class="btn-secundario" style="width:100%;margin-top:6px;font-size:11px;padding:6px" onclick="toggleDetalleMasaBase(${it._fila},'${it.ID_receta}',${it.cantidad_unidades})">
+              <i class="ti ti-list-details"></i> Dividir masa en tandas
+            </button>
+            <div id="detalle-masa-base-${it._fila}" class="hidden" style="margin-top:6px"></div>
+
+            ${subRecetasAnidadas.map(subIng => {
+              const gramosNecesarios = (parseFloat(subIng.gramos)||0) * (parseFloat(it.cantidad_unidades)||0);
+              const claveSub = `${d}__${subIng.id}`;
+              return `
+              <div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <span style="font-size:12px">${subIng.nombre} necesario: <strong>${gramosNecesarios >= 1000 ? (gramosNecesarios/1000).toFixed(2)+'kg' : Math.round(gramosNecesarios)+'g'}</strong></span>
+                </div>
+                <button class="btn-secundario" style="width:100%;margin-top:4px;font-size:11px;padding:5px" onclick="toggleDetalleSubRecetaMasaBase('${claveSub}','${d}','${subIng.id}','${subIng.nombre.replace(/'/g,"\\'")}',${gramosNecesarios})">
+                  <i class="ti ti-list-details"></i> Dividir ${subIng.nombre} en tandas
+                </button>
+                <div id="detalle-sub-mb-${claveSub}" class="hidden" style="margin-top:6px"></div>
+              </div>`;
+            }).join('')}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── División en tandas de una sub-receta anidada (ej. Poolish), por día ────────
+function toggleDetalleSubRecetaMasaBase(claveSub, dia, subRecetaId, subRecetaNombre, gramosNecesarios) {
+  const cont = document.getElementById('detalle-sub-mb-' + claveSub);
+  if (!cont) return;
+  if (!cont.classList.contains('hidden')) { cont.classList.add('hidden'); return; }
+  cont.classList.remove('hidden');
+
+  const entrada = (_tandasSubRecetaMBCache || []).find(p => p.dia === dia && p.sub_receta_id === subRecetaId);
+  let tandas = [];
+  try { tandas = JSON.parse(entrada?.tandas_JSON || '[]'); } catch(e) {}
+  if (!Array.isArray(tandas)) tandas = [];
+
+  renderEditorTandasSubReceta(claveSub, dia, subRecetaId, subRecetaNombre, gramosNecesarios, tandas);
+}
+
+function renderEditorTandasSubReceta(claveSub, dia, subRecetaId, subRecetaNombre, gramosNecesarios, tandas) {
+  const cont = document.getElementById('detalle-sub-mb-' + claveSub);
+  if (!cont) return;
+
+  const sumaTandasG = tandas.reduce((s,t) => s + (parseFloat(t.gramos)||0), 0);
+  const diferenciaG = gramosNecesarios - sumaTandasG;
+
+  cont.innerHTML = `
+    <div style="background:var(--bg);border-radius:var(--r-md);padding:10px">
+      <p style="font-size:11px;font-weight:600;margin-bottom:6px">Dividir ${subRecetaNombre} en tandas libres (total: ${gramosNecesarios >= 1000 ? (gramosNecesarios/1000).toFixed(2)+'kg' : Math.round(gramosNecesarios)+'g'})</p>
+      ${tandas.map((t,i) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0">
+          <span style="font-size:11px">Tanda ${i+1}: <strong>${t.gramos >= 1000 ? (t.gramos/1000).toFixed(2)+'kg' : Math.round(t.gramos)+'g'}</strong></span>
+          <button class="btn-fila-del" style="padding:2px" onclick="quitarTandaSubRecetaMasaBase('${claveSub}','${dia}','${subRecetaId}','${subRecetaNombre.replace(/'/g,"\\'")}',${gramosNecesarios},${i})"><i class="ti ti-x"></i></button>
+        </div>
+      `).join('')}
+      <div style="display:flex;gap:6px;align-items:center;margin-top:8px">
+        <input type="number" id="nueva-tanda-sub-${claveSub}" min="1" step="1" placeholder="gramos" style="max-width:90px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:11px">
+        <button class="btn-secundario" style="font-size:10px;padding:4px 10px" onclick="agregarTandaSubRecetaMasaBase('${claveSub}','${dia}','${subRecetaId}','${subRecetaNombre.replace(/'/g,"\\'")}',${gramosNecesarios})">
+          <i class="ti ti-plus"></i> Agregar tanda
+        </button>
+      </div>
+      <p style="font-size:10px;margin-top:6px;color:${Math.abs(diferenciaG) < 1 ? '#2E7D32' : '#C62828'}">
+        ${Math.abs(diferenciaG) < 1 ? '✓ Las tandas suman el total' : diferenciaG > 0 ? `Faltan ${Math.round(diferenciaG)}g por asignar` : `Sobran ${Math.round(Math.abs(diferenciaG))}g asignados de más`}
+      </p>
     </div>
   `;
 }
 
-// Muestra/oculta la receta de una sub-receta ANIDADA dentro de la masa base (ej.
-// Poolish, que es ingrediente de Masa Base Pastón), escalada a lo que se necesita
-// para una tanda específica.
-function toggleSubRecetaAnidada(contenedorId, recetaId, subRecetaMpId, tandaKg, tandaIndex) {
-  const cont = document.getElementById('anidada-' + contenedorId);
+async function agregarTandaSubRecetaMasaBase(claveSub, dia, subRecetaId, subRecetaNombre, gramosNecesarios) {
+  const input = document.getElementById('nueva-tanda-sub-' + claveSub);
+  const gramos = parseFloat(input?.value) || 0;
+  if (gramos <= 0) { toast('Ingresa una cantidad en gramos válida', 'error'); return; }
+
+  const entrada = (_tandasSubRecetaMBCache || []).find(p => p.dia === dia && p.sub_receta_id === subRecetaId);
+  let tandas = [];
+  try { tandas = JSON.parse(entrada?.tandas_JSON || '[]'); } catch(e) {}
+  if (!Array.isArray(tandas)) tandas = [];
+  tandas.push({ gramos });
+
+  await escribirEnSheet('guardar_tandas_subreceta_masa_base', {
+    dia, sub_receta_id: subRecetaId, sub_receta_nombre: subRecetaNombre, tandas_JSON: JSON.stringify(tandas)
+  });
+  if (entrada) entrada.tandas_JSON = JSON.stringify(tandas);
+  else _tandasSubRecetaMBCache.push({ dia, sub_receta_id: subRecetaId, sub_receta_nombre: subRecetaNombre, tandas_JSON: JSON.stringify(tandas) });
+
+  renderEditorTandasSubReceta(claveSub, dia, subRecetaId, subRecetaNombre, gramosNecesarios, tandas);
+}
+
+async function quitarTandaSubRecetaMasaBase(claveSub, dia, subRecetaId, subRecetaNombre, gramosNecesarios, index) {
+  const entrada = (_tandasSubRecetaMBCache || []).find(p => p.dia === dia && p.sub_receta_id === subRecetaId);
+  let tandas = [];
+  try { tandas = JSON.parse(entrada?.tandas_JSON || '[]'); } catch(e) {}
+  tandas.splice(index, 1);
+
+  await escribirEnSheet('guardar_tandas_subreceta_masa_base', {
+    dia, sub_receta_id: subRecetaId, sub_receta_nombre: subRecetaNombre, tandas_JSON: JSON.stringify(tandas)
+  });
+  if (entrada) entrada.tandas_JSON = JSON.stringify(tandas);
+
+  renderEditorTandasSubReceta(claveSub, dia, subRecetaId, subRecetaNombre, gramosNecesarios, tandas);
+}
+
+// ── Lista de compra de MP — toda la semana, todas las masas juntas, desarmadas
+// recursivamente hasta materia prima real (reutiliza expandirIngredienteRecursivo) ──
+function renderListaCompraMasaBaseSemana() {
+  const cont = document.getElementById('lista-compra-masa-base-semana');
   if (!cont) return;
-  if (!cont.classList.contains('hidden')) { cont.classList.add('hidden'); return; }
+  if (!_planMasaBaseCache.length) { cont.innerHTML = ''; return; }
 
-  const r = App.recetas.find(x => x.ID_receta === recetaId);
-  if (!r) return;
-  const entrada = (_planMasaBaseCache || []).find(p => p.ID_receta === recetaId);
-  const porciones = parseFloat(r.porciones_base) || 1;
-  const pesoUnidadG = parseFloat(entrada?.peso_unidad_g) || 0;
-  const pesoRecetaBaseG = porciones * pesoUnidadG;
-  const factorMasaBase = pesoRecetaBaseG > 0 ? (tandaKg * 1000) / pesoRecetaBaseG : 0;
+  const totalesMP = {};
+  _planMasaBaseCache.forEach(entrada => {
+    const r = App.recetas.find(x => x.ID_receta === entrada.ID_receta);
+    if (!r) return;
+    let ingredientes = [];
+    try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
+    const pesoBaseReceta = ingredientes.reduce((s,ing) => s + (parseFloat(ing.gramos)||0), 0);
+    if (!pesoBaseReceta) return;
+    const factor = (parseFloat(entrada.peso_total_g) || 0) / pesoBaseReceta;
+    ingredientes.forEach(ing => {
+      const gramosEscalados = (parseFloat(ing.gramos) || 0) * factor;
+      expandirIngredienteRecursivo(ing.id, gramosEscalados, totalesMP);
+    });
+  });
 
-  let ingredientesPropios = [];
-  try { ingredientesPropios = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
-  const usoSubReceta = ingredientesPropios.find(ing => ing.id === subRecetaMpId);
-  if (!usoSubReceta) return;
-  const gramosNecesarios = (parseFloat(usoSubReceta.gramos) || 0) * factorMasaBase;
+  const lista = Object.values(totalesMP).sort((a,b) => b.gramos - a.gramos);
+  if (!lista.length) { cont.innerHTML = ''; return; }
 
-  // Encontrar la receta real de esa sub-receta (por nombre, cruzando desde MP_maestro)
-  const mpSub = App.materiasPrimas.find(m => m.ID_MP === subRecetaMpId);
-  const subReceta = mpSub ? App.recetas.find(x => x.nombre === mpSub.nombre && x.tipo_receta === 'sub_receta') : null;
-  if (!subReceta) {
-    cont.classList.remove('hidden');
-    cont.innerHTML = `<p style="font-size:11px;color:var(--txt3)">No se encontró la receta detallada de esta sub-receta.</p>`;
-    return;
-  }
-
-  const porcionesSub = parseFloat(subReceta.porciones_base) || 1;
-  const factorSub = gramosNecesarios / porcionesSub;
-
-  let ingredientesSub = [];
-  try { ingredientesSub = JSON.parse(subReceta.ingredientes_JSON || '[]'); } catch(e) {}
-
-  cont.classList.remove('hidden');
   cont.innerHTML = `
-    <div style="background:var(--bg);border-radius:var(--r-sm);padding:8px">
-      <p style="font-size:10px;color:var(--txt3);margin-bottom:4px">Necesita ${gramosNecesarios.toFixed(0)}g de esta preparación para la Tanda ${tandaIndex+1}:</p>
-      <table style="width:100%;border-collapse:collapse;font-size:10px">
+    <div class="card" style="margin-top:16px">
+      <div class="card-head"><i class="ti ti-shopping-cart"></i> Materias primas necesarias — toda la semana</div>
+      <table class="tabla-vista">
+        <thead><tr>
+          <th style="text-align:left;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Materia Prima</th>
+          <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Cantidad necesaria</th>
+        </tr></thead>
         <tbody>
-          ${ingredientesSub.map(ing => `
-            <tr>
-              <td style="padding:3px 6px;border-bottom:1px solid var(--border)">${ing.nombre}</td>
-              <td style="padding:3px 6px;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace">${(parseFloat(ing.gramos||0) * factorSub).toFixed(1)}g</td>
-            </tr>`).join('')}
+          ${lista.map(it => {
+            const esPorUnidad = it.unidadCompra === 'un' || it.unidadCompra === 'unidad' || it.unidadCompra === 'unidades';
+            const display = esPorUnidad
+              ? `${Math.ceil(it.gramos)} un`
+              : it.gramos >= 1000 ? `${(it.gramos/1000).toFixed(2)} kg` : `${Math.round(it.gramos)} g`;
+            return `<tr>
+              <td class="td-nombre">${it.nombre}${it.sinDesarmar ? ' <span style="color:#E65100;font-size:10px">⚠ sin desglosar</span>' : ''}</td>
+              <td class="td-num" style="font-weight:600">${display}</td>
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>
-    </div>
-  `;
+      <p style="font-size:11px;color:var(--txt3);padding:10px 16px">
+        Suma todas las masas planificadas esta semana (todos los días juntos), ya desglosadas hasta materia prima real
+        (incluye sub-recetas anidadas como Poolish).
+      </p>
+    </div>`;
 }
 
 function guardarSalidaMasaDia(dia) {
@@ -7216,46 +7295,6 @@ function guardarStockActualMasa(recetaId) {
   guardarConfigSubrecetas(cfg);
   toast('Stock actualizado');
   renderVistaPlanMasaBase();
-}
-
-function seleccionarMasaBase(id, nombre, pesoUnidad) {
-  if (!pesoUnidad) {
-    alert(`"${nombre}" no tiene "Peso por unidad" configurado todavía.\n\nVaya a Mis recetas → edite esta receta → complete el campo "Peso por unidad (g)" antes de planificarla.`);
-    return;
-  }
-  _seleccionMasaBase = { ID_receta: id, nombre, pesoUnidad };
-  renderVistaPlanMasaBase();
-}
-
-function previewPesoMasaBase() {
-  const cantidad = parseFloat(document.getElementById('cant-masa-base')?.value) || 0;
-  const el = document.getElementById('preview-peso-masa-base');
-  if (!el || !_seleccionMasaBase) return;
-  const totalKg = (cantidad * _seleccionMasaBase.pesoUnidad) / 1000;
-  el.textContent = cantidad > 0 ? `= ${totalKg.toFixed(2)}kg` : '';
-}
-
-async function ingresarPlanMasaBase(dia) {
-  if (!_seleccionMasaBase) return;
-  const cantidad = parseFloat(document.getElementById('cant-masa-base')?.value) || 0;
-  if (cantidad <= 0) { toast('Ingresa una cantidad', 'error'); return; }
-  const pesoTotal = cantidad * _seleccionMasaBase.pesoUnidad;
-  const btnDia = document.getElementById('btn-dia-mb-' + dia);
-  if (btnDia) { btnDia.style.background = '#EDE7F6'; btnDia.style.borderColor = '#4A148C'; btnDia.style.color = '#4A148C'; }
-  try {
-    await escribirEnSheet('guardar_entrada_plan_masa_base', {
-      registro: {
-        ID_receta: _seleccionMasaBase.ID_receta, nombre: _seleccionMasaBase.nombre, dia,
-        cantidad_unidades: cantidad, peso_unidad_g: _seleccionMasaBase.pesoUnidad, peso_total_g: pesoTotal
-      }
-    });
-    toast(`${_seleccionMasaBase.nombre} agregado al ${dia}`);
-    _seleccionMasaBase = null;
-    renderVistaPlanMasaBase();
-  } catch(e) {
-    toast('Error al guardar', 'error');
-    if (btnDia) { btnDia.style.background = ''; btnDia.style.borderColor = ''; btnDia.style.color = ''; }
-  }
 }
 
 function toggleDetalleMasaBase(fila, recetaId, cantidadUnidades) {
