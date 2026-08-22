@@ -6985,7 +6985,6 @@ async function renderVistaPlanMasaBase() {
   const dias = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
   const cfg = cargarConfigSubrecetas();
   const bolCfg = cfg.bol || {};
-  const maxPorTanda = bolCfg.amasadora_max_por_tanda || 16;
   const capacidadCongelador = bolCfg.capacidad_congelacion_masas || 40;
   const stockActual = bolCfg.stock_masas || {};
   const salidasMasas = bolCfg.salidas_masas || {};
@@ -7021,10 +7020,6 @@ async function renderVistaPlanMasaBase() {
         </p>
       </div>
     </div>
-
-    <p style="font-size:12px;color:var(--txt2);margin-bottom:14px">
-      Capacidad máxima de amasadora por tanda: <strong>${maxPorTanda}kg</strong> (se ajusta en "Config sub recetas")
-    </p>
 
     <div class="card" style="margin-bottom:16px">
       <div class="card-head"><i class="ti ti-bread"></i> Planificación semanal</div>
@@ -7062,7 +7057,7 @@ async function renderVistaPlanMasaBase() {
     <div id="lista-compra-masa-base-semana"></div>
   `;
 
-  renderTarjetasPorMasaBase(masasBase, dias, maxPorTanda, capacidadCongelador, stockTotalActual, salidasMasas);
+  renderTarjetasPorMasaBase(masasBase, dias, capacidadCongelador, stockTotalActual, salidasMasas);
   renderListaCompraMasaBaseSemana();
 }
 
@@ -7077,7 +7072,7 @@ async function guardarCeldaGrillaMasaBase(recetaId, nombre, dia, valor, pesoUnid
 // Tarjetas apiladas por MASA (no por día) — cada una resume el total semanal y,
 // para cada día con producción, las tandas de la masa madre + las sub-recetas
 // anidadas (ej. Poolish) con su propia división en tandas.
-function renderTarjetasPorMasaBase(masasBase, dias, maxPorTanda, capacidadCongelador, stockTotalActual, salidasMasas) {
+function renderTarjetasPorMasaBase(masasBase, dias, capacidadCongelador, stockTotalActual, salidasMasas) {
   const cont = document.getElementById('cards-masa-base');
   if (!cont) return;
 
@@ -7319,8 +7314,6 @@ function renderEditorTandas(fila, recetaId, cantidadUnidades, tandas) {
   const entrada = (_planMasaBaseCache || []).find(p => p._fila === fila);
   const pesoUnidadG = parseFloat(entrada?.peso_unidad_g) || 0;
   const pesoTotalKg = (parseFloat(entrada?.peso_total_g) || 0) / 1000;
-  const cfg = cargarConfigSubrecetas();
-  const maxPorTanda = cfg.bol?.amasadora_max_por_tanda || 16;
 
   const sumaTandasUni = tandas.reduce((s,t) => s + (parseFloat(t.unidades)||0), 0);
   const diferenciaUni = cantidadUnidades - sumaTandasUni;
@@ -7330,12 +7323,9 @@ function renderEditorTandas(fila, recetaId, cantidadUnidades, tandas) {
       <p style="font-size:11px;font-weight:600;margin-bottom:6px">Dividir en tandas libres (total: ${cantidadUnidades} uni · ${pesoTotalKg.toFixed(2)}kg)</p>
       ${tandas.map((t,i) => {
         const kgTanda = (parseFloat(t.unidades)||0) * pesoUnidadG / 1000;
-        const excede = kgTanda > maxPorTanda;
         return `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0">
-          <span style="font-size:11px;color:${excede?'#C62828':'inherit'}">
-            ${excede ? '<i class="ti ti-alert-triangle"></i> ' : ''}Tanda ${i+1}: <strong>${t.unidades} uni</strong> (${kgTanda.toFixed(2)}kg${excede?` — supera el máx. de ${maxPorTanda}kg`:''})
-          </span>
+          <span style="font-size:11px">Tanda ${i+1}: <strong>${t.unidades} uni</strong> (${kgTanda.toFixed(2)}kg)</span>
           <div style="display:flex;gap:4px">
             <button class="btn-secundario" style="font-size:9px;padding:2px 6px" onclick="verRecetaEscaladaTanda(${fila},'${recetaId}',${kgTanda},${i})">Ver receta</button>
             <button class="btn-fila-del" style="padding:2px" onclick="quitarTandaMasaBase(${fila},'${recetaId}',${cantidadUnidades},${i})"><i class="ti ti-x"></i></button>
