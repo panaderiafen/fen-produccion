@@ -1206,10 +1206,13 @@ function agregarIngrediente(data = {}) {
   const options = optionsMP + optionsSR;
 
   const esBOL = App.areaCodigo === 'BOL';
-  // Para BOL, detectar si el ingrediente es sub receta (puede ser en unidades)
+  // El selector de Gramos/Unidades aplica a BOL y PAN — ambas áreas usan sub-recetas
+  // de masa compartida (ej. Masa Ciabatta usada en Ciabatta y Focaccia a la vez).
+  const permiteUnidadesIngrediente = esBOL || esPan;
+  // Para BOL/PAN, detectar si el ingrediente es sub receta (puede ser en unidades)
   const esSubRecetaIngr = data.id && (subRecetas.some(sr => sr.ID_MP === data.id));
   // También considerar unidad_receta explícita (para MPs solicitadas con unidad específica)
-  const usaUnidades = (esBOL && esSubRecetaIngr && (data.unidades !== undefined ? data.unidades : true))
+  const usaUnidades = (permiteUnidadesIngrediente && esSubRecetaIngr && (data.unidades !== undefined ? data.unidades : true))
     || (data.unidad_receta === 'unidades');
   const usaMl = data.unidad_receta === 'ml';
 
@@ -1226,7 +1229,7 @@ function agregarIngrediente(data = {}) {
         ${data.id}${!idCoincideConOpcion ? ' ⚠ no coincide con ninguna opción activa — revise si hay MP duplicadas' : ''}
       </div>` : ''}
     </td>
-    ${esBOL ? `
+    ${permiteUnidadesIngrediente ? `
     <td>
       <select class="sel-unidad-tipo" onchange="toggleUnidadTipo(this)" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit">
         <option value="gramos" ${!usaUnidades?'selected':''}>Gramos</option>
@@ -1237,11 +1240,11 @@ function agregarIngrediente(data = {}) {
       <input type="number" placeholder="${usaUnidades?'1':'0'}"
       value="${usaUnidades ? (data.unidades||'') : usaMl ? (data.ml||data.gramos||'') : (data.gramos ? parseFloat(data.gramos).toFixed(1) : '')}"
       min="0" step="${usaUnidades?'0.001':'0.01'}"
-      oninput="${esPan ? 'desdeGramos(this)' : 'actualizarTotalIngredientesPreview()'}"
+      oninput="${esPan && !usaUnidades ? 'desdeGramos(this)' : 'actualizarTotalIngredientesPreview()'}"
       style="max-width:90px"
       data-modo="${usaUnidades ? 'unidades' : usaMl ? 'ml' : 'gramos'}"
       data-unidad="${data.unidad_receta || (usaUnidades ? 'unidades' : 'gramos')}">
-      ${esBOL && esSubRecetaIngr ? `<button type="button" class="btn-secundario" style="font-size:11px;padding:4px 6px" title="Calcular fracción (ej: 1 de cada 12)" onclick="calcularFraccionIngrediente(this)"><i class="ti ti-calculator"></i></button>` : ''}
+      ${permiteUnidadesIngrediente && esSubRecetaIngr ? `<button type="button" class="btn-secundario" style="font-size:11px;padding:4px 6px" title="Calcular fracción (ej: 1 de cada 12)" onclick="calcularFraccionIngrediente(this)"><i class="ti ti-calculator"></i></button>` : ''}
     </td>
     ${esPan ? `<td><input type="number" placeholder="0.00"
       value="${data.pct ? (data.pct*100).toFixed(2) : ''}"
@@ -1363,15 +1366,18 @@ function actualizarTotalIngredientesPreview() {
 
 function onChangeIngredienteSelect(sel) {
   if (sel.value === '__nueva__') { abrirBuscarMP(sel, 'ingrediente'); sel.value = ''; return; }
-  // Auto-switch to unidades if sub receta in BOL
-  if (App.areaCodigo === 'BOL') {
-    const esSR = App.materiasPrimas.find(m => m.ID_MP === sel.value && (m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR')));
+  // Auto-switch a Unidades si es sub-receta — aplica a BOL y PAN, ambas usan
+  // sub-recetas de masa compartida (ej. Masa Ciabatta en Ciabatta y Focaccia).
+  const esSR = App.materiasPrimas.find(m => m.ID_MP === sel.value && (m.tipo === 'sub_receta' || m.ID_MP?.startsWith('SR')));
+  if (App.areaCodigo === 'BOL' || App.areaCodigo === 'PAN') {
     const tipoSel = sel.closest('tr').querySelector('.sel-unidad-tipo');
     if (tipoSel && esSR) tipoSel.value = 'unidades';
     else if (tipoSel) tipoSel.value = 'gramos';
-    toggleUnidadTipo(tipoSel);
+    if (tipoSel) toggleUnidadTipo(tipoSel);
   }
-  if (App.areaCodigo === 'PAN') desdeGramos(sel.closest('tr').querySelector('input[type="number"]'));
+  // desdeGramos (cálculo de % panadero desde gramos) solo aplica en modo gramos —
+  // no tiene sentido para una sub-receta en modo Unidades.
+  if (App.areaCodigo === 'PAN' && !esSR) desdeGramos(sel.closest('tr').querySelector('input[type="number"]'));
   actualizarTotalIngredientesPreview();
 }
 
