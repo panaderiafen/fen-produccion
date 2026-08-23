@@ -1437,17 +1437,19 @@ function toggleUnidadTipo(sel) {
   if (!input) return;
   const modo = sel.value;
 
-  // "Unidades" solo tiene sentido para MP que se compran contables (ej. "un",
-  // "180un" — huevos). Para MP que se compran por peso/volumen (kg, g, lt, ml),
-  // el costo guardado es un valor real por gramo — mezclarlo con "Unidades" no
-  // tiene conversión correcta, así que queda bloqueado. Si de verdad necesita
-  // esa MP medida por peso (ej. "Huevo kg" en vez de por unidad), se soluciona
-  // creando una MP nueva con esa unidad de compra — no forzando esta.
+  // "Unidades" tiene dos usos válidos: (1) sub-recetas (ej. "1 unidad de Masa
+  // Ciabatta" — el caso para el que se diseñó originalmente, siempre permitido),
+  // y (2) MP que se compran contables (ej. "180un" — huevos). Para MP que se
+  // compran por peso/volumen (kg, g, lt, ml), el costo guardado es un valor real
+  // por gramo — mezclarlo con "Unidades" no tiene conversión correcta, así que
+  // queda bloqueado. Si de verdad necesita esa MP medida por peso (ej. "Huevo kg"
+  // en vez de por unidad), se soluciona creando una MP nueva con esa unidad de
+  // compra — no forzando esta.
   if (modo === 'unidades') {
     const mpSelect = tr.querySelector('select');
     const mpId = mpSelect?.value;
     const mp = mpId ? App.materiasPrimas.find(m => m.ID_MP === mpId) : null;
-    if (mp) {
+    if (mp && mp.tipo !== 'sub_receta') {
       const unidadCompra = (mp.unidad_compra || 'kg').toLowerCase().replace(/[\d.]/g, '').trim();
       const esContable = unidadCompra === 'un' || unidadCompra === 'unidad' || unidadCompra === 'unidades';
       if (!esContable) {
