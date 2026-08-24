@@ -1618,13 +1618,23 @@ function agregarBaristaConfig() {
 function abrirModalTandasMM(srId, totalGramos) {
   const cfg = cargarConfigSubrecetas();
   const desglose = calcularDesglose(srId, totalGramos);
-  const nombreSR = App.materiasPrimas.find(m => m.ID_MP === srId)?.nombre || 'Masa Madre';
+  const mp = App.materiasPrimas.find(m => m.ID_MP === srId);
+  const nombreSR = mp?.nombre || 'Masa Madre';
+
+  // Buscar la receta detallada de esta sub-receta para saber cuánto pesa 1 unidad
+  // (ej. 1 Ciabatta = 198g) y así poder mostrar cuántas unidades salen por tanda.
+  // Por ID primero, y por nombre como respaldo si el ID no calza (puede pasar con
+  // sub-recetas que tuvieron IDs duplicados en algún momento).
+  let recetaSR = App.recetas.find(r => r.ID_receta === srId);
+  if (!recetaSR && mp) recetaSR = App.recetas.find(r => r.nombre === mp.nombre && r.tipo_receta === 'sub_receta');
+  const pesoUnidadG = parseFloat(recetaSR?.peso_unidad_mb_g) || 0;
 
   const modal = document.getElementById('modal-tandas-mm');
   document.getElementById('mm-tandas-titulo').textContent = nombreSR;
   document.getElementById('mm-tandas-total').textContent = formatearGramos(totalGramos, true);
   document.getElementById('mm-total-gramos').value = totalGramos;
   document.getElementById('mm-sr-id').value = srId;
+  document.getElementById('mm-peso-unidad-g').value = pesoUnidadG;
 
   // Default 2 tandas iguales
   const claveT = `fen_mm_tandas_${srId}_${App._diaActivo||0}`;
@@ -1632,20 +1642,21 @@ function abrirModalTandasMM(srId, totalGramos) {
   const nTandas = saved?.n || 2;
   document.getElementById('mm-num-tandas').value = nTandas;
 
-  renderMmTandasBody(desglose, totalGramos, nTandas);
+  renderMmTandasBody(desglose, totalGramos, nTandas, pesoUnidadG);
   modal.classList.remove('hidden');
 }
 
-function renderMmTandasBody(desglose, totalGramos, nTandas) {
+function renderMmTandasBody(desglose, totalGramos, nTandas, pesoUnidadG) {
   const body = document.getElementById('mm-tandas-body');
   const grPorTanda = totalGramos / nTandas;
 
   body.innerHTML = Array.from({length: nTandas}, (_, i) => {
     const factor = grPorTanda / totalGramos;
+    const unidadesTanda = pesoUnidadG > 0 ? Math.round(grPorTanda / pesoUnidadG) : null;
     return `
       <div style="border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;margin-bottom:8px">
         <div style="padding:8px 12px;background:var(--area-bg);font-size:12px;font-weight:600;color:var(--area-color)">
-          Tanda ${i+1} — ${formatearGramos(grPorTanda, true)}
+          Tanda ${i+1} — ${formatearGramos(grPorTanda, true)}${unidadesTanda !== null ? ` · <span style="font-family:'DM Mono',monospace">${unidadesTanda}</span> unidades` : ''}
         </div>
         <div style="padding:4px 0">
           ${desglose.map(comp => `
@@ -1662,8 +1673,9 @@ function actualizarMMTandas() {
   const srId = document.getElementById('mm-sr-id').value;
   const totalGramos = parseFloat(document.getElementById('mm-total-gramos').value) || 0;
   const nTandas = parseInt(document.getElementById('mm-num-tandas').value) || 2;
+  const pesoUnidadG = parseFloat(document.getElementById('mm-peso-unidad-g').value) || 0;
   const desglose = calcularDesglose(srId, totalGramos);
-  renderMmTandasBody(desglose, totalGramos, nTandas);
+  renderMmTandasBody(desglose, totalGramos, nTandas, pesoUnidadG);
 }
 
 function guardarMMTandas() {
