@@ -541,12 +541,24 @@
     <input type="hidden" id="mm-total-gramos">
     <input type="hidden" id="mm-sr-id">
     <input type="hidden" id="mm-peso-unidad-g">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 14px;background:var(--bg);border-radius:var(--r-md)">
+    <div style="display:flex;gap:6px;margin-bottom:10px" id="mm-modo-tabs">
+      <button type="button" class="btn-secundario" id="mm-tab-cantidad" style="flex:1;font-size:12px;padding:6px" onclick="cambiarModoMMTandas('cantidad')">N.° de tandas</button>
+      <button type="button" class="btn-secundario" id="mm-tab-tamano" style="flex:1;font-size:12px;padding:6px" onclick="cambiarModoMMTandas('tamano')">Unidades por tanda</button>
+    </div>
+    <input type="hidden" id="mm-modo-division" value="cantidad">
+    <div id="mm-controles-cantidad" style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 14px;background:var(--bg);border-radius:var(--r-md)">
       <label style="font-size:13px;font-weight:500">Dividir en</label>
       <input type="number" id="mm-num-tandas" min="1" max="6" value="2"
         style="width:60px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:14px;font-weight:600;text-align:center;font-family:'DM Mono',monospace"
         oninput="actualizarMMTandas()">
       <label style="font-size:13px;font-weight:500">tandas iguales</label>
+    </div>
+    <div id="mm-controles-tamano" class="hidden" style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 14px;background:var(--bg);border-radius:var(--r-md)">
+      <label style="font-size:13px;font-weight:500">Tandas de</label>
+      <input type="number" id="mm-uni-por-tanda" min="1" step="1" value="30"
+        style="width:70px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:14px;font-weight:600;text-align:center;font-family:'DM Mono',monospace"
+        oninput="actualizarMMTandas()">
+      <label style="font-size:13px;font-weight:500">unidades cada una</label>
     </div>
     <div id="mm-tandas-body" style="max-height:340px;overflow-y:auto"></div>
     <div class="modal-acciones">
