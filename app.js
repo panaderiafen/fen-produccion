@@ -3181,7 +3181,7 @@ async function renderDia(diaIdx) {
               ${esPan ? `<th style="text-align:right;padding:8px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">%</th>` : ''}
             </tr></thead>
             <tbody>
-              ${ingredientes.map(ing => {
+              ${ingredientes.map((ing, ingIdx) => {
                 const gr = (parseFloat(ing.gramos)||0) * factor;
                 const pctMostrar = ing._modificado
                   ? (mod && mod[ing.id]?.pct_nuevo || 0).toFixed(2)
@@ -3191,9 +3191,16 @@ async function renderDia(diaIdx) {
                 const unidadesEscaladas = tieneUnidades
                   ? Math.ceil((parseFloat(ing.unidades)||0) * factor)
                   : null;
+                const mpIng = App.materiasPrimas.find(m => m.ID_MP === ing.id);
+                const esSubReceta = mpIng && mpIng.tipo === 'sub_receta';
+                const filaId = `${rid}-${ingIdx}`;
                 return `<tr ${ing._modificado ? 'style="background:#FFF3E0"' : ''}>
                   <td class="td-nombre">
-                    ${ing.nombre}
+                    ${esSubReceta ? `
+                    <button onclick="toggleSubIngredienteExpandible('${filaId}','${ing.id}',${gr})"
+                      style="background:none;border:none;padding:0;font-family:inherit;font-size:inherit;color:inherit;cursor:pointer;display:flex;align-items:center;gap:4px">
+                      <span id="chev-${filaId}"><i class="ti ti-chevron-right"></i></span> ${ing.nombre}
+                    </button>` : ing.nombre}
                     ${ing._modificado ? '<span style="font-size:10px;color:#F57C00;margin-left:4px">✦</span>' : ''}
                   </td>
                   <td class="td-num" style="font-size:14px;font-weight:600;${ing._modificado?'color:#F57C00':''}">
@@ -3202,7 +3209,8 @@ async function renderDia(diaIdx) {
                       : `${gr.toFixed(0)}g`}
                   </td>
                   ${esPan ? `<td class="td-pct" style="${ing._modificado?'color:#F57C00':''}">${pctMostrar}%</td>` : ''}
-                </tr>`;
+                </tr>
+                ${esSubReceta ? `<tr><td colspan="${esPan?3:2}" id="sub-ing-${filaId}" class="hidden" style="padding:0 16px 8px"></td></tr>` : ''}`;
               }).join('')}
               <tr style="background:var(--bg)">
                 <td style="padding:8px 16px;font-weight:600">Total masa</td>
