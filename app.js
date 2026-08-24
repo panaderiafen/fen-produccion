@@ -720,6 +720,18 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
             Útil para casos como el Espresso: es ingrediente de otras bebidas <strong>y</strong> también se vende solo.
           </p>
         </div>
+        ${App.areaCodigo === 'BOL' ? `
+        <div class="campo">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="f-se-congela"
+              ${receta?.se_congela === 'si' ? 'checked' : ''}
+              style="width:auto">
+            Se congela ya terminado/horneado (participa en Planificación de Productos Congelados)
+          </label>
+          <p style="font-size:11px;color:var(--txt3);margin-top:2px">
+            No todos los productos se congelan — marque solo los que sí, para que aparezcan en esa pantalla.
+          </p>
+        </div>` : ''}
         <div class="campo">
           <label>¿Es una variante interna de otro producto?</label>
           <select id="f-variante-de" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
@@ -1711,6 +1723,7 @@ async function guardarReceta(recetaId, btn) {
     tipo_preparacion:            document.getElementById('f-tipo-preparacion')?.value ?? '',
     peso_unidad_mb_g:            document.getElementById('f-peso-unidad-mb')?.value || '',
     vende_directo:                document.getElementById('f-vende-directo')?.checked ? 'si' : 'no',
+    se_congela:                   document.getElementById('f-se-congela')?.checked ? 'si' : 'no',
     variante_de_id:               document.getElementById('f-variante-de')?.value || '',
     planificable_directo:        document.getElementById('f-planificable-directo') ? (document.getElementById('f-planificable-directo').checked ? 'si' : 'no') : 'si',
     peso_harina_total_g:         App.areaCodigo === 'PAN' ? (document.getElementById('f-harina')?.value || '') : '',
