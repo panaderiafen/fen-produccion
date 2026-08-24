@@ -1622,9 +1622,10 @@ function abrirModalTandasMM(srId, totalGramos) {
   const nombreSR = mp?.nombre || 'Masa Madre';
 
   // Buscar la receta detallada de esta sub-receta para saber cuánto pesa 1 unidad
-  // (ej. 1 Ciabatta = 198g) y así poder mostrar cuántas unidades salen por tanda.
-  // Por ID primero, y por nombre como respaldo si el ID no calza (puede pasar con
-  // sub-recetas que tuvieron IDs duplicados en algún momento).
+  // (ej. 1 Ciabatta = 198g) y así poder mostrar cuántas unidades salen por tanda,
+  // y habilitar el modo "tandas de tamaño fijo". Por ID primero, y por nombre como
+  // respaldo si el ID no calza (puede pasar con sub-recetas que tuvieron IDs
+  // duplicados en algún momento).
   let recetaSR = App.recetas.find(r => r.ID_receta === srId);
   if (!recetaSR && mp) recetaSR = App.recetas.find(r => r.nombre === mp.nombre && r.tipo_receta === 'sub_receta');
   const pesoUnidadG = parseFloat(recetaSR?.peso_unidad_mb_g) || 0;
@@ -1636,27 +1637,69 @@ function abrirModalTandasMM(srId, totalGramos) {
   document.getElementById('mm-sr-id').value = srId;
   document.getElementById('mm-peso-unidad-g').value = pesoUnidadG;
 
+  // El modo "unidades por tanda" solo tiene sentido si la sub-receta tiene peso
+  // por unidad configurado — si no, se oculta esa pestaña (no hay con qué convertir).
+  document.getElementById('mm-tab-tamano').classList.toggle('hidden', !pesoUnidadG);
+
   // Default 2 tandas iguales
   const claveT = `fen_mm_tandas_${srId}_${App._diaActivo||0}`;
   const saved = (() => { try { return JSON.parse(localStorage.getItem(claveT)||'null'); } catch(e) { return null; } })();
   const nTandas = saved?.n || 2;
   document.getElementById('mm-num-tandas').value = nTandas;
+  document.getElementById('mm-uni-por-tanda').value = saved?.uniPorTanda || 30;
 
-  renderMmTandasBody(desglose, totalGramos, nTandas, pesoUnidadG);
+  cambiarModoMMTandas(pesoUnidadG ? (saved?.modo || 'cantidad') : 'cantidad');
   modal.classList.remove('hidden');
 }
 
-function renderMmTandasBody(desglose, totalGramos, nTandas, pesoUnidadG) {
-  const body = document.getElementById('mm-tandas-body');
-  const grPorTanda = totalGramos / nTandas;
+function cambiarModoMMTandas(modo) {
+  document.getElementById('mm-modo-division').value = modo;
+  document.getElementById('mm-controles-cantidad').classList.toggle('hidden', modo !== 'cantidad');
+  document.getElementById('mm-controles-tamano').classList.toggle('hidden', modo !== 'tamano');
+  const tabCantidad = document.getElementById('mm-tab-cantidad');
+  const tabTamano = document.getElementById('mm-tab-tamano');
+  tabCantidad.classList.toggle('btn-primario', modo === 'cantidad');
+  tabCantidad.classList.toggle('btn-secundario', modo !== 'cantidad');
+  tabTamano.classList.toggle('btn-primario', modo === 'tamano');
+  tabTamano.classList.toggle('btn-secundario', modo !== 'tamano');
+  actualizarMMTandas();
+}
 
-  body.innerHTML = Array.from({length: nTandas}, (_, i) => {
-    const factor = grPorTanda / totalGramos;
-    const unidadesTanda = pesoUnidadG > 0 ? Math.round(grPorTanda / pesoUnidadG) : null;
+// Arma el arreglo de tamaños de tanda (en gramos) según el modo elegido:
+// "cantidad" reparte el total parejo entre N tandas; "tamano" arma tandas de un
+// tamaño fijo (en unidades, ej. 30) y deja el resto en la última tanda.
+function calcularTamañosTandas(totalGramos, pesoUnidadG) {
+  const modo = document.getElementById('mm-modo-division').value;
+
+  if (modo === 'tamano' && pesoUnidadG > 0) {
+    const uniPorTanda = parseInt(document.getElementById('mm-uni-por-tanda').value) || 1;
+    const totalUnidades = Math.round(totalGramos / pesoUnidadG);
+    const gramosPorTanda = uniPorTanda * pesoUnidadG;
+    const tamaños = [];
+    let restante = totalGramos;
+    while (restante > 0.01) {
+      const tanda = Math.min(gramosPorTanda, restante);
+      tamaños.push(tanda);
+      restante -= tanda;
+    }
+    return tamaños.length ? tamaños : [totalGramos];
+  }
+
+  const nTandas = parseInt(document.getElementById('mm-num-tandas').value) || 2;
+  const grPorTanda = totalGramos / nTandas;
+  return Array.from({length: nTandas}, () => grPorTanda);
+}
+
+function renderMmTandasBody(desglose, totalGramos, tamaños, pesoUnidadG) {
+  const body = document.getElementById('mm-tandas-body');
+
+  body.innerHTML = tamaños.map((grTanda, i) => {
+    const factor = grTanda / totalGramos;
+    const unidadesTanda = pesoUnidadG > 0 ? Math.round(grTanda / pesoUnidadG) : null;
     return `
       <div style="border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;margin-bottom:8px">
         <div style="padding:8px 12px;background:var(--area-bg);font-size:12px;font-weight:600;color:var(--area-color)">
-          Tanda ${i+1} — ${formatearGramos(grPorTanda, true)}${unidadesTanda !== null ? ` · <span style="font-family:'DM Mono',monospace">${unidadesTanda}</span> unidades` : ''}
+          Tanda ${i+1} — ${formatearGramos(grTanda, true)}${unidadesTanda !== null ? ` · <span style="font-family:'DM Mono',monospace">${unidadesTanda}</span> unidades` : ''}
         </div>
         <div style="padding:4px 0">
           ${desglose.map(comp => `
@@ -1672,17 +1715,19 @@ function renderMmTandasBody(desglose, totalGramos, nTandas, pesoUnidadG) {
 function actualizarMMTandas() {
   const srId = document.getElementById('mm-sr-id').value;
   const totalGramos = parseFloat(document.getElementById('mm-total-gramos').value) || 0;
-  const nTandas = parseInt(document.getElementById('mm-num-tandas').value) || 2;
   const pesoUnidadG = parseFloat(document.getElementById('mm-peso-unidad-g').value) || 0;
   const desglose = calcularDesglose(srId, totalGramos);
-  renderMmTandasBody(desglose, totalGramos, nTandas, pesoUnidadG);
+  const tamaños = calcularTamañosTandas(totalGramos, pesoUnidadG);
+  renderMmTandasBody(desglose, totalGramos, tamaños, pesoUnidadG);
 }
 
 function guardarMMTandas() {
   const srId = document.getElementById('mm-sr-id').value;
+  const modo = document.getElementById('mm-modo-division').value;
   const nTandas = parseInt(document.getElementById('mm-num-tandas').value) || 2;
+  const uniPorTanda = parseInt(document.getElementById('mm-uni-por-tanda').value) || 30;
   const claveT = `fen_mm_tandas_${srId}_${App._diaActivo||0}`;
-  localStorage.setItem(claveT, JSON.stringify({ n: nTandas }));
+  localStorage.setItem(claveT, JSON.stringify({ n: nTandas, modo, uniPorTanda }));
   document.getElementById('modal-tandas-mm').classList.add('hidden');
   toast('Tandas guardadas');
 }
