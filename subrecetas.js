@@ -319,6 +319,34 @@ function calcularPieMM(diaIdxActual) {
       m.nombre?.toLowerCase().includes('integral'))
     .map(m => m.ID_MP);
 
+  // Busca cuánto de "idsBuscados" (ej. Masa Madre) hay dentro de una lista de
+  // ingredientes, bajando recursivamente por cualquier sub-receta anidada que
+  // encuentre en el camino (ej. Ciabatta → Masa Ciabatta → Masa Madre) — antes
+  // solo miraba el primer nivel, así que Masa Madre usada DENTRO de otra
+  // sub-receta (no directo en el producto final) nunca se sumaba.
+  function sumarEnIngredientesRecursivo(ingredientes, factorEscala, idsBuscados) {
+    let total = 0;
+    ingredientes.forEach(ing => {
+      if (idsBuscados.includes(ing.id)) {
+        total += (parseFloat(ing.gramos) || 0) * factorEscala;
+        return; // encontrado — no seguir bajando dentro de la MM misma
+      }
+      const mp = App.materiasPrimas.find(m => m.ID_MP === ing.id);
+      if (!mp || mp.tipo !== 'sub_receta') return;
+      let recetaSub = App.recetas.find(r => r.ID_receta === ing.id);
+      if (!recetaSub) recetaSub = App.recetas.find(r => r.nombre === mp.nombre && r.tipo_receta === 'sub_receta');
+      if (!recetaSub) return;
+      let ingredientesSub = [];
+      try { ingredientesSub = JSON.parse(recetaSub.ingredientes_JSON || '[]'); } catch(e) {}
+      const pesoBaseSub = ingredientesSub.reduce((s,i) => s + (parseFloat(i.gramos)||0), 0);
+      if (!pesoBaseSub) return;
+      const gramosUsadosAqui = (parseFloat(ing.gramos) || 0) * factorEscala;
+      const factorSub = gramosUsadosAqui / pesoBaseSub;
+      total += sumarEnIngredientesRecursivo(ingredientesSub, factorSub, idsBuscados);
+    });
+    return total;
+  }
+
   function mmNecesariaDia(diaIdx, idsMMSet) {
     let total = 0;
     Object.entries(App.planSemana).forEach(([rid, cant]) => {
@@ -330,11 +358,7 @@ function calcularPieMM(diaIdxActual) {
       try { ingredientes = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
       const porciones = parseInt(receta.porciones_base) || 1;
       const factor = unidades / porciones;
-      ingredientes.forEach(ing => {
-        if (idsMMSet.includes(ing.id)) {
-          total += (parseFloat(ing.gramos) || 0) * factor;
-        }
-      });
+      total += sumarEnIngredientesRecursivo(ingredientes, factor, idsMMSet);
     });
     return total;
   }
@@ -345,43 +369,36 @@ function calcularPieMM(diaIdxActual) {
       m.nombre?.toLowerCase().includes('pie de mm'))
     .map(m => m.ID_MP);
 
-  // Función para obtener gramos de Pie de MM dentro de la MM Blanca/Integral
+  // Función para obtener gramos de Pie de MM dentro de la MM Blanca/Integral —
+  // reutiliza sumarEnIngredientesRecursivo (misma corrección que mmNecesariaDia)
+  // para encontrar la MM sin importar cuántas capas de sub-recetas haya en el medio.
   function pieDentroDeMMDia(diaIdx, idsMMSet) {
-    let totalPie = 0;
-    Object.entries(App.planSemana).forEach(([rid, cant]) => {
-      const unidades = cant[diaIdx] || 0;
-      if (!unidades) return;
-      const receta = App.recetas.find(r => r.ID_receta === rid);
-      if (!receta) return;
-      let ingredientes = [];
-      try { ingredientes = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
-      const porciones = parseInt(receta.porciones_base) || 1;
-      const factor = unidades / porciones;
-      // Para cada ingrediente que sea MM Blanca/Integral
-      ingredientes.forEach(ing => {
-        if (!idsMMSet.includes(ing.id)) return;
-        const grMM = (parseFloat(ing.gramos) || 0) * factor;
-        // Buscar receta de MM y dentro de ella el Pie de MM
-        const recetaMM = App.recetas.find(r => r.nombre === ing.nombre || r.ID_receta === ing.id);
-        if (recetaMM) {
-          let ingsMM = [];
-          try { ingsMM = JSON.parse(recetaMM.ingredientes_JSON || '[]'); } catch(e) {}
-          const pesoBaseMM = ingsMM.reduce((s, i) => s + (parseFloat(i.gramos) || 0), 0);
-          if (pesoBaseMM > 0) {
-            ingsMM.forEach(imgMM => {
-              if (idsPieMM.includes(imgMM.id) || imgMM.nombre?.toLowerCase().includes('pie de mm')) {
-                const proporcion = (parseFloat(imgMM.gramos) || 0) / pesoBaseMM;
-                totalPie += grMM * proporcion;
-              }
-            });
+    const grMMTotal = mmNecesariaDia(diaIdx, idsMMSet);
+    if (!grMMTotal) return 0;
+
+    // La proporción de Pie dentro de la receta de MM es la misma sin importar
+    // desde dónde se use la MM, así que basta con mirar la receta de MM una vez
+    // y aplicar esa proporción al total ya sumado (correcto, sin importar anidamiento).
+    const mp = App.materiasPrimas.find(m => idsMMSet.includes(m.ID_MP));
+    const recetaMM = mp ? App.recetas.find(r => r.nombre === mp.nombre || r.ID_receta === mp.ID_MP) : null;
+
+    if (recetaMM) {
+      let ingsMM = [];
+      try { ingsMM = JSON.parse(recetaMM.ingredientes_JSON || '[]'); } catch(e) {}
+      const pesoBaseMM = ingsMM.reduce((s, i) => s + (parseFloat(i.gramos) || 0), 0);
+      if (pesoBaseMM > 0) {
+        let totalPie = 0;
+        ingsMM.forEach(imgMM => {
+          if (idsPieMM.includes(imgMM.id) || imgMM.nombre?.toLowerCase().includes('pie de mm')) {
+            const proporcion = (parseFloat(imgMM.gramos) || 0) / pesoBaseMM;
+            totalPie += grMMTotal * proporcion;
           }
-        } else {
-          // Fallback: usar desglose de config si no hay receta
-          totalPie += grMM * ((pieCfg.mm_madura_pct || 20) / (100 + (pieCfg.mm_madura_pct || 20) + (pieCfg.agua_pct || 90)));
-        }
-      });
-    });
-    return totalPie;
+        });
+        return totalPie;
+      }
+    }
+    // Fallback: usar desglose de config si no hay receta
+    return grMMTotal * ((pieCfg.mm_madura_pct || 20) / (100 + (pieCfg.mm_madura_pct || 20) + (pieCfg.agua_pct || 90)));
   }
 
   // Si hay sub receta Pie de MM definida, usar cálculo por ingrediente
