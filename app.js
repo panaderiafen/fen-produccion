@@ -7048,6 +7048,7 @@ async function renderVistaPlanMasaBase() {
   );
   const dias = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
   const semanaActual = obtenerSemanaActual();
+  const semanaSiguiente = obtenerSemanaHace(-1).id;
 
   // Antes de mostrar nada: si esta es la primera vez que se entra en una semana
   // nueva, heredar el stock inicial del cierre de la semana anterior — así nadie
@@ -7065,21 +7066,37 @@ async function renderVistaPlanMasaBase() {
   const planSemana = _planMasaBaseCache.filter(p => p.semana_ID === semanaActual);
   const descongelacionSemana = _planDescongelacionMasaCache.filter(p => p.semana_ID === semanaActual);
 
+  // "Próximo Lun" — planificación anticipada para el primer día de la semana que
+  // viene (se guarda ya con el semana_ID de esa semana futura, así que cuando esa
+  // semana efectivamente llegue, el sistema la reconoce sola como su propio lunes
+  // — no hace falta ningún traspaso especial).
+  const planProximoLun = _planMasaBaseCache.filter(p => p.semana_ID === semanaSiguiente && p.dia === 'Lun');
+  const descongelacionProximoLun = _planDescongelacionMasaCache.filter(p => p.semana_ID === semanaSiguiente && p.dia === 'Lun');
+
+  // Días de despliegue: 7 de esta semana + 1 columna extra para "Próximo Lun"
+  const diasConProximo = [...dias, 'Próximo Lun'];
+
   // Stock proyectado día a día = stock inicial + elaborado ese día − descongelado ese
   // día (acumulado desde el lunes). Se calcula solo, no hay que ir a contar cada vez.
+  // La 8va columna (Próximo Lun) sigue acumulando desde el domingo — muestra cómo
+  // quedaría el stock si se ejecuta lo planificado con anticipación.
   const stockDiarioPorMasa = {};
   masasBase.forEach(r => {
     let acumulado = parseFloat(stockInicial[r.ID_receta]) || 0;
-    stockDiarioPorMasa[r.ID_receta] = dias.map(d => {
+    const serie = dias.map(d => {
       const elaborado = parseFloat(planSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
       const descongelado = parseFloat(descongelacionSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
       acumulado = acumulado + elaborado - descongelado;
       return { dia: d, elaborado, descongelado, stock: acumulado };
     });
+    const elaboradoProximo = parseFloat(planProximoLun.find(p => p.ID_receta === r.ID_receta)?.cantidad_unidades) || 0;
+    const descongeladoProximo = parseFloat(descongelacionProximoLun.find(p => p.ID_receta === r.ID_receta)?.cantidad_unidades) || 0;
+    serie.push({ dia: 'Próximo Lun', elaborado: elaboradoProximo, descongelado: descongeladoProximo, stock: acumulado + elaboradoProximo - descongeladoProximo });
+    stockDiarioPorMasa[r.ID_receta] = serie;
   });
   const stockFinalTotal = masasBase.reduce((s,r) => {
     const serie = stockDiarioPorMasa[r.ID_receta];
-    return s + (serie.length ? serie[serie.length-1].stock : 0);
+    return s + (serie.length ? serie[dias.length-1].stock : 0); // cierre de la semana actual (domingo), no de "Próximo Lun"
   }, 0);
 
   vista.innerHTML = `
@@ -7115,12 +7132,12 @@ async function renderVistaPlanMasaBase() {
               </div>
             </div>
             <div style="overflow-x:auto">
-              <table style="width:100%;border-collapse:collapse;font-size:10px;min-width:400px">
+              <table style="width:100%;border-collapse:collapse;font-size:10px;min-width:460px">
                 <thead><tr>
-                  ${dias.map(d => `<th style="padding:3px 4px;text-align:center;color:var(--txt3);font-weight:600">${d}</th>`).join('')}
+                  ${diasConProximo.map((d,i) => `<th style="padding:3px 4px;text-align:center;color:${i===7?'#6A1B9A':'var(--txt3)'};font-weight:600;${i===7?'border-left:2px solid #CE93D8':''}">${d}</th>`).join('')}
                 </tr></thead>
                 <tbody><tr>
-                  ${serie.map(s => `<td style="padding:3px 4px;text-align:center;font-family:'DM Mono',monospace;${s.stock > capacidadCongelador ? 'color:#C62828;font-weight:700' : ''}">${s.stock}</td>`).join('')}
+                  ${serie.map((s,i) => `<td style="padding:3px 4px;text-align:center;font-family:'DM Mono',monospace;${i===7?'border-left:2px solid #CE93D8;background:#F3E5F5':''};${s.stock > capacidadCongelador ? 'color:#C62828;font-weight:700' : ''}">${s.stock}</td>`).join('')}
                 </tr></tbody>
               </table>
             </div>
@@ -7129,6 +7146,7 @@ async function renderVistaPlanMasaBase() {
         <p style="font-size:11px;color:var(--txt3);margin-top:8px">
           El stock de cada día se calcula solo: stock inicial + lo elaborado − lo descongelado, acumulado desde el lunes.
           Ajuste "Stock inicial" a mano solo si hace un conteo físico y no calza. Corre semana a semana, no se resetea.
+          <span style="color:#6A1B9A">La columna "Próximo Lun" es planificación anticipada — al llegar esa semana, queda como su primer día automáticamente.</span>
         </p>
       </div>
     </div>
@@ -7137,20 +7155,22 @@ async function renderVistaPlanMasaBase() {
       <div class="card-head" style="background:#E3F2FD;color:#1565C0"><i class="ti ti-arrow-down-circle"></i> Plan de descongelación</div>
       ${!masasBase.length ? '' : `
       <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;min-width:560px">
+        <table style="width:100%;border-collapse:collapse;min-width:620px">
           <thead><tr style="background:var(--bg)">
             <th style="text-align:left;padding:9px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Receta</th>
-            ${dias.map(d => `<th style="text-align:center;padding:9px 6px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">${d}</th>`).join('')}
+            ${diasConProximo.map((d,i) => `<th style="text-align:center;padding:9px 6px;font-size:10px;font-weight:700;text-transform:uppercase;color:${i===7?'#6A1B9A':'var(--txt3)'};${i===7?'border-left:2px solid #CE93D8':''}">${d}</th>`).join('')}
           </tr></thead>
           <tbody>
             ${masasBase.map(r => `<tr style="border-top:1px solid var(--border)">
                 <td style="padding:8px 12px;font-size:12px">${r.nombre}</td>
-                ${dias.map(d => {
-                  const entrada = descongelacionSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d);
-                  return `<td style="padding:4px;text-align:center">
+                ${diasConProximo.map((d,i) => {
+                  const entrada = i===7
+                    ? descongelacionProximoLun.find(p => p.ID_receta === r.ID_receta)
+                    : descongelacionSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d);
+                  return `<td style="padding:4px;text-align:center;${i===7?'border-left:2px solid #CE93D8;background:#F3E5F5':''}">
                     <input type="number" min="0" step="1" value="${entrada ? entrada.cantidad_unidades : ''}" placeholder="0"
                       style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;text-align:center;font-family:'DM Mono',monospace"
-                      onchange="guardarCeldaGrillaDescongelacion('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}','${d}',this.value)">
+                      onchange="guardarCeldaGrillaDescongelacion('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}','${i===7?'Lun':d}',this.value,'${i===7?semanaSiguiente:semanaActual}')">
                   </td>`;
                 }).join('')}
               </tr>`).join('')}
@@ -7167,10 +7187,10 @@ async function renderVistaPlanMasaBase() {
       <div class="card-head"><i class="ti ti-bread"></i> Planificación semanal</div>
       ${!masasBase.length ? `<p style="padding:16px;color:var(--txt3)">Sin recetas clasificadas como "Masa Base" todavía.</p>` : `
       <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;min-width:560px">
+        <table style="width:100%;border-collapse:collapse;min-width:620px">
           <thead><tr style="background:var(--bg)">
             <th style="text-align:left;padding:9px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Receta</th>
-            ${dias.map(d => `<th style="text-align:center;padding:9px 6px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">${d}</th>`).join('')}
+            ${diasConProximo.map((d,i) => `<th style="text-align:center;padding:9px 6px;font-size:10px;font-weight:700;text-transform:uppercase;color:${i===7?'#6A1B9A':'var(--txt3)'};${i===7?'border-left:2px solid #CE93D8':''}">${d}</th>`).join('')}
           </tr></thead>
           <tbody>
             ${masasBase.map(r => {
@@ -7180,12 +7200,14 @@ async function renderVistaPlanMasaBase() {
                   ${r.nombre}
                   ${!pesoUnidadG ? '<div style="font-size:10px;color:#C62828">⚠️ sin peso configurado</div>' : ''}
                 </td>
-                ${dias.map(d => {
-                  const entrada = planSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d);
-                  return `<td style="padding:4px;text-align:center">
+                ${diasConProximo.map((d,i) => {
+                  const entrada = i===7
+                    ? planProximoLun.find(p => p.ID_receta === r.ID_receta)
+                    : planSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d);
+                  return `<td style="padding:4px;text-align:center;${i===7?'border-left:2px solid #CE93D8;background:#F3E5F5':''}">
                     <input type="number" min="0" step="1" value="${entrada ? entrada.cantidad_unidades : ''}" placeholder="0"
                       style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;text-align:center;font-family:'DM Mono',monospace"
-                      onchange="guardarCeldaGrillaMasaBase('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}','${d}',this.value,${pesoUnidadG})">
+                      onchange="guardarCeldaGrillaMasaBase('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}','${i===7?'Lun':d}',this.value,${pesoUnidadG},'${i===7?semanaSiguiente:semanaActual}')">
                   </td>`;
                 }).join('')}
               </tr>`;
@@ -7195,6 +7217,30 @@ async function renderVistaPlanMasaBase() {
       </div>`}
     </div>
 
+    ${(() => {
+      const conAlgo = masasBase.filter(r => planProximoLun.some(p => p.ID_receta === r.ID_receta) || descongelacionProximoLun.some(p => p.ID_receta === r.ID_receta));
+      if (!conAlgo.length) return '';
+      return `
+      <div class="card" style="margin-bottom:16px;border:2px solid #CE93D8">
+        <div class="card-head" style="background:#F3E5F5;color:#4A148C">
+          <i class="ti ti-calendar-plus"></i> Próximo Lunes — planificación anticipada
+        </div>
+        <div style="padding:12px 16px">
+          ${conAlgo.map(r => {
+            const elabora = planProximoLun.find(p => p.ID_receta === r.ID_receta)?.cantidad_unidades;
+            const descong = descongelacionProximoLun.find(p => p.ID_receta === r.ID_receta)?.cantidad_unidades;
+            return `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+              <span style="font-size:13px;font-weight:600">${r.nombre}</span>
+              <span style="font-size:12px;color:#6A1B9A">
+                ${elabora ? `Elaborar: <strong>${elabora}</strong> uni` : ''}${elabora && descong ? ' · ' : ''}${descong ? `Descongelar: <strong>${descong}</strong> uni` : ''}
+              </span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    })()}
+
     <div id="cards-masa-base"></div>
     <div id="lista-compra-masa-base-semana"></div>
   `;
@@ -7203,18 +7249,18 @@ async function renderVistaPlanMasaBase() {
   renderListaCompraMasaBaseSemana(planSemana);
 }
 
-async function guardarCeldaGrillaDescongelacion(recetaId, nombre, dia, valor) {
+async function guardarCeldaGrillaDescongelacion(recetaId, nombre, dia, valor, semana) {
   const cantidad = parseFloat(valor) || 0;
   await escribirEnSheet('guardar_celda_plan_descongelacion_masa', {
-    ID_receta: recetaId, nombre, dia, semana: obtenerSemanaActual(), cantidad_unidades: cantidad
+    ID_receta: recetaId, nombre, dia, semana: semana || obtenerSemanaActual(), cantidad_unidades: cantidad
   });
   await renderVistaPlanMasaBase();
 }
 
-async function guardarCeldaGrillaMasaBase(recetaId, nombre, dia, valor, pesoUnidadG) {
+async function guardarCeldaGrillaMasaBase(recetaId, nombre, dia, valor, pesoUnidadG, semana) {
   const cantidad = parseFloat(valor) || 0;
   await escribirEnSheet('guardar_celda_plan_masa_base', {
-    ID_receta: recetaId, nombre, dia, semana: obtenerSemanaActual(), cantidad_unidades: cantidad, peso_unidad_g: pesoUnidadG
+    ID_receta: recetaId, nombre, dia, semana: semana || obtenerSemanaActual(), cantidad_unidades: cantidad, peso_unidad_g: pesoUnidadG
   });
   await renderVistaPlanMasaBase();
 }
@@ -7388,7 +7434,7 @@ function renderEditorTandas(fila, recetaId, cantidadUnidades, tandas) {
               ${restante > 0 ? `<span style="color:#F57C00"> → quedan ${restante}</span>` : restante < 0 ? `<span style="color:#C62828"> → ${Math.abs(restante)} de más</span>` : `<span style="color:#2E7D32"> ✓ completo</span>`}
             </span>
             <div style="display:flex;gap:4px">
-              <button class="btn-secundario" style="font-size:9px;padding:2px 6px" onclick="verRecetaEscaladaTanda(${fila},'${recetaId}',${kgTanda},${i})">Ver receta</button>
+              <button style="font-size:9px;padding:2px 6px;background:#F3E5F5;color:#6A1B9A;border:1px solid #CE93D8;border-radius:var(--r-sm);cursor:pointer;font-weight:600" onclick="verRecetaEscaladaTanda(${fila},'${recetaId}',${kgTanda},${i})"><i class="ti ti-eye" style="font-size:11px"></i> Ver receta</button>
               <button class="btn-fila-del" style="padding:2px" onclick="quitarTandaMasaBase(${fila},'${recetaId}',${cantidadUnidades},${i})"><i class="ti ti-x"></i></button>
             </div>
           </div>
