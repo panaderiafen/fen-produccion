@@ -65,6 +65,46 @@ function guardarConfigSubrecetas(config) {
 
 // ── CALCULAR ELABORACIONES DEL DÍA ───────────────────────────
 // Retorna objeto con sub recetas detectadas y sus cantidades totales
+// Recorre los ingredientes de una receta y registra cada sub-receta que
+// encuentre en subRecetasMap — y si esa sub-receta a su vez contiene OTRA
+// sub-receta anidada (ej. Masa Ciabatta contiene Masa Madre), baja
+// recursivamente para registrar esa también, atribuida a la receta de origen
+// (ej. "Ciabatta"). Antes solo miraba el primer nivel, así que Masa Madre usada
+// DENTRO de otra sub-receta nunca aparecía ni en el total ni en "quién la usa".
+// Los insumos directos (harina, agua sueltas) solo se acumulan en el nivel raíz,
+// para no duplicar lo que ya se ve en el desglose propio de cada sub-receta.
+function procesarIngredientesElaboracion(ingredientes, factorEscala, nombreRecetaOrigen, idsSubRecetas, subRecetasMap, insumosMap, profundidad) {
+  ingredientes.forEach(ing => {
+    const grEscalados = (parseFloat(ing.gramos) || 0) * factorEscala;
+    const esSubReceta = idsSubRecetas.has(ing.id);
+
+    if (esSubReceta) {
+      if (!subRecetasMap[ing.id]) {
+        subRecetasMap[ing.id] = { id: ing.id, nombre: ing.nombre, totalGramos: 0, recetasQueUsan: [] };
+      }
+      subRecetasMap[ing.id].totalGramos += grEscalados;
+      subRecetasMap[ing.id].recetasQueUsan.push({ nombre: nombreRecetaOrigen, gramos: grEscalados });
+
+      // Buscar la receta detallada de esta sub-receta para bajar un nivel más
+      const mp = App.materiasPrimas.find(m => m.ID_MP === ing.id);
+      let recetaSub = App.recetas.find(r => r.ID_receta === ing.id);
+      if (!recetaSub && mp) recetaSub = App.recetas.find(r => r.nombre === mp.nombre && r.tipo_receta === 'sub_receta');
+      if (recetaSub) {
+        let ingredientesSub = [];
+        try { ingredientesSub = JSON.parse(recetaSub.ingredientes_JSON || '[]'); } catch(e) {}
+        const pesoBaseSub = ingredientesSub.reduce((s,i) => s + (parseFloat(i.gramos)||0), 0);
+        if (pesoBaseSub > 0) {
+          const factorSub = grEscalados / pesoBaseSub;
+          procesarIngredientesElaboracion(ingredientesSub, factorSub, nombreRecetaOrigen, idsSubRecetas, subRecetasMap, insumosMap, profundidad + 1);
+        }
+      }
+    } else if (profundidad === 0) {
+      const key = ing.nombre;
+      insumosMap[key] = (insumosMap[key] || 0) + grEscalados;
+    }
+  });
+}
+
 function calcularElaboracionesDia(diaIdx) {
   const recetasDelDia = Object.entries(App.planSemana)
     .filter(([_, cant]) => (cant[diaIdx] || 0) > 0)
@@ -102,31 +142,7 @@ function calcularElaboracionesDia(diaIdx) {
     const porciones = parseInt(r.porciones_base) || 1;
     const factor    = unidades / porciones;
 
-    ingredientes.forEach(ing => {
-      const grEscalados = (parseFloat(ing.gramos) || 0) * factor;
-      const esSubReceta = idsSubRecetas.has(ing.id);
-
-      if (esSubReceta) {
-        // Acumular en sub recetas
-        if (!subRecetasMap[ing.id]) {
-          subRecetasMap[ing.id] = {
-            id: ing.id,
-            nombre: ing.nombre,
-            totalGramos: 0,
-            recetasQueUsan: []
-          };
-        }
-        subRecetasMap[ing.id].totalGramos += grEscalados;
-        subRecetasMap[ing.id].recetasQueUsan.push({
-          nombre: r.nombre,
-          gramos: grEscalados
-        });
-      } else {
-        // Acumular en insumos directos
-        const key = ing.nombre;
-        insumosMap[key] = (insumosMap[key] || 0) + grEscalados;
-      }
-    });
+    procesarIngredientesElaboracion(ingredientes, factor, r.nombre, idsSubRecetas, subRecetasMap, insumosMap, 0);
   });
 
   // Para BOL: agregar ingredientes de masas a elaborar y empastes
