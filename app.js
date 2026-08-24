@@ -349,6 +349,7 @@ function renderSidebar() {
       items.splice(2, 0, { id: 'rellenos-otras-recetas', icon: 'ti-egg', label: 'Recetas del día' });
       items.splice(2, 0, { id: 'plan-ps-pc', icon: 'ti-layout-grid', label: 'Planificación PS/PC' });
       items.splice(3, 0, { id: 'plan-masa-base', icon: 'ti-bread', label: 'Planificación Masas Base' });
+      items.splice(4, 0, { id: 'plan-productos-congelados', icon: 'ti-snowflake', label: 'Productos Congelados' });
     }
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL') {
       items.push({ id: 'resumen-semanal',     icon: 'ti-chart-grid-dots', label: 'Resumen semanal' });
@@ -501,6 +502,7 @@ function navegarA(vistaId) {
     case 'rellenos-otras-recetas': renderVistaRellenosOtrasRecetas(); break;
     case 'plan-ps-pc':          renderVistaPlanPSPC(); break;
     case 'plan-masa-base':      renderVistaPlanMasaBase(); break;
+    case 'plan-productos-congelados': renderVistaPlanProductosCongelados(); break;
     case 'estimacion-bol':      renderVistaEstimacionDemanda();  break;
     case 'analisis-merma':      renderVistaAnalisisMerma();  break;
     case 'auditoria-costos':    renderVistaAuditoriaCostos(); break;
@@ -7030,6 +7032,243 @@ function avanzarStockSemanaMasaBase(masasBase, dias, semanaActual) {
   cfg.bol.stock_masas = nuevoStock;
   cfg.bol.stock_masas_semana = semanaActual;
   guardarConfigSubrecetas(cfg);
+}
+
+// ── BOL: PLANIFICACIÓN DE PRODUCTOS TERMINADOS CONGELADOS ──────
+// Mismo patrón que Masa Base (stock que se calcula solo, 8vo día "Próximo Lun",
+// semana_ID por celda) pero más simple: no hay gramos que escalar ni tandas que
+// dividir — cada unidad ya es un producto terminado. Capacidad de congelador
+// independiente de la de masa base, aunque comparten el mismo aparato físico.
+let _planCongelacionProdCache = null;
+let _planDescongelacionProdCache = null;
+
+function avanzarStockSemanaProductosCongelados(productos, dias, semanaActual) {
+  const cfg = cargarConfigSubrecetas();
+  if (!cfg.bol) cfg.bol = {};
+  const semanaGuardada = cfg.bol.stock_productos_semana;
+
+  if (!semanaGuardada) {
+    cfg.bol.stock_productos_semana = semanaActual;
+    guardarConfigSubrecetas(cfg);
+    return;
+  }
+  if (semanaGuardada === semanaActual) return;
+
+  const stockPrevio = cfg.bol.stock_productos || {};
+  const congSemanaVieja = _planCongelacionProdCache.filter(p => p.semana_ID === semanaGuardada);
+  const descongSemanaVieja = _planDescongelacionProdCache.filter(p => p.semana_ID === semanaGuardada);
+
+  const nuevoStock = {};
+  productos.forEach(r => {
+    let acumulado = parseFloat(stockPrevio[r.ID_receta]) || 0;
+    dias.forEach(d => {
+      const congelado = parseFloat(congSemanaVieja.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
+      const descongelado = parseFloat(descongSemanaVieja.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
+      acumulado = acumulado + congelado - descongelado;
+    });
+    nuevoStock[r.ID_receta] = acumulado;
+  });
+
+  cfg.bol.stock_productos = nuevoStock;
+  cfg.bol.stock_productos_semana = semanaActual;
+  guardarConfigSubrecetas(cfg);
+}
+
+async function renderVistaPlanProductosCongelados() {
+  const vista = document.getElementById('vista-plan-productos-congelados');
+  vista.innerHTML = '<div class="vista-header"><h1 class="vista-titulo">Productos Congelados</h1></div><p style="color:var(--txt3)">Cargando...</p>';
+  mostrarVista('plan-productos-congelados');
+
+  try {
+    const p1 = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_congelacion_productos' }));
+    const r1 = await fetch(FEN.WEBAPP_URL + '?payload=' + p1, { redirect: 'follow', cache: 'no-store' });
+    _planCongelacionProdCache = (await r1.json()).filas || [];
+  } catch(e) { _planCongelacionProdCache = []; }
+
+  try {
+    const p2 = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_descongelacion_productos' }));
+    const r2 = await fetch(FEN.WEBAPP_URL + '?payload=' + p2, { redirect: 'follow', cache: 'no-store' });
+    _planDescongelacionProdCache = (await r2.json()).filas || [];
+  } catch(e) { _planDescongelacionProdCache = []; }
+
+  const productos = App.recetas.filter(r => r.estado === 'consolidada' && r.se_congela === 'si');
+  const dias = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  const semanaActual = obtenerSemanaActual();
+  const semanaSiguiente = obtenerSemanaHace(-1).id;
+  const diasConProximo = [...dias, 'Próximo Lun'];
+
+  avanzarStockSemanaProductosCongelados(productos, dias, semanaActual);
+
+  const cfg = cargarConfigSubrecetas();
+  const bolCfg = cfg.bol || {};
+  const capacidadProductos = bolCfg.capacidad_congelacion_productos || 60;
+  const stockInicial = bolCfg.stock_productos || {};
+
+  const congelacionSemana = _planCongelacionProdCache.filter(p => p.semana_ID === semanaActual);
+  const descongelacionSemana = _planDescongelacionProdCache.filter(p => p.semana_ID === semanaActual);
+  const congelacionProximoLun = _planCongelacionProdCache.filter(p => p.semana_ID === semanaSiguiente && p.dia === 'Lun');
+  const descongelacionProximoLun = _planDescongelacionProdCache.filter(p => p.semana_ID === semanaSiguiente && p.dia === 'Lun');
+
+  const stockDiarioPorProducto = {};
+  productos.forEach(r => {
+    let acumulado = parseFloat(stockInicial[r.ID_receta]) || 0;
+    const serie = dias.map(d => {
+      const congelado = parseFloat(congelacionSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
+      const descongelado = parseFloat(descongelacionSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
+      acumulado = acumulado + congelado - descongelado;
+      return { dia: d, congelado, descongelado, stock: acumulado };
+    });
+    const congProximo = parseFloat(congelacionProximoLun.find(p => p.ID_receta === r.ID_receta)?.cantidad_unidades) || 0;
+    const descongProximo = parseFloat(descongelacionProximoLun.find(p => p.ID_receta === r.ID_receta)?.cantidad_unidades) || 0;
+    serie.push({ dia: 'Próximo Lun', congelado: congProximo, descongelado: descongProximo, stock: acumulado + congProximo - descongProximo });
+    stockDiarioPorProducto[r.ID_receta] = serie;
+  });
+  const stockFinalTotal = productos.reduce((s,r) => {
+    const serie = stockDiarioPorProducto[r.ID_receta];
+    return s + (serie.length ? serie[dias.length-1].stock : 0);
+  }, 0);
+
+  vista.innerHTML = `
+    <div class="vista-header">
+      <div>
+        <h1 class="vista-titulo">Productos Congelados</h1>
+        <p style="font-size:12px;color:var(--txt3);margin-top:2px">Semana ${formatearEtiquetaSemana(obtenerSemanaHace(0))} — mismo congelador que masa base, capacidad independiente</p>
+      </div>
+    </div>
+
+    ${!productos.length ? `
+    <div class="empty-state"><i class="ti ti-snowflake"></i><h2>Sin productos marcados como "Se congela" todavía</h2>
+      <p>Edite una receta y marque el checkbox "Se congela ya terminado/horneado" para que aparezca acá.</p>
+    </div>` : `
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head" style="background:#F3E5F5;color:#4A148C">
+        <i class="ti ti-snowflake" style="color:#6A1B9A"></i> Stock congelado
+      </div>
+      <div style="padding:14px 16px">
+        <p style="font-size:13px;font-weight:700;margin-bottom:10px;color:${stockFinalTotal > capacidadProductos ? '#C62828' : '#2E7D32'}">
+          Proyectado al cierre de la semana: ${stockFinalTotal} / ${capacidadProductos} espacios
+          ${stockFinalTotal > capacidadProductos ? ' — ⚠️ sobre capacidad' : ''}
+        </p>
+        ${productos.map(r => {
+          const serie = stockDiarioPorProducto[r.ID_receta];
+          return `
+          <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <span style="font-size:12px;font-weight:600">${r.nombre}</span>
+              <div style="display:flex;gap:6px;align-items:center">
+                <label style="font-size:10px;color:var(--txt3)">Stock inicial (lunes):</label>
+                <input type="number" id="stock-prod-${r.ID_receta}" min="0" step="1" value="${stockInicial[r.ID_receta] || 0}"
+                  style="max-width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px" placeholder="0">
+                <button class="btn-secundario" style="font-size:10px;padding:4px 8px" onclick="guardarStockInicialProducto('${r.ID_receta}')">
+                  <i class="ti ti-device-floppy"></i>
+                </button>
+              </div>
+            </div>
+            <div style="overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse;font-size:10px;min-width:460px">
+                <thead><tr>
+                  ${diasConProximo.map((d,i) => `<th style="padding:3px 4px;text-align:center;color:${i===7?'#6A1B9A':'var(--txt3)'};font-weight:600;${i===7?'border-left:2px solid #CE93D8':''}">${d}</th>`).join('')}
+                </tr></thead>
+                <tbody><tr>
+                  ${serie.map((s,i) => `<td style="padding:3px 4px;text-align:center;font-family:'DM Mono',monospace;${i===7?'border-left:2px solid #CE93D8;background:#F3E5F5':''};${s.stock > capacidadProductos ? 'color:#C62828;font-weight:700' : ''}">${s.stock}</td>`).join('')}
+                </tr></tbody>
+              </table>
+            </div>
+          </div>`;
+        }).join('')}
+        <p style="font-size:11px;color:var(--txt3);margin-top:8px">
+          El stock de cada día se calcula solo: stock inicial + lo congelado − lo descongelado, acumulado desde el lunes.
+          Ajuste "Stock inicial" a mano solo si hace un conteo físico y no calza. Corre semana a semana, no se resetea.
+          <span style="color:#6A1B9A">La columna "Próximo Lun" es planificación anticipada — al llegar esa semana, queda como su primer día automáticamente.</span>
+        </p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head" style="background:#E3F2FD;color:#1565C0"><i class="ti ti-snowflake"></i> Plan de congelación</div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;min-width:620px">
+          <thead><tr style="background:var(--bg)">
+            <th style="text-align:left;padding:9px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Producto</th>
+            ${diasConProximo.map((d,i) => `<th style="text-align:center;padding:9px 6px;font-size:10px;font-weight:700;text-transform:uppercase;color:${i===7?'#6A1B9A':'var(--txt3)'};${i===7?'border-left:2px solid #CE93D8':''}">${d}</th>`).join('')}
+          </tr></thead>
+          <tbody>
+            ${productos.map(r => `<tr style="border-top:1px solid var(--border)">
+                <td style="padding:8px 12px;font-size:12px">${r.nombre}</td>
+                ${diasConProximo.map((d,i) => {
+                  const entrada = i===7
+                    ? congelacionProximoLun.find(p => p.ID_receta === r.ID_receta)
+                    : congelacionSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d);
+                  return `<td style="padding:4px;text-align:center;${i===7?'border-left:2px solid #CE93D8;background:#F3E5F5':''}">
+                    <input type="number" min="0" step="1" value="${entrada ? entrada.cantidad_unidades : ''}" placeholder="0"
+                      style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;text-align:center;font-family:'DM Mono',monospace"
+                      onchange="guardarCeldaCongelacionProducto('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}','${i===7?'Lun':d}',this.value,'${i===7?semanaSiguiente:semanaActual}')">
+                  </td>`;
+                }).join('')}
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <p style="font-size:11px;color:var(--txt3);padding:10px 16px">Cuántas unidades de cada producto se congelan cada día — suma al stock de arriba.</p>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head" style="background:#FFF3E0;color:#E65100"><i class="ti ti-arrow-down-circle"></i> Plan de descongelación</div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;min-width:620px">
+          <thead><tr style="background:var(--bg)">
+            <th style="text-align:left;padding:9px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Producto</th>
+            ${diasConProximo.map((d,i) => `<th style="text-align:center;padding:9px 6px;font-size:10px;font-weight:700;text-transform:uppercase;color:${i===7?'#6A1B9A':'var(--txt3)'};${i===7?'border-left:2px solid #CE93D8':''}">${d}</th>`).join('')}
+          </tr></thead>
+          <tbody>
+            ${productos.map(r => `<tr style="border-top:1px solid var(--border)">
+                <td style="padding:8px 12px;font-size:12px">${r.nombre}</td>
+                ${diasConProximo.map((d,i) => {
+                  const entrada = i===7
+                    ? descongelacionProximoLun.find(p => p.ID_receta === r.ID_receta)
+                    : descongelacionSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d);
+                  return `<td style="padding:4px;text-align:center;${i===7?'border-left:2px solid #CE93D8;background:#F3E5F5':''}">
+                    <input type="number" min="0" step="1" value="${entrada ? entrada.cantidad_unidades : ''}" placeholder="0"
+                      style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;text-align:center;font-family:'DM Mono',monospace"
+                      onchange="guardarCeldaDescongelacionProducto('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}','${i===7?'Lun':d}',this.value,'${i===7?semanaSiguiente:semanaActual}')">
+                  </td>`;
+                }).join('')}
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <p style="font-size:11px;color:var(--txt3);padding:10px 16px">Cuántas unidades de cada producto se descongelan cada día — se descuenta del stock de arriba.</p>
+    </div>
+    `}
+  `;
+}
+
+function guardarStockInicialProducto(recetaId) {
+  const valor = parseInt(document.getElementById('stock-prod-' + recetaId)?.value) || 0;
+  const cfg = cargarConfigSubrecetas();
+  if (!cfg.bol) cfg.bol = {};
+  if (!cfg.bol.stock_productos) cfg.bol.stock_productos = {};
+  cfg.bol.stock_productos[recetaId] = valor;
+  guardarConfigSubrecetas(cfg);
+  toast('Stock actualizado');
+  renderVistaPlanProductosCongelados();
+}
+
+async function guardarCeldaCongelacionProducto(recetaId, nombre, dia, valor, semana) {
+  const cantidad = parseFloat(valor) || 0;
+  await escribirEnSheet('guardar_celda_plan_congelacion_productos', {
+    ID_receta: recetaId, nombre, dia, semana: semana || obtenerSemanaActual(), cantidad_unidades: cantidad
+  });
+  await renderVistaPlanProductosCongelados();
+}
+
+async function guardarCeldaDescongelacionProducto(recetaId, nombre, dia, valor, semana) {
+  const cantidad = parseFloat(valor) || 0;
+  await escribirEnSheet('guardar_celda_plan_descongelacion_productos', {
+    ID_receta: recetaId, nombre, dia, semana: semana || obtenerSemanaActual(), cantidad_unidades: cantidad
+  });
+  await renderVistaPlanProductosCongelados();
 }
 
 async function renderVistaPlanMasaBase() {
