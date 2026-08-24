@@ -625,6 +625,23 @@ input, select, textarea { font-family: inherit; }
   .layout { flex-direction: column; }
   .sidebar { width: 100%; height: auto; max-height: 180px; border-right: none; border-bottom: 1px solid var(--border); }
   .stats-grid { grid-template-columns: 1fr 1fr; }
+
+  /* Barra superior — en celular no cabe todo, así que se prioriza que
+     "Sincronizar" y "Salir" queden siempre visibles y usables. Lo demás
+     (etiqueta de área, texto de usuario) se comprime o se oculta. El aviso de
+     "X recetas pendientes" se achica pero se mantiene visible completo, porque
+     el número es información que la jefa necesita ver siempre. */
+  .topbar { padding: 0 10px; gap: 6px; }
+  .topbar-area span { display: none; }        /* deja solo el ícono del área */
+  .topbar-area { padding: 5px 8px; }
+  .topbar-alerta { font-size: 10px; padding: 3px 8px; gap: 4px; white-space: nowrap; }
+  .topbar-usuario-txt { display: none; }       /* deja solo el avatar con inicial */
+  .btn-salir { flex-shrink: 0; padding: 4px 8px; }
+}
+@media (max-width: 400px) {
+  /* Pantallas muy angostas: "Salir" queda solo con el ícono, sin texto */
+  .btn-salir:not(#btn-sync-global) { font-size: 0; }
+  .btn-salir:not(#btn-sync-global) i { font-size: 16px; }
 }
 
 /* ── SELECTOR DE DÍA (recetas del día) ───────── */
