@@ -734,7 +734,7 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
             distinta para sábado/feriados — elíjala acá para que no aparezca duplicada en el listado de B2B/B2C.
           </p>
         </div>
-        ${App.areaCodigo === 'BOL' ? `
+        ${(App.areaCodigo === 'BOL' || App.areaCodigo === 'PAN') ? `
         <div class="campo">
           <label>Clasificación</label>
           <select id="f-tipo-preparacion" onchange="toggleCampoPesoMB(this)" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
