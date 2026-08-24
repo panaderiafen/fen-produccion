@@ -7217,35 +7217,11 @@ async function renderVistaPlanMasaBase() {
       </div>`}
     </div>
 
-    ${(() => {
-      const conAlgo = masasBase.filter(r => planProximoLun.some(p => p.ID_receta === r.ID_receta) || descongelacionProximoLun.some(p => p.ID_receta === r.ID_receta));
-      if (!conAlgo.length) return '';
-      return `
-      <div class="card" style="margin-bottom:16px;border:2px solid #CE93D8">
-        <div class="card-head" style="background:#F3E5F5;color:#4A148C">
-          <i class="ti ti-calendar-plus"></i> Próximo Lunes — planificación anticipada
-        </div>
-        <div style="padding:12px 16px">
-          ${conAlgo.map(r => {
-            const elabora = planProximoLun.find(p => p.ID_receta === r.ID_receta)?.cantidad_unidades;
-            const descong = descongelacionProximoLun.find(p => p.ID_receta === r.ID_receta)?.cantidad_unidades;
-            return `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
-              <span style="font-size:13px;font-weight:600">${r.nombre}</span>
-              <span style="font-size:12px;color:#6A1B9A">
-                ${elabora ? `Elaborar: <strong>${elabora}</strong> uni` : ''}${elabora && descong ? ' · ' : ''}${descong ? `Descongelar: <strong>${descong}</strong> uni` : ''}
-              </span>
-            </div>`;
-          }).join('')}
-        </div>
-      </div>`;
-    })()}
-
     <div id="cards-masa-base"></div>
     <div id="lista-compra-masa-base-semana"></div>
   `;
 
-  renderTarjetasPorMasaBase(masasBase, dias, planSemana);
+  renderTarjetasPorMasaBase(masasBase, dias, planSemana, planProximoLun);
   renderListaCompraMasaBaseSemana(planSemana);
 }
 
@@ -7268,20 +7244,26 @@ async function guardarCeldaGrillaMasaBase(recetaId, nombre, dia, valor, pesoUnid
 // Tarjetas apiladas por MASA (no por día) — cada una resume el total semanal y,
 // para cada día con producción, las tandas de la masa madre + las sub-recetas
 // anidadas (ej. Poolish) con su propia división en tandas.
-function renderTarjetasPorMasaBase(masasBase, dias, planSemana) {
+function renderTarjetasPorMasaBase(masasBase, dias, planSemana, planProximoLun) {
   const cont = document.getElementById('cards-masa-base');
   if (!cont) return;
+  planProximoLun = planProximoLun || [];
 
-  const conProduccion = masasBase.filter(r => planSemana.some(p => p.ID_receta === r.ID_receta));
+  const conProduccion = masasBase.filter(r => planSemana.some(p => p.ID_receta === r.ID_receta) || planProximoLun.some(p => p.ID_receta === r.ID_receta));
   if (!conProduccion.length) {
     cont.innerHTML = `<div class="empty-state"><i class="ti ti-bread"></i><h2>Sin masas planificadas esta semana</h2><p>Complete la grilla de arriba para empezar.</p></div>`;
     return;
   }
 
   cont.innerHTML = conProduccion.map(r => {
-    const entradas = planSemana.filter(p => p.ID_receta === r.ID_receta);
-    const totalUnidadesSemana = entradas.reduce((s,e) => s + (parseFloat(e.cantidad_unidades)||0), 0);
-    const totalKgSemana = entradas.reduce((s,e) => s + (parseFloat(e.peso_total_g)||0), 0) / 1000;
+    // "Próximo Lun" se etiqueta distinto para mostrarse (_diaLabel), pero es una
+    // entrada real con su propio _fila — tiene exactamente el mismo comportamiento
+    // que cualquier otro día (dividir en tandas, Poolish, todo).
+    const entradasSemana = planSemana.filter(p => p.ID_receta === r.ID_receta).map(p => ({...p, _diaLabel: p.dia}));
+    const entradasProximo = planProximoLun.filter(p => p.ID_receta === r.ID_receta).map(p => ({...p, _diaLabel: 'Próximo Lun'}));
+    const entradas = [...entradasSemana, ...entradasProximo];
+    const totalUnidadesSemana = entradasSemana.reduce((s,e) => s + (parseFloat(e.cantidad_unidades)||0), 0);
+    const totalKgSemana = entradasSemana.reduce((s,e) => s + (parseFloat(e.peso_total_g)||0), 0) / 1000;
 
     let ingredientesPropios = [];
     try { ingredientesPropios = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
@@ -7297,12 +7279,12 @@ function renderTarjetasPorMasaBase(masasBase, dias, planSemana) {
         <span style="font-weight:400;font-size:12px;color:var(--txt3)">${totalUnidadesSemana} uni · ${totalKgSemana.toFixed(2)}kg esta semana</span>
       </div>
       <div style="padding:12px 16px">
-        ${dias.filter(d => entradas.some(e => e.dia === d)).map((d, idxDia) => {
-          const it = entradas.find(e => e.dia === d);
+        ${entradas.map((it, idxDia) => {
+          const esProximo = it._diaLabel === 'Próximo Lun';
           return `
-          <div style="padding:12px;margin-bottom:10px;background:${idxDia % 2 === 0 ? 'var(--bg)' : 'transparent'};border-radius:var(--r-md);border-left:3px solid var(--area-color, #6A1B9A)">
+          <div style="padding:12px;margin-bottom:10px;background:${esProximo ? '#F3E5F5' : (idxDia % 2 === 0 ? 'var(--bg)' : 'transparent')};border-radius:var(--r-md);border-left:3px solid ${esProximo ? '#CE93D8' : 'var(--area-color, #6A1B9A)'}">
             <div style="display:flex;justify-content:space-between;align-items:center">
-              <span style="font-size:13px;font-weight:700">${d}</span>
+              <span style="font-size:13px;font-weight:700;color:${esProximo ? '#6A1B9A' : 'inherit'}">${it._diaLabel}</span>
               <div style="display:flex;align-items:center;gap:8px">
                 <span style="font-size:12px;color:var(--txt3)">${it.cantidad_unidades} uni · ${(parseFloat(it.peso_total_g)/1000).toFixed(2)}kg</span>
                 <button class="btn-fila-del" onclick="eliminarPlanMasaBaseUI(${it._fila})" aria-label="Eliminar"><i class="ti ti-x"></i></button>
