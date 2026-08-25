@@ -5671,20 +5671,25 @@ function renderVistaAprobaciones() {
         try { ingredientes = JSON.parse(r.ingredientes_JSON || '[]'); } catch(e) {}
         let insumos = [];
         try { insumos = JSON.parse(r.insumos_JSON || '[]'); } catch(e) {}
+        let pasos = [];
+        try { pasos = JSON.parse(r.pasos_JSON || '[]'); } catch(e) {}
         const codigoArea = codigoAreaDesdeReceta(r);
         const areaInfo = FEN.AREAS[codigoArea] || {};
+        const vendeDirecto = r.vende_directo !== 'no'; // por defecto sí, salvo que diga explícitamente "no"
+        const seCongela = r.se_congela === 'si';
+        const tieneClasificacion = codigoArea === 'BOL' || codigoArea === 'PAN';
+
+        const chip = (label, activo, colorActivo='#2E7D32', bgActivo='#E8F5E9') => `
+          <div style="display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:99px;font-size:11px;font-weight:600;
+            background:${activo?bgActivo:'#FAFAFA'};color:${activo?colorActivo:'#9E9E9E'};border:1px solid ${activo?'transparent':'var(--border)'}">
+            <i class="ti ${activo?'ti-circle-check':'ti-circle-x'}" style="font-size:13px"></i> ${label}
+          </div>`;
+
         return `
-          <div class="card" style="margin-bottom:16px">
-            <div class="card-head">
+          <div class="card" style="margin-bottom:20px">
+            <div class="card-head" style="display:flex;align-items:center;gap:8px">
               <span style="background:${areaInfo.bg};color:${areaInfo.color};
-                padding:2px 8px;border-radius:99px;font-size:11px">${areaInfo.nombre || r.área}</span>
-              <strong style="margin-left:6px">${r.nombre}</strong>
-              <span style="font-size:11px;color:var(--txt3);font-family:'DM Mono',monospace;margin-left:8px">${r.ID_receta}</span>
-              ${codigoArea === 'BOL' ? `
-                <span style="font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:99px;
-                  background:${r.tipo_preparacion?'#E8F5E9':'#FFEBEE'};color:${r.tipo_preparacion?'#2E7D32':'#C62828'}">
-                  ${formatearClasificacionBOL(r.tipo_preparacion)}
-                </span>` : ''}
+                padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600">${areaInfo.nombre || r.área}</span>
               <div style="margin-left:auto;display:flex;gap:8px">
                 <button id="btn-devolver-${r.ID_receta}" class="btn-peligro" style="font-size:12px;padding:5px 12px"
                   onclick="abrirModalDevolverReceta('${r.ID_receta}','${codigoArea}','${(r.nombre||'').replace(/'/g,"\\'")}')">
@@ -5697,11 +5702,39 @@ function renderVistaAprobaciones() {
               </div>
             </div>
             <div class="card-body">
-              <div style="display:flex;gap:16px;font-size:13px;color:var(--txt2);margin-bottom:12px">
-                <span><strong>Rendimiento:</strong> ${formatearRendimiento(r)}</span>
-                <span><strong>Ingredientes:</strong> ${ingredientes.length}</span>
-                <span><strong>Versión:</strong> ${r.versión||1}</span>
-                ${r.peso_harina_total_g ? `<span><strong>Harina base:</strong> ${r.peso_harina_total_g}g</span>` : ''}
+              <!-- Nombre destacado — lo primero que se lee -->
+              <div style="margin-bottom:14px">
+                <h2 style="font-size:22px;font-weight:800;margin:0;line-height:1.2">${r.nombre}</h2>
+                <span style="font-size:12px;color:var(--txt3);font-family:'DM Mono',monospace">${r.ID_receta} · versión ${r.versión||1}</span>
+              </div>
+
+              <!-- Datos clave, en cajas separadas — el rendimiento resaltado a propósito -->
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px">
+                <div style="background:#FFF3E0;border:2px solid #FFB74D;border-radius:var(--r-md);padding:10px 12px">
+                  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#E65100">Rendimiento</div>
+                  <div style="font-size:18px;font-weight:800;color:#E65100;margin-top:2px">${formatearRendimiento(r)}</div>
+                </div>
+                <div style="background:var(--bg);border-radius:var(--r-md);padding:10px 12px">
+                  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3)">Ingredientes</div>
+                  <div style="font-size:18px;font-weight:700;margin-top:2px">${ingredientes.length}</div>
+                </div>
+                ${r.peso_harina_total_g ? `
+                <div style="background:var(--bg);border-radius:var(--r-md);padding:10px 12px">
+                  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3)">Harina base</div>
+                  <div style="font-size:18px;font-weight:700;margin-top:2px">${r.peso_harina_total_g}g</div>
+                </div>` : ''}
+                ${tieneClasificacion ? `
+                <div style="background:${r.tipo_preparacion?'#E8F5E9':'#FFEBEE'};border-radius:var(--r-md);padding:10px 12px">
+                  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:${r.tipo_preparacion?'#2E7D32':'#C62828'}">Clasificación</div>
+                  <div style="font-size:14px;font-weight:700;margin-top:4px;color:${r.tipo_preparacion?'#2E7D32':'#C62828'}">${formatearClasificacionBOL(r.tipo_preparacion)}</div>
+                </div>` : ''}
+              </div>
+
+              <!-- Casillas activadas/desactivadas — visibles siempre, no solo cuando están marcadas -->
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+                ${chip('Se vende directo', vendeDirecto)}
+                ${codigoArea === 'BOL' ? chip('Se congela', seCongela, '#1565C0', '#E3F2FD') : ''}
+                ${r.variante_de_id ? chip('Es variante de otro producto', true, '#6A1B9A', '#F3E5F5') : ''}
               </div>
               ${ingredientes.length ? `
               <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px">
@@ -5774,14 +5807,36 @@ function renderVistaAprobaciones() {
               </div>` : ''}
               ${r.observaciones_procedimiento ? `
                 <div style="margin-top:12px">
-                  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);margin-bottom:5px">Procedimiento / observaciones</div>
+                  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);margin-bottom:5px">
+                    <i class="ti ti-circle-check" style="color:#2E7D32"></i> Procedimiento / observaciones
+                  </div>
                   <p style="font-size:13px;color:var(--txt2);line-height:1.6;background:var(--bg);padding:10px 12px;border-radius:var(--r-md)">${r.observaciones_procedimiento}</p>
-                </div>` : ''}
+                </div>` : `
+                <div style="margin-top:12px;padding:8px 12px;background:#FFEBEE;border-radius:var(--r-md);font-size:12px;color:#C62828">
+                  <i class="ti ti-alert-triangle"></i> Sin procedimiento/observaciones — la receta no explica cómo se prepara.
+                </div>`}
+              ${pasos.length ? `
+                <div style="margin-top:10px">
+                  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);margin-bottom:5px">
+                    <i class="ti ti-circle-check" style="color:#2E7D32"></i> Pasos estructurados (${pasos.length})
+                  </div>
+                  <ol style="font-size:13px;color:var(--txt2);line-height:1.6;background:var(--bg);padding:10px 12px 10px 28px;border-radius:var(--r-md);margin:0">
+                    ${pasos.map(p => `<li>${typeof p === 'string' ? p : (p.texto||p.descripcion||JSON.stringify(p))}</li>`).join('')}
+                  </ol>
+                </div>` : `
+                <div style="margin-top:10px;padding:8px 12px;background:#FFF3E0;border-radius:var(--r-md);font-size:12px;color:#E65100">
+                  <i class="ti ti-alert-triangle"></i> Sin pasos estructurados cargados.
+                </div>`}
               ${r['sistematización_notas'] ? `
                 <div style="margin-top:10px">
-                  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);margin-bottom:5px">Notas de sistematización</div>
+                  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);margin-bottom:5px">
+                    <i class="ti ti-circle-check" style="color:#2E7D32"></i> Notas de sistematización
+                  </div>
                   <p style="font-size:12px;color:var(--txt3);font-style:italic;background:var(--bg);padding:8px 12px;border-radius:var(--r-md)">${r['sistematización_notas']}</p>
-                </div>` : ''}
+                </div>` : `
+                <div style="margin-top:10px;padding:6px 12px;font-size:11px;color:var(--txt3)">
+                  <i class="ti ti-minus"></i> Sin notas de sistematización.
+                </div>`}
             </div>
           </div>`;
       }).join('')}
