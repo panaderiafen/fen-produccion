@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════
-//  fën — App principal v1.1 
+//  fën — App principal v1.1
 //  Grupo 1: Visual / Grupo 2: Plan semanal
 // ═══════════════════════════════════════════════
 
@@ -8301,7 +8301,71 @@ async function calcularRentabilidadRealUI(btn) {
 
     const sinCosto = filas.filter(f => f.costoReal === null).length;
 
+    // Resumen por área — ingresos y costos reales, calculado con la mezcla de
+    // ventas real del mes (no supuesto). "¿Cubre costos?" es el hallazgo que
+    // dispara auditoría si sale que no — no se fuerza a que parezca bien.
+    const areasPresentes = [...new Set(filas.map(f => f.área))].sort((a,b) => a.localeCompare(b,'es'));
+    const resumenPorArea = areasPresentes.map(area => {
+      const filasArea = filas.filter(f => f.área === area);
+      let ingresosConCosto = 0, totalCostos = 0, totalObjetivoUtilidad = 0, ingresosSinCosto = 0;
+      filasArea.forEach(f => {
+        const ingresoFila = f.precioReal * f.cantidad;
+        if (f.costoReal !== null) {
+          ingresosConCosto += ingresoFila;
+          totalCostos += f.costoReal * f.cantidad;
+          if (f.objetivoPct !== null && !isNaN(f.objetivoPct)) {
+            totalObjetivoUtilidad += ingresoFila * (f.objetivoPct / 100);
+          }
+        } else {
+          ingresosSinCosto += ingresoFila;
+        }
+      });
+      const utilidadReal = ingresosConCosto - totalCostos;
+      const utilidadRealPct = ingresosConCosto > 0 ? (utilidadReal / ingresosConCosto) * 100 : null;
+      const cubreCostos = ingresosConCosto > 0 ? utilidadReal >= 0 : null;
+      const objetivoPonderado = ingresosConCosto > 0 ? (totalObjetivoUtilidad / ingresosConCosto) * 100 : null;
+      const alcanzaObjetivo = (utilidadRealPct !== null && objetivoPonderado !== null) ? utilidadRealPct >= objetivoPonderado : null;
+      return { area, ingresosConCosto, ingresosSinCosto, totalCostos, utilidadReal, utilidadRealPct, cubreCostos, objetivoPonderado, alcanzaObjetivo };
+    });
+
     cont.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:16px">
+        ${resumenPorArea.map(r => `
+          <div class="card" style="border:2px solid ${r.cubreCostos === false ? '#C62828' : r.cubreCostos === true ? '#2E7D32' : 'var(--border)'}">
+            <div class="card-head" style="display:flex;justify-content:space-between;align-items:center">
+              <span>${r.area}</span>
+              ${r.cubreCostos === false ? '<span style="font-size:11px;color:#C62828;font-weight:700"><i class="ti ti-alert-triangle"></i> No cubre costos</span>' : r.cubreCostos === true ? '<span style="font-size:11px;color:#2E7D32;font-weight:700"><i class="ti ti-circle-check"></i> Cubre costos</span>' : ''}
+            </div>
+            <div style="padding:12px 16px">
+              <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px">
+                <span style="color:var(--txt3)">Ingresos reales${r.ingresosSinCosto > 0 ? ' (con costo calculado)' : ''}</span>
+                <span style="font-family:'DM Mono',monospace;font-weight:600">${clp(r.ingresosConCosto)}</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px">
+                <span style="color:var(--txt3)">Costos reales (MP+fijos+remuneración)</span>
+                <span style="font-family:'DM Mono',monospace;font-weight:600">${clp(r.totalCostos)}</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:6px 0;margin-top:4px;border-top:1px solid var(--border);font-size:13px">
+                <span style="font-weight:600">${r.utilidadReal >= 0 ? 'Utilidad real' : 'Déficit'}</span>
+                <span style="font-family:'DM Mono',monospace;font-weight:700;color:${r.utilidadReal >= 0 ? '#2E7D32' : '#C62828'}">
+                  ${clp(Math.abs(r.utilidadReal))}${r.utilidadRealPct !== null ? ` (${r.utilidadRealPct.toFixed(1)}%)` : ''}
+                </span>
+              </div>
+              ${r.cubreCostos && r.objetivoPonderado !== null ? `
+              <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px">
+                <span style="color:var(--txt3)">Objetivo ponderado (mezcla de ventas)</span>
+                <span style="font-family:'DM Mono',monospace">${r.objetivoPonderado.toFixed(1)}%</span>
+              </div>
+              <div style="font-size:12px;margin-top:2px;color:${r.alcanzaObjetivo ? '#2E7D32' : '#E65100'}">
+                <i class="ti ${r.alcanzaObjetivo ? 'ti-circle-check' : 'ti-alert-triangle'}"></i>
+                ${r.alcanzaObjetivo ? 'Alcanza el objetivo de utilidad' : 'No alcanza el objetivo de utilidad todavía'}
+              </div>` : ''}
+              ${r.ingresosSinCosto > 0 ? `<p style="font-size:10px;color:var(--txt3);margin-top:8px">+ ${clp(r.ingresosSinCosto)} en ventas sin costo calculado — no se incluyen en este resumen todavía.</p>` : ''}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+
       ${sinCosto ? `<div style="padding:10px 14px;background:#FFF3E0;border-radius:var(--r-md);font-size:12px;color:#E65100;margin-bottom:14px">
         ⚠ ${sinCosto} producto(s) sin costo calculado para ${mes} — calcule "Estructuras de costo" primero para ese mes, para verlos completos.
       </div>` : ''}
