@@ -9227,37 +9227,32 @@ async function borrarCalculosArea(areaNombre, btn) {
 // (B2C y B2B por separado). Los nombres en ESTIMACION_POR_AREA ya fueron
 // renombrados para coincidir exactamente con el nombre vigente de cada receta
 // en el Maestro — ya no hace falta traducir vía Mapeo_productos (eliminado).
+// Volumen mensual estimado por producto — ahora se calcula desde ventas REALES
+// (Ventas_mensuales_consolidadas), no desde el snapshot histórico fijo de antes.
+// Esto resuelve productos que no existían cuando se tomó ese snapshot (ej.
+// Croissant XL) sin tener que acordarse de agregarlos a mano cada vez — cualquier
+// producto nuevo que tenga ventas sincronizadas ese mes aparece solo.
 async function calcularVolumenMensualPorProducto(areaCodigo, mesStr) {
-  const est = ESTIMACION_POR_AREA[areaCodigo];
-  if (!est) return {};
-
-  const [anio, mesNum] = mesStr.split('-').map(Number);
-  if (!anio || !mesNum) return {};
-  const diasEnMes = new Date(anio, mesNum, 0).getDate();
-
-  const conteoDia = { Lun:0, Mar:0, Mié:0, Jue:0, Vie:0, Sáb:0, Dom:0 };
-  const nombresDia = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-  for (let d = 1; d <= diasEnMes; d++) {
-    const dia = new Date(anio, mesNum - 1, d).getDay();
-    conteoDia[nombresDia[dia]]++;
+  const areaNombre = FEN.AREAS[areaCodigo]?.nombre || areaCodigo;
+  let ventas = [];
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_ventas_mensuales' }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' });
+    ventas = (await res.json()).ventas || [];
+  } catch(e) {
+    return {};
   }
 
-  // Los nombres en ESTIMACION_POR_AREA ya coinciden exactamente con el nombre
-  // vigente de la receta en el Maestro — no hace falta traducir/mapear nada.
   const resultado = {};
-  function acumular(nombreReceta, canal, valor) {
-    if (!resultado[nombreReceta]) resultado[nombreReceta] = { b2c: 0, b2b: 0 };
-    resultado[nombreReceta][canal] += valor;
-  }
-
-  ['b2c','b2b'].forEach(canal => {
-    Object.keys(est[canal]).forEach(prod => {
-      const dias = est[canal][prod];
-      let total = 0;
-      Object.keys(conteoDia).forEach(dia => { total += (parseFloat(dias[dia]||0)) * conteoDia[dia]; });
-      acumular(prod, canal, total);
+  ventas
+    .filter(v => v.mes === mesStr && (v['área'] || v.área) === areaNombre)
+    .forEach(v => {
+      const receta = App.recetas.find(r => r.ID_receta === v.ID_receta);
+      const nombre = receta?.nombre || v.ID_receta; // si no se encuentra la receta, se deja el ID como respaldo visible
+      if (!resultado[nombre]) resultado[nombre] = { b2c: 0, b2b: 0 };
+      const canal = v.canal === 'B2B' ? 'b2b' : 'b2c';
+      resultado[nombre][canal] += parseFloat(v.cantidad_vendida) || 0;
     });
-  });
 
   Object.keys(resultado).forEach(k => {
     resultado[k].b2c = Math.round(resultado[k].b2c);
@@ -9266,32 +9261,14 @@ async function calcularVolumenMensualPorProducto(areaCodigo, mesStr) {
   return resultado;
 }
 
-function calcularVolumenMensualArea(areaCodigo, mesStr) {
-  const est = ESTIMACION_POR_AREA[areaCodigo];
-  if (!est) return null;
-
-  const [anio, mesNum] = mesStr.split('-').map(Number);
-  if (!anio || !mesNum) return null;
-  const diasEnMes = new Date(anio, mesNum, 0).getDate();
-
-  // Contar cuántas veces cae cada día de semana en ese mes específico
-  const conteoDia = { Lun:0, Mar:0, Mié:0, Jue:0, Vie:0, Sáb:0, Dom:0 };
-  const nombresDia = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb']; // getDay(): 0=Dom
-  for (let d = 1; d <= diasEnMes; d++) {
-    const dia = new Date(anio, mesNum - 1, d).getDay();
-    conteoDia[nombresDia[dia]]++;
-  }
-
-  const productos = [...new Set([...Object.keys(est.b2b), ...Object.keys(est.b2c)])];
+// Volumen mensual total del área — ahora suma desde ventas reales (reutiliza
+// calcularVolumenMensualPorProducto en vez de un segundo cálculo aparte, para no
+// duplicar la lectura del snapshot fijo que ya no se usa).
+async function calcularVolumenMensualArea(areaCodigo, mesStr) {
+  const porProducto = await calcularVolumenMensualPorProducto(areaCodigo, mesStr);
   let total = 0;
-  productos.forEach(prod => {
-    const b2b = est.b2b[prod] || {};
-    const b2c = est.b2c[prod] || {};
-    Object.keys(conteoDia).forEach(dia => {
-      total += (parseFloat(b2b[dia]||0) + parseFloat(b2c[dia]||0)) * conteoDia[dia];
-    });
-  });
-  return Math.round(total);
+  Object.values(porProducto).forEach(v => { total += (v.b2c||0) + (v.b2b||0); });
+  return total > 0 ? Math.round(total) : null;
 }
 
 async function calcularECUI(btn) {
@@ -9305,7 +9282,7 @@ async function calcularECUI(btn) {
   const estadoEl = document.getElementById('ec-calc-estado');
   bloquearBtn(btn, 'Calculando...');
   try {
-    const volumenReal = calcularVolumenMensualArea(area, mes);
+    const volumenReal = await calcularVolumenMensualArea(area, mes);
     const volumenPorProducto = await calcularVolumenMensualPorProducto(area, mes);
     const payload = encodeURIComponent(JSON.stringify({
       accion: 'calcular_ec', area, mes, volumenTotalReal: volumenReal, volumenPorProducto,
