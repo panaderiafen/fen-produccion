@@ -9353,6 +9353,10 @@ async function borrarCalculosArea(areaNombre, btn) {
 // producto nuevo que tenga ventas sincronizadas ese mes aparece solo.
 async function calcularVolumenMensualPorProducto(areaCodigo, mesStr) {
   const areaNombre = FEN.AREAS[areaCodigo]?.nombre || areaCodigo;
+  const normalizar = s => (s||'').toString().trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // saca tildes para comparar
+  const areaNombreNorm = normalizar(areaNombre);
+
   let ventas = [];
   try {
     const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_ventas_mensuales' }));
@@ -9364,7 +9368,7 @@ async function calcularVolumenMensualPorProducto(areaCodigo, mesStr) {
 
   const resultado = {};
   ventas
-    .filter(v => v.mes === mesStr && (v['área'] || v.área) === areaNombre)
+    .filter(v => v.mes === mesStr && normalizar(v['área'] || v.área) === areaNombreNorm)
     .forEach(v => {
       const receta = App.recetas.find(r => r.ID_receta === v.ID_receta);
       const nombre = receta?.nombre || v.ID_receta; // si no se encuentra la receta, se deja el ID como respaldo visible
