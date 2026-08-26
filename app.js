@@ -8437,7 +8437,7 @@ function renderInformeAuditoriaHTML(data) {
       </table>` : ''}
 
       <h4>Estructura de costo final</h4>
-      <table class="tabla-informe">
+      <table class="tabla-informe tabla-corta">
         <tbody>
           <tr><td>Costo MP</td><td class="num">${clp(p.costoMPUnit)}</td></tr>
           <tr><td>Costo insumos</td><td class="num">${clp(p.costoInsumosUnit)}</td></tr>
@@ -8452,7 +8452,7 @@ function renderInformeAuditoriaHTML(data) {
 
       ${p.ventasReales.length ? `
       <h4>Ventas B2C/B2B de este producto, este mes</h4>
-      <table class="tabla-informe">
+      <table class="tabla-informe tabla-corta">
         <thead><tr><th>Canal</th><th class="num">Cantidad</th><th class="num">Monto neto</th><th class="num">Precio real</th><th class="num">Margen real</th><th class="num">Objetivo</th><th>¿Cumple?</th></tr></thead>
         <tbody>
           ${p.ventasReales.map(v => `<tr>
