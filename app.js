@@ -8412,7 +8412,7 @@ function renderInformeAuditoriaHTML(data) {
     </p>`;
 
   const bloquesProducto = data.productos.map(p => `
-    <div class="bloque-informe producto-informe">
+    <div class="producto-informe">
       <h2>${p.nombre} <span class="id-chico">${p.ID_receta}</span></h2>
       <p class="nota-informe">Rinde ${p.porcionesBase} unidad(es) · ${p.pesoUnidad.toFixed(1)}g por unidad · Calculado ${p.fechaCalculo}</p>
 
