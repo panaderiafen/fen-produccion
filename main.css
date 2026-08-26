@@ -1438,4 +1438,12 @@ input, select, textarea { font-family: inherit; }
   #contenido-imprimible { padding: 0; }
   .bloque-informe, .producto-informe { page-break-inside: avoid; }
   body { background: #fff; }
+  /* La app usa altura fija + scroll interno para funcionar en pantalla (#app,
+     .layout, .content) — eso mismo hace que al imprimir solo se capture una
+     "pantalla" de alto, cortando el resto. Se libera todo eso solo para
+     impresión, así el contenido fluye en tantas páginas como haga falta. */
+  html, body, #app, .layout, .content, .vista {
+    height: auto !important;
+    overflow: visible !important;
+  }
 }
