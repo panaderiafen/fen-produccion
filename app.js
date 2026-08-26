@@ -8383,10 +8383,16 @@ async function calcularRentabilidadRealUI(btn) {
       return { area, ingresosConCosto, ingresosSinCosto, totalCostos, utilidadReal, utilidadRealPct, cubreCostos, objetivoPonderado, alcanzaObjetivo };
     });
 
+    // Guardar en estado global para que el simulador de metas (abajo) pueda leer
+    // los números reales sin tener que recalcular todo de nuevo cada vez que
+    // escribe una cantidad — la simulación es 100% en el navegador, instantánea.
+    App._rentFilas = filas;
+    App._rentResumenBase = resumenPorArea;
+
     cont.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:16px">
         ${resumenPorArea.map(r => `
-          <div class="card" style="border:2px solid ${r.cubreCostos === false ? '#C62828' : r.cubreCostos === true ? '#2E7D32' : 'var(--border)'}">
+          <div class="card" id="resumen-area-${r.area.replace(/\s/g,'')}" style="border:2px solid ${r.cubreCostos === false ? '#C62828' : r.cubreCostos === true ? '#2E7D32' : 'var(--border)'}">
             <div class="card-head" style="display:flex;justify-content:space-between;align-items:center">
               <span>${r.area}</span>
               ${r.cubreCostos === false ? '<span style="font-size:11px;color:#C62828;font-weight:700"><i class="ti ti-alert-triangle"></i> No cubre costos</span>' : r.cubreCostos === true ? '<span style="font-size:11px;color:#2E7D32;font-weight:700"><i class="ti ti-circle-check"></i> Cubre costos</span>' : ''}
@@ -8416,9 +8422,23 @@ async function calcularRentabilidadRealUI(btn) {
                 ${r.alcanzaObjetivo ? 'Alcanza el objetivo de utilidad' : 'No alcanza el objetivo de utilidad todavía'}
               </div>` : ''}
               ${r.ingresosSinCosto > 0 ? `<p style="font-size:10px;color:var(--txt3);margin-top:8px">+ ${clp(r.ingresosSinCosto)} en ventas sin costo calculado — no se incluyen en este resumen todavía.</p>` : ''}
+              <div id="simulacion-area-${r.area.replace(/\s/g,'')}"></div>
             </div>
           </div>
         `).join('')}
+      </div>
+
+      <div class="card" style="margin-bottom:16px;border:2px solid #1565C0">
+        <div class="card-head" style="background:#E3F2FD;color:#1565C0;display:flex;justify-content:space-between;align-items:center">
+          <span><i class="ti ti-target-arrow"></i> Simular meta de ventas</span>
+          <button class="btn-secundario" style="font-size:11px;padding:4px 10px" onclick="limpiarSimulacionRentabilidad()">
+            <i class="ti ti-refresh"></i> Limpiar simulación
+          </button>
+        </div>
+        <p style="font-size:12px;color:var(--txt3);padding:12px 16px 0">
+          Escriba cuántas unidades adicionales le gustaría vender de un producto — el impacto se calcula al instante
+          usando su margen real, y se refleja en la tarjeta de resumen de su área, arriba. No cambia ningún dato real.
+        </p>
       </div>
 
       ${sinCosto ? `<div style="padding:10px 14px;background:#FFF3E0;border-radius:var(--r-md);font-size:12px;color:#E65100;margin-bottom:14px">
@@ -8435,9 +8455,10 @@ async function calcularRentabilidadRealUI(btn) {
             <th style="text-align:right;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Margen %</th>
             <th style="text-align:right;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">Objetivo</th>
             <th style="text-align:center;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3)">¿Cumple?</th>
+            <th style="text-align:center;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:#1565C0">+ Unidades (simular)</th>
           </tr></thead>
           <tbody>
-            ${filas.map(f => `
+            ${filas.map((f,idx) => `
               <tr style="border-top:1px solid var(--border);${f.cumple === false ? 'background:#FFEBEE' : ''}">
                 <td style="padding:8px 12px;font-size:13px">
                   <div>${f.nombre}</div>
@@ -8452,6 +8473,10 @@ async function calcularRentabilidadRealUI(btn) {
                 <td style="padding:8px 12px;text-align:center">
                   ${f.cumple === true ? '<span style="color:#2E7D32"><i class="ti ti-check"></i></span>' : f.cumple === false ? '<span style="color:#C62828"><i class="ti ti-x"></i></span>' : '—'}
                 </td>
+                <td style="padding:6px 12px;text-align:center">
+                  ${f.margenMonto !== null ? `<input type="number" id="sim-uni-${idx}" min="0" step="1" placeholder="0" oninput="actualizarSimulacionRentabilidad()"
+                      style="width:64px;padding:4px 6px;border:1px solid #90CAF9;border-radius:var(--r-sm);font-size:12px;text-align:center;font-family:'DM Mono',monospace">` : '—'}
+                </td>
               </tr>`).join('')}
           </tbody>
         </table>
@@ -8460,6 +8485,54 @@ async function calcularRentabilidadRealUI(btn) {
     cont.innerHTML = `<p style="color:#C62828">Error: ${e.message}</p>`;
   }
   desbloquearBtn(btn, '<i class="ti ti-scale"></i> Calcular', true);
+}
+
+// Recalcula el impacto en cada tarjeta de área a partir de las "unidades extra"
+// escritas por el usuario — 100% en el navegador, no toca ningún dato real ni
+// necesita volver a consultar el servidor. Suma el margen real de cada producto
+// que tenga unidades simuladas, agrupado por área.
+function actualizarSimulacionRentabilidad() {
+  const filas = App._rentFilas || [];
+  const resumenBase = App._rentResumenBase || [];
+
+  const deltaPorArea = {};
+  filas.forEach((f, idx) => {
+    const input = document.getElementById('sim-uni-' + idx);
+    const unidadesExtra = parseFloat(input?.value) || 0;
+    if (unidadesExtra > 0 && f.margenMonto !== null) {
+      deltaPorArea[f.área] = (deltaPorArea[f.área] || 0) + (unidadesExtra * f.margenMonto);
+    }
+  });
+
+  resumenBase.forEach(r => {
+    const cont = document.getElementById('simulacion-area-' + r.area.replace(/\s/g,''));
+    if (!cont) return;
+    const delta = deltaPorArea[r.area] || 0;
+    if (delta === 0) { cont.innerHTML = ''; return; }
+    const nuevaUtilidad = r.utilidadReal + delta;
+    const nuevoIngreso = r.ingresosConCosto + delta; // aproximación: el "extra" de ingreso ya viene neto de costo en margenMonto, así que se sigue usando ingresosConCosto original como base de %
+    const nuevaUtilidadPct = r.ingresosConCosto > 0 ? (nuevaUtilidad / (r.ingresosConCosto)) * 100 : null;
+    cont.innerHTML = `
+      <div style="margin-top:10px;padding:8px 10px;background:#E3F2FD;border-radius:var(--r-sm);border:1px dashed #1565C0">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#1565C0">Con la simulación</div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:2px">
+          <span>Impacto en utilidad</span>
+          <span style="font-family:'DM Mono',monospace;font-weight:700;color:#1565C0">+${clp(delta)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span>Nueva utilidad estimada</span>
+          <span style="font-family:'DM Mono',monospace;font-weight:700;color:#1565C0">${clp(nuevaUtilidad)}${nuevaUtilidadPct !== null ? ` (${nuevaUtilidadPct.toFixed(1)}%)` : ''}</span>
+        </div>
+      </div>`;
+  });
+}
+
+function limpiarSimulacionRentabilidad() {
+  (App._rentFilas || []).forEach((f, idx) => {
+    const input = document.getElementById('sim-uni-' + idx);
+    if (input) input.value = '';
+  });
+  actualizarSimulacionRentabilidad();
 }
 
 async function renderVistaInversiones() {
