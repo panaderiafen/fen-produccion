@@ -8357,8 +8357,22 @@ async function generarInformeAuditoriaUI(btn) {
 function renderInformeAuditoriaHTML(data) {
   const g = data.gastos;
   const c = data.config;
+  const v = data.ventasAreaResumen;
   const codigoArea = Object.keys(FEN.AREAS).find(k => FEN.AREAS[k].nombre === data.area) || '';
   const participacionArea = g?.participacion?.[codigoArea] || 0;
+
+  const bloqueVentasArea = v ? `
+    <div class="bloque-informe">
+      <h3>Ventas del área este mes</h3>
+      <table class="tabla-informe">
+        <thead><tr><th>Canal</th><th class="num">Cantidad</th><th class="num">Monto neto</th></tr></thead>
+        <tbody>
+          <tr><td>B2C</td><td class="num">${v.b2c.cantidad.toLocaleString('es-CL')}</td><td class="num">${clp(v.b2c.monto)}</td></tr>
+          <tr><td>B2B</td><td class="num">${v.b2b.cantidad.toLocaleString('es-CL')}</td><td class="num">${clp(v.b2b.monto)}</td></tr>
+          <tr style="font-weight:700;border-top:1px solid #999"><td>Total</td><td class="num">${v.total.cantidad.toLocaleString('es-CL')}</td><td class="num">${clp(v.total.monto)}</td></tr>
+        </tbody>
+      </table>
+    </div>` : '';
 
   const bloqueGastos = g ? `
     <div class="bloque-informe">
@@ -8437,12 +8451,12 @@ function renderInformeAuditoriaHTML(data) {
       </table>
 
       ${p.ventasReales.length ? `
-      <h4>Comparación contra ventas reales del mes</h4>
+      <h4>Ventas B2C/B2B de este producto, este mes</h4>
       <table class="tabla-informe">
-        <thead><tr><th>Canal</th><th class="num">Cantidad</th><th class="num">Precio real</th><th class="num">Margen real</th><th class="num">Objetivo</th><th>¿Cumple?</th></tr></thead>
+        <thead><tr><th>Canal</th><th class="num">Cantidad</th><th class="num">Monto neto</th><th class="num">Precio real</th><th class="num">Margen real</th><th class="num">Objetivo</th><th>¿Cumple?</th></tr></thead>
         <tbody>
           ${p.ventasReales.map(v => `<tr>
-            <td>${v.canal}</td><td class="num">${v.cantidad}</td><td class="num">${clp(v.precioReal)}</td>
+            <td>${v.canal}</td><td class="num">${v.cantidad}</td><td class="num">${clp(v.monto)}</td><td class="num">${clp(v.precioReal)}</td>
             <td class="num">${v.margenPct!=null?v.margenPct.toFixed(1)+'%':'—'}</td><td class="num">${v.objetivoPct.toFixed(1)}%</td>
             <td>${v.cumple===true?'✓ Sí':v.cumple===false?'✗ No':'—'}</td>
           </tr>`).join('')}
@@ -8457,6 +8471,7 @@ function renderInformeAuditoriaHTML(data) {
         <h1>Informe de trazabilidad de costos</h1>
         <p>${data.area} — ${data.mes} · Generado ${new Date().toLocaleDateString('es-CL')}</p>
       </div>
+      ${bloqueVentasArea}
       ${bloqueConfig}
       ${bloqueGastos}
       ${bloqueMetodo}
