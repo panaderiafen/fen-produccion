@@ -9366,12 +9366,21 @@ async function calcularVolumenMensualPorProducto(areaCodigo, mesStr) {
     return {};
   }
 
+  // Resolver ID_receta -> nombre desde Maestro_recetas — es la MISMA fuente que
+  // usa el backend (calcularEC lee directo de esa hoja), y no App.recetas (que
+  // carga desde la hoja de trabajo de cada área — PAN_recetas, BOL_recetas, etc. —
+  // la cual puede desalinearse de Maestro_recetas si una receta se reeditó).
+  // Usar dos fuentes distintas para lo mismo es lo que causaba que Panadería
+  // diera todo en cero: el nombre nunca calzaba con lo que busca el backend.
+  const maestro = await Cache.get('Maestro_recetas', () => leerHoja('Maestro_recetas'));
+  const nombrePorId = {};
+  maestro.forEach(r => { nombrePorId[r.ID_receta] = r.nombre; });
+
   const resultado = {};
   ventas
     .filter(v => v.mes === mesStr && normalizar(v['área'] || v.área) === areaNombreNorm)
     .forEach(v => {
-      const receta = App.recetas.find(r => r.ID_receta === v.ID_receta);
-      const nombre = receta?.nombre || v.ID_receta; // si no se encuentra la receta, se deja el ID como respaldo visible
+      const nombre = nombrePorId[v.ID_receta] || v.ID_receta; // si no se encuentra, se deja el ID como respaldo visible
       if (!resultado[nombre]) resultado[nombre] = { b2c: 0, b2b: 0 };
       const canal = v.canal === 'B2B' ? 'b2b' : 'b2c';
       resultado[nombre][canal] += parseFloat(v.cantidad_vendida) || 0;
