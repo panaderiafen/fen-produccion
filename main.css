@@ -1450,6 +1450,11 @@ input, select, textarea { font-family: inherit; }
     page-break-before: auto;
     break-before: auto;
   }
+  /* Solo las tablas que SIEMPRE son cortas (estructura de costo, ventas) evitan
+     partirse — la de ingredientes puede ser larga (muchas MP), y forzarla a no
+     partirse es lo que empujaba tablas chicas a páginas nuevas con espacio
+     de más. Se deja que esa fluya libre si de verdad hace falta. */
+  .tabla-corta { page-break-inside: avoid; break-inside: avoid; }
   /* La app usa altura fija + scroll interno para funcionar en pantalla (#app,
      .layout, .content) — eso mismo hace que al imprimir solo se capture una
      "pantalla" de alto, cortando el resto. Se libera todo eso solo para
