@@ -379,6 +379,7 @@ function renderSidebar() {
         { id: 'auditoria-costos', icon: 'ti-shield-check',    label: 'Auditoría de costos' },
         { id: 'inversiones',      icon: 'ti-building-bank',   label: 'Inversiones' },
         { id: 'rentabilidad-real', icon: 'ti-scale',          label: 'Rentabilidad real' },
+        { id: 'informe-auditoria', icon: 'ti-file-search',    label: 'Informe de trazabilidad' },
       ]},
       { id: 'analisis', label: 'Análisis y reportes', icon: 'ti-chart-bar', items: [
         { id: 'estimacion-bol',    icon: 'ti-chart-arrows-vertical', label: 'Estimación de demanda' },
@@ -463,7 +464,7 @@ function navegarA(vistaId) {
     const gruposAdmin = [
       { id: 'flujo-diario', items: ['aprobaciones','materias-primas'] },
       { id: 'catalogo', items: ['maestro-admin','productos-reventa'] },
-      { id: 'costeo', items: ['config-costeo','costos','auditoria-costos','inversiones','rentabilidad-real'] },
+      { id: 'costeo', items: ['config-costeo','costos','auditoria-costos','inversiones','rentabilidad-real','informe-auditoria'] },
       { id: 'analisis', items: ['estimacion-bol','analisis-merma','ventas-mensuales'] },
       { id: 'configuracion', items: ['correos-contacto'] },
     ];
@@ -508,6 +509,7 @@ function navegarA(vistaId) {
     case 'auditoria-costos':    renderVistaAuditoriaCostos(); break;
     case 'inversiones':         renderVistaInversiones(); break;
     case 'rentabilidad-real':   renderVistaRentabilidadReal(); break;
+    case 'informe-auditoria':   renderVistaInformeAuditoria(); break;
     case 'config-costeo':       renderVistaConfigCosteo();   break;
     case 'correos-contacto':    renderVistaCorreosContacto(); break;
     case 'productos-reventa':   renderVistaProductosReventa(); break;
@@ -8286,6 +8288,186 @@ async function sincronizarVentasMensualesUI(btn) {
 // precio vender?", responde "dado lo que realmente estoy vendiendo y cobrando,
 // ¿me conviene ese precio?" — cruza Ventas_mensuales_consolidadas (precio real
 // = monto_neto / cantidad_vendida) con EC_productos (costo real calculado).
+// ── INFORME DE TRAZABILIDAD — traza completa del cálculo, para imprimir ────
+function renderVistaInformeAuditoria() {
+  const vista = document.getElementById('vista-informe-auditoria');
+  const hoy = new Date();
+  const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+
+  vista.innerHTML = `
+    <div class="vista-header no-print"><h1 class="vista-titulo">Informe de trazabilidad</h1></div>
+    <p class="no-print" style="font-size:12px;color:var(--txt3);margin-bottom:16px">
+      Traza completa de cómo se calculó el costo y precio de cada producto — de dónde sale cada número, no recalcula nada nuevo.
+      Requiere que ya haya calculado "Estructuras de costo" para el área/mes que elija.
+    </p>
+    <div class="card no-print" style="margin-bottom:16px">
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:16px">
+        <div class="campo">
+          <label>Área</label>
+          <select id="ia-area" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+            ${Object.entries(FEN.AREAS).map(([cod,a]) => `<option value="${cod}">${a.nombre}</option>`).join('')}
+          </select>
+        </div>
+        <div class="campo">
+          <label>Mes (YYYY-MM)</label>
+          <input type="text" id="ia-mes" value="${mesActual}" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <div class="campo">
+          <label>Producto <span style="font-weight:400;color:var(--txt3)">(opcional — vacío = toda el área)</span></label>
+          <select id="ia-producto" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px;min-width:200px">
+            <option value="">— Toda el área —</option>
+            ${App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta').map(p => `<option value="${p.ID_receta}">${p.nombre}</option>`).join('')}
+          </select>
+        </div>
+        <button class="btn-primario" onclick="generarInformeAuditoriaUI(this)">
+          <i class="ti ti-file-search"></i> Generar informe
+        </button>
+      </div>
+    </div>
+    <div id="informe-auditoria-resultado"></div>
+  `;
+  mostrarVista('informe-auditoria');
+}
+
+async function generarInformeAuditoriaUI(btn) {
+  const area = document.getElementById('ia-area').value;
+  const mes = document.getElementById('ia-mes').value.trim();
+  const idReceta = document.getElementById('ia-producto')?.value || '';
+  const cont = document.getElementById('informe-auditoria-resultado');
+  bloquearBtn(btn, 'Generando...');
+  cont.innerHTML = '<p style="color:var(--txt3)">Cargando...</p>';
+
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'generar_informe_auditoria', area, mes, ID_receta: idReceta || undefined }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
+    const data = await res.json();
+    if (!data.ok) {
+      cont.innerHTML = `<div class="empty-state"><i class="ti ti-file-search"></i><h2>${data.msg}</h2></div>`;
+      desbloquearBtn(btn, '<i class="ti ti-file-search"></i> Generar informe', true);
+      return;
+    }
+    cont.innerHTML = renderInformeAuditoriaHTML(data);
+    desbloquearBtn(btn, '<i class="ti ti-file-search"></i> Generar informe', true);
+  } catch(e) {
+    cont.innerHTML = `<p style="color:#C62828">Error: ${e.message}</p>`;
+    desbloquearBtn(btn, '<i class="ti ti-file-search"></i> Generar informe', true);
+  }
+}
+
+function renderInformeAuditoriaHTML(data) {
+  const g = data.gastos;
+  const c = data.config;
+  const codigoArea = Object.keys(FEN.AREAS).find(k => FEN.AREAS[k].nombre === data.area) || '';
+  const participacionArea = g?.participacion?.[codigoArea] || 0;
+
+  const bloqueGastos = g ? `
+    <div class="bloque-informe">
+      <h3>Gastos del área — de dónde sale el prorrateo</h3>
+      <table class="tabla-informe">
+        <tbody>
+          <tr><td>Propios de ${data.area} (Registro de Gastos)</td><td class="num">${clp((g.datos?.[codigoArea]?.fijos)||0)}</td></tr>
+          ${Object.entries(g.generalPorEtiqueta||{}).map(([etq,v]) => v.fijos > 0 ? `
+          <tr><td>Compartidos — ${etq} (${(participacionArea*100).toFixed(1)}% de $${Math.round(v.fijos).toLocaleString('es-CL')} total)</td>
+            <td class="num">${clp(v.fijos * participacionArea)}</td></tr>` : '').join('')}
+          ${g.bencinaDescuento?.descuento > 0 ? `<tr><td style="color:#2E7D32">Descuento por despacho cubriendo bencina</td><td class="num" style="color:#2E7D32">−${clp(g.bencinaDescuento.descuento * participacionArea)}</td></tr>` : ''}
+          ${g.depreciacionIncluida?.general > 0 ? `<tr><td>Depreciación de inversiones compartidas</td><td class="num">${clp(g.depreciacionIncluida.general * participacionArea)}</td></tr>` : ''}
+          <tr style="font-weight:700;border-top:1px solid #999"><td>Total costos fijos del mes</td><td class="num">${clp(c?.fijosMonto||0)}</td></tr>
+          <tr style="font-weight:700"><td>Total remuneración del mes</td><td class="num">${clp(c?.remuneracionMonto||0)}</td></tr>
+        </tbody>
+      </table>
+      <p class="nota-informe">Participación de ${data.area} en ventas totales del mes: ${(participacionArea*100).toFixed(1)}%</p>
+    </div>` : '';
+
+  const bloqueConfig = c ? `
+    <div class="bloque-informe">
+      <h3>Config de costeo — parámetros usados</h3>
+      <table class="tabla-informe">
+        <tbody>
+          <tr><td>% Merma estimado</td><td class="num">${c.mermaPct}%</td></tr>
+          <tr><td>% Utilidad objetivo B2C</td><td class="num">${c.utilidadB2CPct}%</td></tr>
+          <tr><td>% Utilidad objetivo B2B</td><td class="num">${c.utilidadB2BPct}%</td></tr>
+          <tr><td>Fuente</td><td class="num">${c.fuente}</td></tr>
+          <tr><td>Última actualización</td><td class="num">${c.fechaActualizacion}</td></tr>
+        </tbody>
+      </table>
+    </div>` : '';
+
+  const bloqueMetodo = `
+    <p class="nota-informe" style="font-weight:600">
+      Método de prorrateo de costos fijos/remuneración detectado: ${data.metodoProrrateo === 'peso' ? 'POR PESO (proporcional al tamaño de cada producto)' : 'POR UNIDAD (parejo entre todos los productos)'}
+    </p>`;
+
+  const bloquesProducto = data.productos.map(p => `
+    <div class="bloque-informe producto-informe">
+      <h2>${p.nombre} <span class="id-chico">${p.ID_receta}</span></h2>
+      <p class="nota-informe">Rinde ${p.porcionesBase} unidad(es) · ${p.pesoUnidad.toFixed(1)}g por unidad · Calculado ${p.fechaCalculo}</p>
+
+      ${p.ingredientes.length ? `
+      <h4>Ingredientes (MP)</h4>
+      <table class="tabla-informe">
+        <thead><tr><th>Ingrediente</th><th class="num">Cantidad</th><th class="num">Costo</th></tr></thead>
+        <tbody>
+          ${p.ingredientes.map(i => `<tr><td>${i.nombre}</td><td class="num">${i.unidades!=null ? i.unidades+' uni' : (parseFloat(i.gramos)||0).toFixed(1)+'g'}</td><td class="num">${clp(i.costo||0)}</td></tr>`).join('')}
+          <tr style="font-weight:700"><td colspan="2">Total MP por unidad</td><td class="num">${clp(p.costoMPUnit)}</td></tr>
+        </tbody>
+      </table>` : ''}
+
+      ${p.insumos.length ? `
+      <h4>Insumos (packaging, etc.)</h4>
+      <table class="tabla-informe">
+        <thead><tr><th>Insumo</th><th class="num">Cantidad</th><th class="num">Costo</th></tr></thead>
+        <tbody>
+          ${p.insumos.map(i => `<tr><td>${i.nombre}</td><td class="num">${i.unidades||0} uni</td><td class="num">${clp(i.costo||0)}</td></tr>`).join('')}
+          <tr style="font-weight:700"><td colspan="2">Total insumos por unidad</td><td class="num">${clp(p.costoInsumosUnit)}</td></tr>
+        </tbody>
+      </table>` : ''}
+
+      <h4>Estructura de costo final</h4>
+      <table class="tabla-informe">
+        <tbody>
+          <tr><td>Costo MP</td><td class="num">${clp(p.costoMPUnit)}</td></tr>
+          <tr><td>Costo insumos</td><td class="num">${clp(p.costoInsumosUnit)}</td></tr>
+          <tr><td>Merma (${p.mermaPct}% de MP)</td><td class="num">${clp(p.costoMermaUnit)}</td></tr>
+          <tr><td>Costos fijos prorrateados (${p.costosFijosPct.toFixed(1)}% del total)</td><td class="num">${clp(p.costosFijosUnit)}</td></tr>
+          <tr><td>Remuneración prorrateada (${p.remuneracionPct.toFixed(1)}% del total)</td><td class="num">${clp(p.remuneracionUnit)}</td></tr>
+          <tr style="font-weight:700;border-top:1px solid #999"><td>Costo total de producción</td><td class="num">${clp(p.totalCostoProduccion)}</td></tr>
+          <tr><td>+ Utilidad objetivo B2C (${p.utilidadB2CPct}%)</td><td class="num" style="font-weight:700">${clp(p.precioB2C)}</td></tr>
+          <tr><td>+ Utilidad objetivo B2B (${p.utilidadB2BPct}%)</td><td class="num" style="font-weight:700">${clp(p.precioB2B)}</td></tr>
+        </tbody>
+      </table>
+
+      ${p.ventasReales.length ? `
+      <h4>Comparación contra ventas reales del mes</h4>
+      <table class="tabla-informe">
+        <thead><tr><th>Canal</th><th class="num">Cantidad</th><th class="num">Precio real</th><th class="num">Margen real</th><th class="num">Objetivo</th><th>¿Cumple?</th></tr></thead>
+        <tbody>
+          ${p.ventasReales.map(v => `<tr>
+            <td>${v.canal}</td><td class="num">${v.cantidad}</td><td class="num">${clp(v.precioReal)}</td>
+            <td class="num">${v.margenPct!=null?v.margenPct.toFixed(1)+'%':'—'}</td><td class="num">${v.objetivoPct.toFixed(1)}%</td>
+            <td>${v.cumple===true?'✓ Sí':v.cumple===false?'✗ No':'—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>` : `<p class="nota-informe">Sin ventas sincronizadas este mes para comparar.</p>`}
+    </div>
+  `).join('');
+
+  return `
+    <div id="contenido-imprimible">
+      <div class="encabezado-informe">
+        <h1>Informe de trazabilidad de costos</h1>
+        <p>${data.area} — ${data.mes} · Generado ${new Date().toLocaleDateString('es-CL')}</p>
+      </div>
+      ${bloqueConfig}
+      ${bloqueGastos}
+      ${bloqueMetodo}
+      ${bloquesProducto}
+    </div>
+    <button class="btn-primario no-print" style="margin-top:16px" onclick="window.print()">
+      <i class="ti ti-printer"></i> Descargar PDF / Imprimir
+    </button>
+  `;
+}
+
 async function renderVistaRentabilidadReal() {
   const vista = document.getElementById('vista-rentabilidad-real');
   const hoy = new Date();
