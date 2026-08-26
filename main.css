@@ -1453,11 +1453,22 @@ input, select, textarea { font-family: inherit; }
     page-break-before: auto;
     break-before: auto;
   }
-  /* Solo las tablas que SIEMPRE son cortas (estructura de costo, ventas) evitan
-     partirse — la de ingredientes puede ser larga (muchas MP), y forzarla a no
-     partirse es lo que empujaba tablas chicas a páginas nuevas con espacio
-     de más. Se deja que esa fluya libre si de verdad hace falta. */
-  .tabla-corta { page-break-inside: avoid; break-inside: avoid; }
+  /* Se probó "avoid" en las tablas cortas (estructura de costo, ventas) también,
+     pero el navegador terminaba cortando la página muchísimo antes de lo
+     necesario (dejando la mayor parte en blanco) para "asegurarse" de que esas
+     tablas cupieran completas más adelante — peor que dejarlas fluir libres. */
+  /* border-collapse: collapse tiene un bug conocido en Chrome al imprimir —
+     calcula mal dónde cortar la página, dejando mucho espacio en blanco antes
+     de saltar. border-collapse: separate + spacing 0 se ve idéntico pero no
+     tiene ese bug. */
+  .tabla-informe {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  .tabla-informe td, .tabla-informe th {
+    border-top: none;
+    border-bottom: 1px solid var(--border);
+  }
   /* La app usa altura fija + scroll interno para funcionar en pantalla (#app,
      .layout, .content) — eso mismo hace que al imprimir solo se capture una
      "pantalla" de alto, cortando el resto. Se libera todo eso solo para
