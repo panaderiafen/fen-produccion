@@ -1437,10 +1437,10 @@ input, select, textarea { font-family: inherit; }
   .no-print, .topbar, .sidebar, .btn-fila-del { display: none !important; }
   #contenido-imprimible { padding: 0; }
   body { background: #fff; }
-  /* page-break-inside: avoid no es confiable cuando adentro hay tablas — los
-     navegadores a veces igual parten el bloque en dos páginas si eso les evita
-     dejar mucho espacio en blanco. Se fuerza en cambio que cada producto
-     empiece siempre en una página nueva — más papel, pero nunca queda partido. */
+  /* Cada producto empieza siempre en una página nueva — evita que quede
+     partido a la mitad. No se fuerza "avoid" en las tablas individuales de
+     adentro (se probó, y el navegador termina empujando cada tabla a su propia
+     página con espacio en blanco de más) — se deja que fluyan naturalmente. */
   .producto-informe {
     page-break-before: always;
     break-before: page;
@@ -1450,8 +1450,6 @@ input, select, textarea { font-family: inherit; }
     page-break-before: auto;
     break-before: auto;
   }
-  .tabla-informe { page-break-inside: avoid; break-inside: avoid; }
-  .tabla-informe tr { page-break-inside: avoid; break-inside: avoid; }
   /* La app usa altura fija + scroll interno para funcionar en pantalla (#app,
      .layout, .content) — eso mismo hace que al imprimir solo se capture una
      "pantalla" de alto, cortando el resto. Se libera todo eso solo para
