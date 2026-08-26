@@ -385,6 +385,7 @@ function renderSidebar() {
         { id: 'estimacion-bol',    icon: 'ti-chart-arrows-vertical', label: 'Estimación de demanda' },
         { id: 'analisis-merma',    icon: 'ti-trash',                 label: 'Análisis de $ merma' },
         { id: 'ventas-mensuales',  icon: 'ti-report-money',          label: 'Ventas mensuales (B2B/B2C)' },
+        { id: 'informe-general',   icon: 'ti-building-store',        label: 'Informe general del negocio' },
       ]},
       { id: 'configuracion', label: 'Configuración', icon: 'ti-adjustments', items: [
         { id: 'correos-contacto', icon: 'ti-mail', label: 'Correos de contacto' },
@@ -465,7 +466,7 @@ function navegarA(vistaId) {
       { id: 'flujo-diario', items: ['aprobaciones','materias-primas'] },
       { id: 'catalogo', items: ['maestro-admin','productos-reventa'] },
       { id: 'costeo', items: ['config-costeo','costos','auditoria-costos','inversiones','rentabilidad-real','informe-auditoria'] },
-      { id: 'analisis', items: ['estimacion-bol','analisis-merma','ventas-mensuales'] },
+      { id: 'analisis', items: ['estimacion-bol','analisis-merma','ventas-mensuales','informe-general'] },
       { id: 'configuracion', items: ['correos-contacto'] },
     ];
     const grupo = gruposAdmin.find(g => g.items.includes(vistaId));
@@ -510,6 +511,7 @@ function navegarA(vistaId) {
     case 'inversiones':         renderVistaInversiones(); break;
     case 'rentabilidad-real':   renderVistaRentabilidadReal(); break;
     case 'informe-auditoria':   renderVistaInformeAuditoria(); break;
+    case 'informe-general':     renderVistaInformeGeneral(); break;
     case 'config-costeo':       renderVistaConfigCosteo();   break;
     case 'correos-contacto':    renderVistaCorreosContacto(); break;
     case 'productos-reventa':   renderVistaProductosReventa(); break;
@@ -8289,6 +8291,115 @@ async function sincronizarVentasMensualesUI(btn) {
 // ¿me conviene ese precio?" — cruza Ventas_mensuales_consolidadas (precio real
 // = monto_neto / cantidad_vendida) con EC_productos (costo real calculado).
 // ── INFORME DE TRAZABILIDAD — traza completa del cálculo, para imprimir ────
+// ── INFORME GENERAL DEL NEGOCIO — panorama completo, ventas − gastos ────────
+function renderVistaInformeGeneral() {
+  const vista = document.getElementById('vista-informe-general');
+  const hoy = new Date();
+  const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+
+  vista.innerHTML = `
+    <div class="vista-header no-print"><h1 class="vista-titulo">Informe general del negocio</h1></div>
+    <p class="no-print" style="font-size:12px;color:var(--txt3);margin-bottom:16px">
+      Ventas menos gastos (MP + costos fijos + remuneración) por área y total — el mismo criterio que "Rentabilidad real",
+      aplicado a todo el negocio de una vez. Requiere Estructuras de costo calculadas para poder estimar la MP consumida.
+    </p>
+    <div class="card no-print" style="margin-bottom:16px">
+      <div style="display:flex;gap:10px;align-items:flex-end;padding:16px">
+        <div class="campo">
+          <label>Mes (YYYY-MM)</label>
+          <input type="text" id="ig-mes" value="${mesActual}" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <button class="btn-primario" onclick="generarInformeGeneralUI(this)">
+          <i class="ti ti-building-store"></i> Generar informe
+        </button>
+      </div>
+    </div>
+    <div id="informe-general-resultado"></div>
+  `;
+  mostrarVista('informe-general');
+}
+
+async function generarInformeGeneralUI(btn) {
+  const mes = document.getElementById('ig-mes').value.trim();
+  const cont = document.getElementById('informe-general-resultado');
+  bloquearBtn(btn, 'Generando...');
+  cont.innerHTML = '<p style="color:var(--txt3)">Cargando...</p>';
+
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'generar_informe_general', mes }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
+    const data = await res.json();
+    if (!data.ok) {
+      cont.innerHTML = `<div class="empty-state"><i class="ti ti-building-store"></i><h2>${data.msg}</h2></div>`;
+      desbloquearBtn(btn, '<i class="ti ti-building-store"></i> Generar informe', true);
+      return;
+    }
+    cont.innerHTML = renderInformeGeneralHTML(data);
+    desbloquearBtn(btn, '<i class="ti ti-building-store"></i> Generar informe', true);
+  } catch(e) {
+    cont.innerHTML = `<p style="color:#C62828">Error: ${e.message}</p>`;
+    desbloquearBtn(btn, '<i class="ti ti-building-store"></i> Generar informe', true);
+  }
+}
+
+function renderInformeGeneralHTML(data) {
+  const filaArea = (a) => `
+    <tr style="${a.cubreCostos === false ? 'background:#FFEBEE' : ''}">
+      <td style="font-weight:600">${a.area}</td>
+      <td class="num">${clp(a.ventasNeto)}</td>
+      <td class="num">${clp(a.ventasBruto)}</td>
+      <td class="num">${clp(a.mpConsumida)}</td>
+      <td class="num">${clp(a.fijosPropios)}</td>
+      <td class="num">${clp(a.fijosCompartidos)}</td>
+      <td class="num">${clp(a.remuneracionPropia + a.remuneracionCompartida)}</td>
+      <td class="num" style="font-weight:600">${clp(a.totalGastos)}</td>
+      <td class="num" style="font-weight:700;color:${a.utilidad >= 0 ? '#2E7D32' : '#C62828'}">
+        ${clp(a.utilidad)}${a.utilidadPct !== null ? ` (${a.utilidadPct.toFixed(1)}%)` : ''}
+      </td>
+      <td style="text-align:center">${a.cubreCostos === false ? '<span style="color:#C62828">⚠ No</span>' : a.cubreCostos === true ? '<span style="color:#2E7D32">✓ Sí</span>' : '—'}</td>
+    </tr>`;
+
+  return `
+    <div id="contenido-imprimible">
+      <div class="encabezado-informe">
+        <h1>Informe general del negocio</h1>
+        <p>${data.mes} · Generado ${new Date().toLocaleDateString('es-CL')}</p>
+      </div>
+      <div class="bloque-informe">
+        <table class="tabla-informe">
+          <thead><tr>
+            <th>Área</th><th class="num">Ventas neto</th><th class="num">Ventas bruto</th>
+            <th class="num">MP consumida</th><th class="num">Fijos propios</th><th class="num">Fijos compartidos</th>
+            <th class="num">Remuneración</th><th class="num">Total gastos</th><th class="num">Utilidad</th><th>¿Cubre?</th>
+          </tr></thead>
+          <tbody>
+            ${data.areas.map(filaArea).join('')}
+            <tr style="border-top:2px solid #999;font-weight:700">
+              <td>TOTAL NEGOCIO</td>
+              <td class="num">${clp(data.total.ventasNeto)}</td>
+              <td class="num">${clp(data.total.ventasBruto)}</td>
+              <td class="num">${clp(data.total.mpConsumida)}</td>
+              <td class="num">${clp(data.total.fijosPropios)}</td>
+              <td class="num">${clp(data.total.fijosCompartidos)}</td>
+              <td class="num">${clp(data.total.remuneracionPropia + data.total.remuneracionCompartida)}</td>
+              <td class="num">${clp(data.total.totalGastos)}</td>
+              <td class="num" style="color:${data.total.utilidad >= 0 ? '#2E7D32' : '#C62828'}">
+                ${clp(data.total.utilidad)}${data.total.utilidadPct !== null ? ` (${data.total.utilidadPct.toFixed(1)}%)` : ''}
+              </td>
+              <td style="text-align:center">${data.total.cubreCostos === false ? '⚠ No' : data.total.cubreCostos === true ? '✓ Sí' : '—'}</td>
+            </tr>
+          </tbody>
+        </table>
+        ${data.ventasOtros > 0 ? `<p class="nota-informe">+ ${clp(data.ventasOtros)} en ventas de Servicios (despacho) y Reventa — no incluidas en las áreas de arriba, sin costo de producción asociado.</p>` : ''}
+        <p class="nota-informe">"MP consumida" es una estimación: costo de MP por unidad (de Estructuras de costo) × unidades realmente vendidas ese mes. Productos sin costo calculado ese mes no se incluyen en la estimación.</p>
+      </div>
+    </div>
+    <button class="btn-primario no-print" style="margin-top:16px" onclick="window.print()">
+      <i class="ti ti-printer"></i> Descargar PDF / Imprimir
+    </button>
+  `;
+}
+
 function renderVistaInformeAuditoria() {
   const vista = document.getElementById('vista-informe-auditoria');
   const hoy = new Date();
