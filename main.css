@@ -1477,4 +1477,11 @@ input, select, textarea { font-family: inherit; }
     height: auto !important;
     overflow: visible !important;
   }
+  /* .layout y #app son contenedores flex (necesario en pantalla, para el
+     sidebar) — los saltos de página dentro de un contexto flex se comportan
+     mal en Chrome (ignora page-break-before o corta en lugares raros). Se
+     sacan del flex completamente, solo para imprimir. */
+  #app, .layout, .content {
+    display: block !important;
+  }
 }
