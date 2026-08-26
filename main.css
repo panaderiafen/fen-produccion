@@ -1423,7 +1423,10 @@ input, select, textarea { font-family: inherit; }
 .bloque-informe h2 { font-size: 17px; margin: 0 0 4px; }
 .bloque-informe h3 { font-size: 14px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .3px; color: var(--txt2); }
 .bloque-informe h4 { font-size: 12px; margin: 12px 0 4px; text-transform: uppercase; letter-spacing: .3px; color: var(--txt3); }
-.producto-informe { border: 1px solid var(--border); border-radius: var(--r-md); padding: 16px; margin-bottom: 24px; page-break-inside: avoid; }
+.producto-informe { border: 1px solid var(--border); border-radius: var(--r-md); padding: 16px; margin-bottom: 24px; }
+.producto-informe h2 { font-size: 17px; margin: 0 0 4px; }
+.producto-informe h3 { font-size: 14px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .3px; color: var(--txt2); }
+.producto-informe h4 { font-size: 12px; margin: 12px 0 4px; text-transform: uppercase; letter-spacing: .3px; color: var(--txt3); }
 
 .id-chico { font-size: 11px; color: var(--txt3); font-family: 'DM Mono', monospace; font-weight: 400; margin-left: 6px; }
 .nota-informe { font-size: 11px; color: var(--txt3); margin: 4px 0 10px; }
