@@ -379,6 +379,7 @@ function renderSidebar() {
         { id: 'auditoria-costos', icon: 'ti-shield-check',    label: 'Auditoría de costos' },
         { id: 'inversiones',      icon: 'ti-building-bank',   label: 'Inversiones' },
         { id: 'rentabilidad-real', icon: 'ti-scale',          label: 'Rentabilidad real' },
+        { id: 'meta-venta',        icon: 'ti-target-arrow',   label: 'Meta de venta / equilibrio' },
         { id: 'informe-auditoria', icon: 'ti-file-search',    label: 'Informe de trazabilidad' },
       ]},
       { id: 'analisis', label: 'Análisis y reportes', icon: 'ti-chart-bar', items: [
@@ -465,7 +466,7 @@ function navegarA(vistaId) {
     const gruposAdmin = [
       { id: 'flujo-diario', items: ['aprobaciones','materias-primas'] },
       { id: 'catalogo', items: ['maestro-admin','productos-reventa'] },
-      { id: 'costeo', items: ['config-costeo','costos','auditoria-costos','inversiones','rentabilidad-real','informe-auditoria'] },
+      { id: 'costeo', items: ['config-costeo','costos','auditoria-costos','inversiones','rentabilidad-real','meta-venta','informe-auditoria'] },
       { id: 'analisis', items: ['estimacion-bol','analisis-merma','ventas-mensuales','informe-general'] },
       { id: 'configuracion', items: ['correos-contacto'] },
     ];
@@ -510,6 +511,7 @@ function navegarA(vistaId) {
     case 'auditoria-costos':    renderVistaAuditoriaCostos(); break;
     case 'inversiones':         renderVistaInversiones(); break;
     case 'rentabilidad-real':   renderVistaRentabilidadReal(); break;
+    case 'meta-venta':          renderVistaMetaVenta(); break;
     case 'informe-auditoria':   renderVistaInformeAuditoria(); break;
     case 'informe-general':     renderVistaInformeGeneral(); break;
     case 'config-costeo':       renderVistaConfigCosteo();   break;
@@ -8592,6 +8594,151 @@ function renderInformeAuditoriaHTML(data) {
       <i class="ti ti-printer"></i> Descargar PDF / Imprimir
     </button>
   `;
+}
+
+// ── META DE VENTA / PUNTO DE EQUILIBRIO — herramienta prospectiva ──────────
+// Distinta de "Rentabilidad real": esta responde "¿cuánto necesito vender?"
+// ANTES de tener ventas reales — útil para planificar un producto nuevo.
+async function renderVistaMetaVenta() {
+  const vista = document.getElementById('vista-meta-venta');
+  const hoy = new Date();
+  const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+
+  vista.innerHTML = `
+    <div class="vista-header"><h1 class="vista-titulo">Meta de venta / punto de equilibrio</h1></div>
+    <p style="font-size:12px;color:var(--txt3);margin-bottom:16px">
+      Al revés de "Rentabilidad real" — en vez de mirar ventas ya hechas, calcula cuántas unidades
+      necesita vender para cubrir costos, y cuántas más para llegar a la utilidad que quiere. Útil para
+      planificar un producto antes de sacarlo a la venta. Requiere Config de costeo y Estructura de costo
+      calculadas para el área/mes.
+    </p>
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:16px">
+        <div class="campo">
+          <label>Área</label>
+          <select id="mv-area" onchange="cargarProductosMetaVenta()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+            ${Object.entries(FEN.AREAS).map(([cod,a]) => `<option value="${cod}">${a.nombre}</option>`).join('')}
+          </select>
+        </div>
+        <div class="campo">
+          <label>Mes (YYYY-MM)</label>
+          <input type="text" id="mv-mes" value="${mesActual}" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <div class="campo">
+          <label>Producto</label>
+          <select id="mv-producto" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px;min-width:200px">
+            <option value="">— Elija un producto —</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label>Canal</label>
+          <select id="mv-canal" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+            <option value="B2C">B2C</option>
+            <option value="B2B">B2B</option>
+          </select>
+        </div>
+        <button class="btn-primario" onclick="calcularMetaVentaUI(this)">
+          <i class="ti ti-target-arrow"></i> Calcular
+        </button>
+      </div>
+    </div>
+    <div id="meta-venta-resultado"></div>
+  `;
+  mostrarVista('meta-venta');
+  cargarProductosMetaVenta();
+}
+
+function cargarProductosMetaVenta() {
+  const area = document.getElementById('mv-area')?.value;
+  const sel = document.getElementById('mv-producto');
+  if (!sel) return;
+  const productos = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta' && codigoAreaDesdeReceta(r) === area);
+  sel.innerHTML = `<option value="">— Elija un producto —</option>${productos.map(p => `<option value="${p.ID_receta}">${p.nombre}</option>`).join('')}`;
+}
+
+async function calcularMetaVentaUI(btn) {
+  const area = document.getElementById('mv-area').value;
+  const mes = document.getElementById('mv-mes').value.trim();
+  const idReceta = document.getElementById('mv-producto').value;
+  const canal = document.getElementById('mv-canal').value;
+  const cont = document.getElementById('meta-venta-resultado');
+  if (!idReceta) { toast('Elija un producto', 'error'); return; }
+
+  bloquearBtn(btn, 'Calculando...');
+  cont.innerHTML = '<p style="color:var(--txt3)">Cargando...</p>';
+
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'calcular_meta_venta', area, mes, ID_receta: idReceta, canal }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
+    const data = await res.json();
+    if (!data.ok) {
+      cont.innerHTML = `<div class="empty-state"><i class="ti ti-target-arrow"></i><h2>${data.msg}</h2></div>`;
+      desbloquearBtn(btn, '<i class="ti ti-target-arrow"></i> Calcular', true);
+      return;
+    }
+    cont.innerHTML = renderMetaVentaHTML(data);
+    desbloquearBtn(btn, '<i class="ti ti-target-arrow"></i> Calcular', true);
+  } catch(e) {
+    cont.innerHTML = `<p style="color:#C62828">Error: ${e.message}</p>`;
+    desbloquearBtn(btn, '<i class="ti ti-target-arrow"></i> Calcular', true);
+  }
+}
+
+function renderMetaVentaHTML(data) {
+  if (data.sinMargen) {
+    return `
+      <div class="card" style="border:2px solid #C62828">
+        <div class="card-head" style="background:#FFEBEE;color:#C62828"><i class="ti ti-alert-triangle"></i> ${data.nombre} — ${data.canal}</div>
+        <div style="padding:16px">
+          <p style="font-size:13px;color:#C62828;font-weight:600">${data.msg}</p>
+          <table class="tabla-informe" style="margin-top:10px">
+            <tbody>
+              <tr><td>Precio actual (neto)</td><td class="num">${clp(data.precio)}</td></tr>
+              <tr><td>Costo variable (MP+insumos+merma)</td><td class="num">${clp(data.costoVariableUnit)}</td></tr>
+              <tr style="font-weight:700"><td>Margen de contribución</td><td class="num" style="color:#C62828">${clp(data.margenContribucionUnit)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div class="card">
+      <div class="card-head"><i class="ti ti-target-arrow"></i> ${data.nombre} — ${data.canal} — ${data.area}, ${data.mes}</div>
+      <div style="padding:16px">
+        <h4 style="font-size:11px;text-transform:uppercase;color:var(--txt3);margin-bottom:6px">Margen de contribución (por unidad)</h4>
+        <table class="tabla-informe">
+          <tbody>
+            <tr><td>Precio de venta (neto, sin IVA)</td><td class="num">${clp(data.precio)}</td></tr>
+            <tr><td>− Costo variable (MP + insumos + merma)</td><td class="num">${clp(data.costoVariableUnit)}</td></tr>
+            <tr style="font-weight:700;border-top:1px solid #999"><td>= Margen de contribución</td><td class="num">${clp(data.margenContribucionUnit)}</td></tr>
+          </tbody>
+        </table>
+        <p class="nota-informe">Este margen es lo que cada unidad vendida aporta para pagar costos fijos y remuneración — no depende de cuánto venda, a diferencia del costo fijo ya prorrateado.</p>
+
+        <h4 style="font-size:11px;text-transform:uppercase;color:var(--txt3);margin:16px 0 6px">Costos fijos + remuneración del área, este mes</h4>
+        <table class="tabla-informe">
+          <tbody>
+            <tr><td>Costos fijos totales</td><td class="num">${clp(data.fijosMonto)}</td></tr>
+            <tr><td>Remuneración total</td><td class="num">${clp(data.remuneracionMonto)}</td></tr>
+            <tr style="font-weight:700;border-top:1px solid #999"><td>Total a cubrir</td><td class="num">${clp(data.totalFijosRemuneracion)}</td></tr>
+          </tbody>
+        </table>
+
+        <div style="margin-top:16px;padding:14px;background:#E3F2FD;border-radius:var(--r-md)">
+          <p style="font-size:11px;font-weight:700;text-transform:uppercase;color:#1565C0">Punto de equilibrio — si este fuera el único producto del área</p>
+          <p style="font-size:22px;font-weight:800;color:#1565C0;margin-top:4px">${Math.ceil(data.puntoEquilibrioTotal).toLocaleString('es-CL')} unidades</p>
+          <p style="font-size:11px;color:var(--txt3);margin-top:4px">Vendiendo esta cantidad, el margen generado cubre exactamente los costos fijos + remuneración de toda el área ese mes — desde la unidad siguiente, empieza la utilidad real.</p>
+        </div>
+
+        ${data.metaUnidadesUtilidad !== null ? `
+        <div style="margin-top:12px;padding:14px;background:#E8F5E9;border-radius:var(--r-md)">
+          <p style="font-size:11px;font-weight:700;text-transform:uppercase;color:#2E7D32">Meta para alcanzar el ${data.utilidadObjetivoPct}% de utilidad objetivo</p>
+          <p style="font-size:22px;font-weight:800;color:#2E7D32;margin-top:4px">${Math.ceil(data.metaUnidadesUtilidad).toLocaleString('es-CL')} unidades</p>
+          <p style="font-size:11px;color:var(--txt3);margin-top:4px">Vendiendo esta cantidad de este producto (asumiendo que es el único que sostiene el área), la utilidad generada equivale al ${data.utilidadObjetivoPct}% sobre las ventas totales.</p>
+        </div>` : `<p class="nota-informe" style="margin-top:12px">No se pudo calcular la meta de utilidad objetivo — el margen es muy bajo comparado con el % objetivo.</p>`}
+      </div>
+    </div>`;
 }
 
 async function renderVistaRentabilidadReal() {
