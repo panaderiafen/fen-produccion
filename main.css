@@ -1413,3 +1413,29 @@ input, select, textarea { font-family: inherit; }
   color: var(--txt3) !important;
 }
 .bol-tarea { border-left: 4px solid transparent; }
+
+/* ── INFORME DE TRAZABILIDAD ─────────────────────────────── */
+.encabezado-informe { margin-bottom: 20px; border-bottom: 2px solid var(--txt); padding-bottom: 10px; }
+.encabezado-informe h1 { font-size: 20px; margin: 0 0 4px; }
+.encabezado-informe p { font-size: 13px; color: var(--txt3); margin: 0; }
+
+.bloque-informe { margin-bottom: 20px; page-break-inside: avoid; }
+.bloque-informe h2 { font-size: 17px; margin: 0 0 4px; }
+.bloque-informe h3 { font-size: 14px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .3px; color: var(--txt2); }
+.bloque-informe h4 { font-size: 12px; margin: 12px 0 4px; text-transform: uppercase; letter-spacing: .3px; color: var(--txt3); }
+.producto-informe { border: 1px solid var(--border); border-radius: var(--r-md); padding: 16px; margin-bottom: 24px; page-break-inside: avoid; }
+
+.id-chico { font-size: 11px; color: var(--txt3); font-family: 'DM Mono', monospace; font-weight: 400; margin-left: 6px; }
+.nota-informe { font-size: 11px; color: var(--txt3); margin: 4px 0 10px; }
+
+.tabla-informe { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 8px; }
+.tabla-informe th { text-align: left; padding: 5px 8px; background: var(--bg); font-size: 10px; text-transform: uppercase; color: var(--txt3); font-weight: 600; }
+.tabla-informe td { padding: 5px 8px; border-top: 1px solid var(--border); }
+.tabla-informe .num { text-align: right; font-family: 'DM Mono', monospace; }
+
+@media print {
+  .no-print, .topbar, .sidebar, .btn-fila-del { display: none !important; }
+  #contenido-imprimible { padding: 0; }
+  .bloque-informe, .producto-informe { page-break-inside: avoid; }
+  body { background: #fff; }
+}
