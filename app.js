@@ -9238,6 +9238,13 @@ async function renderVistaCostos() {
             ${productosArea.map(p => `<option value="${p.ID_receta}">${p.nombre}</option>`).join('')}
           </select>
         </div>
+        <div class="campo">
+          <label>Prorrateo de fijos/remuneración</label>
+          <select id="ec-metodo-prorrateo" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+            <option value="unidad" ${(App._ecMetodoProrrateo||'unidad')==='unidad'?'selected':''}>Por unidad (parejo)</option>
+            <option value="peso" ${App._ecMetodoProrrateo==='peso'?'selected':''}>Por peso (proporcional al tamaño)</option>
+          </select>
+        </div>
         ${configsDisponibles.length > 1 ? `
         <div class="campo">
           <label style="color:#E65100">⚠ Hay ${configsDisponibles.length} configs guardadas — elija cuál usar</label>
@@ -9409,15 +9416,17 @@ async function calcularECUI(btn) {
   const idRecetaUnico = document.getElementById('ec-producto')?.value || '';
   const filaConfigEl = document.getElementById('ec-config-fila');
   const filaConfig = filaConfigEl ? filaConfigEl.value : '';
+  const metodoProrrateo = document.getElementById('ec-metodo-prorrateo')?.value || 'unidad';
   App._ecAreaActual = area;
   App._ecMesActual = mes;
+  App._ecMetodoProrrateo = metodoProrrateo;
   const estadoEl = document.getElementById('ec-calc-estado');
   bloquearBtn(btn, 'Calculando...');
   try {
     const volumenReal = await calcularVolumenMensualArea(area, mes);
     const volumenPorProducto = await calcularVolumenMensualPorProducto(area, mes);
     const payload = encodeURIComponent(JSON.stringify({
-      accion: 'calcular_ec', area, mes, volumenTotalReal: volumenReal, volumenPorProducto,
+      accion: 'calcular_ec', area, mes, volumenTotalReal: volumenReal, volumenPorProducto, metodoProrrateo,
       ID_receta: idRecetaUnico || undefined,
       filaConfig: filaConfig || undefined
     }));
