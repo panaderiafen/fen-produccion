@@ -8501,6 +8501,7 @@ function renderInformeAuditoriaHTML(data) {
           ${g.depreciacionIncluida?.general > 0 ? `<tr><td>Depreciación de inversiones compartidas</td><td class="num">${clp(g.depreciacionIncluida.general * participacionArea)}</td></tr>` : ''}
           <tr style="font-weight:700;border-top:1px solid #999"><td>Total costos fijos del mes</td><td class="num">${clp(c?.fijosMonto||0)}</td></tr>
           <tr style="font-weight:700"><td>Total remuneración del mes</td><td class="num">${clp(c?.remuneracionMonto||0)}</td></tr>
+          <tr style="font-weight:700;border-top:1px solid #333"><td>TOTAL GASTOS DEL ÁREA</td><td class="num">${clp((c?.fijosMonto||0) + (c?.remuneracionMonto||0))}</td></tr>
         </tbody>
       </table>
       <p class="nota-informe">Participación de ${data.area} en ventas totales del mes: ${(participacionArea*100).toFixed(1)}%</p>
