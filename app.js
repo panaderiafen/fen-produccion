@@ -9807,6 +9807,18 @@ async function guardarConfigCosteoUI(btn) {
   desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar', true);
 }
 
+// Normaliza "mes" a formato AAAA-MM sin importar si llega como texto limpio o
+// como fecha (mismo criterio que _normalizarMesVentas en el backend) — para
+// poder comparar meses de forma confiable sin que un formato distinto rompa el filtro.
+function _normalizarMesFrontend(valor) {
+  const s = (valor||'').toString().trim();
+  const match = s.match(/^(\d{4})-(\d{2})/);
+  if (match) return match[1] + '-' + match[2];
+  const fecha = new Date(s);
+  if (!isNaN(fecha.getTime())) return fecha.getFullYear() + '-' + String(fecha.getMonth()+1).padStart(2,'0');
+  return s;
+}
+
 async function renderVistaCostos() {
   const ec = await Cache.get('EC_productos', () => leerHoja('EC_productos'));
   const vista = document.getElementById('vista-costos');
@@ -9831,9 +9843,24 @@ async function renderVistaCostos() {
   } catch(e) {}
   App._ecConfigsDisponibles = configsDisponibles;
 
-  // Agrupar EC_productos por área, para no mezclar cálculos de distintas áreas en una sola tabla
+  // Agrupar EC_productos por área, filtrando SOLO por el mes seleccionado arriba —
+  // antes se mezclaban todos los meses calculados en la misma tabla, sin forma
+  // de distinguir a cuál correspondía cada fila (aparecían productos duplicados).
+  const ecDelMes = ec.filter(r => _normalizarMesFrontend(r.mes) === _normalizarMesFrontend(mesActual));
+  // Salvaguarda: si por algún motivo quedan 2 filas del mismo producto+mes (no
+  // debería pasar, el backend ya limpia esto al calcular) — se muestra solo la
+  // más reciente, en vez de confundir con ambas juntas.
+  const masRecientePorClave = {};
+  ecDelMes.forEach(r => {
+    const clave = r.ID_receta;
+    const existente = masRecientePorClave[clave];
+    if (!existente || new Date(r.fecha_calculo||0) >= new Date(existente.fecha_calculo||0)) {
+      masRecientePorClave[clave] = r;
+    }
+  });
+  const ecDelMesLimpio = Object.values(masRecientePorClave);
   const ecPorArea = {};
-  ec.forEach(r => { (ecPorArea[r.área] = ecPorArea[r.área] || []).push(r); });
+  ecDelMesLimpio.forEach(r => { (ecPorArea[r.área] = ecPorArea[r.área] || []).push(r); });
 
   vista.innerHTML = `
     <div class="vista-header"><h1 class="vista-titulo">Estructuras de costo</h1></div>
@@ -9899,9 +9926,9 @@ async function renderVistaCostos() {
       </div>` : Object.entries(ecPorArea).map(([areaNombre, filas]) => `
       <div class="card" style="margin-bottom:16px">
         <div class="card-head" style="display:flex;justify-content:space-between;align-items:center">
-          <span><i class="ti ti-calculator"></i> ${areaNombre} <span style="font-weight:400;color:var(--txt3)">(${filas.length} producto${filas.length!==1?'s':''})</span></span>
-          <button class="btn-secundario" style="font-size:11px;padding:4px 10px;color:#C62828;border-color:#EF9A9A" onclick="borrarCalculosArea('${areaNombre}',this)">
-            <i class="ti ti-trash"></i> Borrar cálculos de ${areaNombre}
+          <span><i class="ti ti-calculator"></i> ${areaNombre} — ${mesActual} <span style="font-weight:400;color:var(--txt3)">(${filas.length} producto${filas.length!==1?'s':''})</span></span>
+          <button class="btn-secundario" style="font-size:11px;padding:4px 10px;color:#C62828;border-color:#EF9A9A" onclick="borrarCalculosArea('${areaNombre}','${mesActual}',this)">
+            <i class="ti ti-trash"></i> Borrar cálculos de ${areaNombre} — ${mesActual}
           </button>
         </div>
         <div style="overflow-x:auto">
@@ -9918,6 +9945,7 @@ async function renderVistaCostos() {
             <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">P. B2C</th>
             <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">P. B2B</th>
             <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Util. %</th>
+            <th style="text-align:right;padding:9px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);background:var(--bg);border-bottom:1px solid var(--border)">Calculado</th>
           </tr></thead>
           <tbody>
             ${filas.map(r => `<tr>
@@ -9935,6 +9963,7 @@ async function renderVistaCostos() {
               <td class="td-num">${clp(r.precio_B2C)}</td>
               <td class="td-num">${clp(r.precio_B2B)}</td>
               <td class="td-num" style="color:#2E7D32">${parseFloat(r['utilidad_mes_%']||0).toFixed(1)}%</td>
+              <td class="td-num" style="font-size:10px;color:var(--txt3)">${r.fecha_calculo ? new Date(r.fecha_calculo).toLocaleString('es-CL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—'}</td>
             </tr>`).join('')}
           </tbody>
         </table>
@@ -9944,11 +9973,11 @@ async function renderVistaCostos() {
   mostrarVista('costos');
 }
 
-async function borrarCalculosArea(areaNombre, btn) {
-  if (!confirm(`¿Borrar todos los cálculos de "${areaNombre}" en Estructuras de costo?\n\nEsto no afecta las recetas ni sus costos — solo borra esta tabla de precios sugeridos, se puede volver a calcular cuando quiera.`)) return;
+async function borrarCalculosArea(areaNombre, mes, btn) {
+  if (!confirm(`¿Borrar los cálculos de "${areaNombre}" — ${mes} en Estructuras de costo?\n\nEsto no afecta las recetas ni sus costos, ni otros meses ya calculados — solo borra esta tabla de precios sugeridos para ese mes, se puede volver a calcular cuando quiera.`)) return;
   bloquearBtn(btn, 'Borrando...');
   try {
-    const resp = await escribirEnSheet('eliminar_ec_por_area', { area: areaNombre });
+    const resp = await escribirEnSheet('eliminar_ec_por_area', { area: areaNombre, mes });
     if (resp?.ok) {
       toast(resp.msg);
       Cache.invalidar('EC_productos');
