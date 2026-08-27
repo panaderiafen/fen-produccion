@@ -8402,10 +8402,11 @@ function renderInformeGeneralHTML(data) {
   `;
 }
 
-function renderVistaInformeAuditoria() {
+async function renderVistaInformeAuditoria() {
   const vista = document.getElementById('vista-informe-auditoria');
   const hoy = new Date();
   const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+  const mesesDisp = await obtenerMesesDisponibles();
 
   vista.innerHTML = `
     <div class="vista-header no-print"><h1 class="vista-titulo">Informe de trazabilidad</h1></div>
@@ -8423,7 +8424,7 @@ function renderVistaInformeAuditoria() {
         </div>
         <div class="campo">
           <label>Mes (YYYY-MM)</label>
-          <input type="text" id="ia-mes" value="${mesActual}" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+          ${_selectMesHTML('ia-mes', mesActual, mesesDisp)}
         </div>
         <div class="campo">
           <label>Producto <span style="font-weight:400;color:var(--txt3)">(opcional — vacío = toda el área)</span></label>
@@ -8603,6 +8604,7 @@ async function renderVistaMetaVenta() {
   const vista = document.getElementById('vista-meta-venta');
   const hoy = new Date();
   const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+  const mesesDisp = await obtenerMesesDisponibles();
 
   vista.innerHTML = `
     <div class="vista-header"><h1 class="vista-titulo">Meta de venta / punto de equilibrio</h1></div>
@@ -8622,7 +8624,7 @@ async function renderVistaMetaVenta() {
         </div>
         <div class="campo">
           <label>Mes (YYYY-MM)</label>
-          <input type="text" id="mv-mes" value="${mesActual}" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+          ${_selectMesHTML('mv-mes', mesActual, mesesDisp)}
         </div>
         <div class="campo">
           <label>Producto</label>
@@ -8723,7 +8725,7 @@ async function cargarBaseMetaVenta(btn) {
     const costoVariableUnit = costoMPUnit + costoInsumosUnit + (costoMPUnit * (App._mvBase.mermaPct/100));
     const canalInicial = document.getElementById('mv-canal').value;
     const utilidadPctInicial = canalInicial === 'B2B' ? App._mvBase.utilidadB2BPct : App._mvBase.utilidadB2CPct;
-    const precioSugerido = costoVariableUnit * (1 + utilidadPctInicial/100) * 1.19;
+    const precioSugerido = costoVariableUnit * (1 + utilidadPctInicial/100); // neto, sin IVA — coincide con la etiqueta del campo
 
     cont.innerHTML = renderSimuladorMetaVentaHTML(precioSugerido);
     document.getElementById('mv-participacion').value = 10;
@@ -8784,7 +8786,7 @@ function actualizarSimuladorMetaVenta() {
   const canal = document.getElementById('mv-canal').value;
   const utilidadObjetivoPct = canal === 'B2B' ? b.utilidadB2BPct : b.utilidadB2CPct;
 
-  const precioNeto = precio / 1.19;
+  const precioNeto = precio; // el campo ya es neto (sin IVA), no hace falta convertir
   const costoMermaUnit = b.costoMPUnit * (b.mermaPct/100);
   const costoVariableUnit = b.costoMPUnit + b.costoInsumosUnit + costoMermaUnit;
   const margenContribucionUnit = precioNeto - costoVariableUnit;
@@ -8860,6 +8862,7 @@ async function renderVistaRentabilidadReal() {
   const vista = document.getElementById('vista-rentabilidad-real');
   const hoy = new Date();
   const mesActual = App._rentMesActual || `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+  const mesesDisp = await obtenerMesesDisponibles();
 
   vista.innerHTML = `
     <div class="vista-header"><h1 class="vista-titulo">Rentabilidad real</h1></div>
@@ -8872,7 +8875,7 @@ async function renderVistaRentabilidadReal() {
       <div style="display:flex;gap:10px;align-items:flex-end;padding:16px;flex-wrap:wrap">
         <div class="campo">
           <label>Mes (YYYY-MM)</label>
-          <input type="text" id="rent-mes" value="${mesActual}" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+          ${_selectMesHTML('rent-mes', mesActual, mesesDisp)}
         </div>
         <button class="btn-primario" onclick="calcularRentabilidadRealUI(this)">
           <i class="ti ti-scale"></i> Calcular
@@ -9488,6 +9491,7 @@ async function renderVistaConfigCosteo() {
 
   const hoy = new Date();
   const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+  const mesesDisp = await obtenerMesesDisponibles();
 
   vista.innerHTML = `
     <div class="vista-header">
@@ -9510,7 +9514,7 @@ async function renderVistaConfigCosteo() {
         </div>
         <div class="campo">
           <label>Mes (YYYY-MM)</label>
-          <input type="text" id="cc-mes" value="${mesActual}" onchange="verificarVentasSincronizadasParaMes(); renderResumenVentasMes();" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+          ${_selectMesHTML('cc-mes', mesActual, mesesDisp, 'verificarVentasSincronizadasParaMes(); renderResumenVentasMes();')}
         </div>
         <div id="cc-aviso-ventas" class="campo full"></div>
         <div class="campo full">
@@ -9843,6 +9847,46 @@ function _normalizarMesFrontend(valor) {
   return s;
 }
 
+// Junta los meses con datos reales (Ventas mensuales + Config de costeo) para
+// armar el desplegable de mes en las pantallas de Costeo Fase 2 — así no hay
+// que escribir "2026-07" a mano y arriesgarse a un typo. Se cachea en memoria
+// durante la sesión (App._mesesDisponiblesCache) para no recalcular cada vez
+// que se abre una pantalla distinta. Siempre incluye el mes actual y el
+// siguiente, aunque no tengan datos todavía — útil para planificar con
+// "Meta de venta" antes de que exista cualquier registro real.
+async function obtenerMesesDisponibles() {
+  if (App._mesesDisponiblesCache) return App._mesesDisponiblesCache;
+
+  const meses = new Set();
+  const hoy = new Date();
+  meses.add(`${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`);
+  const sig = new Date(hoy.getFullYear(), hoy.getMonth()+1, 1);
+  meses.add(`${sig.getFullYear()}-${String(sig.getMonth()+1).padStart(2,'0')}`);
+
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_ventas_mensuales' }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' });
+    const data = await res.json();
+    (data.ventas || []).forEach(v => { if (v.mes) meses.add(_normalizarMesFrontend(v.mes)); });
+  } catch(e) {}
+
+  try {
+    const cfgTodas = await Cache.get('Config_costeo', () => leerHoja('Config_costeo'));
+    cfgTodas.forEach(c => { if (c.mes) meses.add(_normalizarMesFrontend(c.mes)); });
+  } catch(e) {}
+
+  App._mesesDisponiblesCache = [...meses].sort().reverse(); // más reciente primero
+  return App._mesesDisponiblesCache;
+}
+
+// Arma el <select> de mes en sí, reutilizado en las 5 pantallas de Costeo Fase 2.
+function _selectMesHTML(id, mesActual, meses, onchangeExtra) {
+  if (!meses.includes(mesActual)) meses = [mesActual, ...meses]; // por si el mes guardado no está en la lista (ej. muy viejo)
+  return `<select id="${id}" ${onchangeExtra ? `onchange="${onchangeExtra}"` : ''} style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+    ${meses.map(m => `<option value="${m}" ${m===mesActual?'selected':''}>${m}</option>`).join('')}
+  </select>`;
+}
+
 async function renderVistaCostos() {
   const ec = await Cache.get('EC_productos', () => leerHoja('EC_productos'));
   const vista = document.getElementById('vista-costos');
@@ -9866,6 +9910,7 @@ async function renderVistaCostos() {
     configsDisponibles = data.filas || [];
   } catch(e) {}
   App._ecConfigsDisponibles = configsDisponibles;
+  const mesesDisp = await obtenerMesesDisponibles();
 
   // Agrupar EC_productos por área, filtrando SOLO por el mes seleccionado arriba —
   // antes se mezclaban todos los meses calculados en la misma tabla, sin forma
@@ -9899,7 +9944,7 @@ async function renderVistaCostos() {
         </div>
         <div class="campo">
           <label>Mes (YYYY-MM)</label>
-          <input type="text" id="ec-mes" value="${mesActual}" onchange="App._ecMesActual=this.value;renderVistaCostos()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+          ${_selectMesHTML('ec-mes', mesActual, mesesDisp, "App._ecMesActual=this.value;renderVistaCostos()")}
         </div>
         <div class="campo">
           <label>Producto <span style="font-weight:400;color:var(--txt3)">(opcional)</span></label>
