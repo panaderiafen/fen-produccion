@@ -8694,6 +8694,21 @@ async function cargarBaseMetaVenta(btn) {
     const cfg = filasCfg[filasCfg.length - 1];
     const volumenTotalArea = await calcularVolumenMensualArea(area, mes) || 0;
 
+    // Ventas reales de ESTE producto específico, si ya tiene — se usa como
+    // sugerencia inicial de "cuánto espero vender", pero queda editable. Si es
+    // un producto nuevo sin ventas, simplemente no hay sugerencia (parte en 0).
+    let unidadesRealesProducto = 0;
+    try {
+      const payloadVentas = encodeURIComponent(JSON.stringify({ accion: 'leer_ventas_mensuales' }));
+      const resVentas = await fetch(FEN.WEBAPP_URL + '?payload=' + payloadVentas, { cache: 'no-store' });
+      const dataVentas = await resVentas.json();
+      (dataVentas.ventas || []).forEach(v => {
+        if (v.ID_receta === idReceta && _normalizarMesFrontend(v.mes) === _normalizarMesFrontend(mes)) {
+          unidadesRealesProducto += parseFloat(v.cantidad_vendida) || 0;
+        }
+      });
+    } catch(e) {}
+
     App._mvBase = {
       nombre: receta.nombre, ID_receta: idReceta, área: FEN.AREAS[area].nombre, mes,
       costoMPUnit, costoInsumosUnit,
@@ -8702,7 +8717,7 @@ async function cargarBaseMetaVenta(btn) {
       remuneracionMonto: parseFloat(cfg.remuneracion_monto) || 0,
       utilidadB2CPct: parseFloat(cfg.utilidad_b2c_pct) || 0,
       utilidadB2BPct: parseFloat(cfg.utilidad_b2b_pct) || 0,
-      volumenTotalArea
+      volumenTotalArea, unidadesRealesProducto
     };
 
     const costoVariableUnit = costoMPUnit + costoInsumosUnit + (costoMPUnit * (App._mvBase.mermaPct/100));
@@ -8735,11 +8750,18 @@ function renderSimuladorMetaVentaHTML(precioSugerido) {
             <p style="font-size:10px;color:var(--txt3);margin-top:2px">Sugerido: ${clp(precioSugerido)} — muévalo para ver el impacto</p>
           </div>
           <div class="campo">
-            <label>% del volumen total del área que representa este producto</label>
+            <label>% de los costos fijos + remuneración que le corresponde cargar</label>
             <input type="number" id="mv-participacion" min="0" max="100" step="0.5" value="10"
               oninput="actualizarSimuladorMetaVenta()"
               style="width:100%;padding:8px 12px;border:2px solid #6A1B9A;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:15px;font-weight:700">
-            <p style="font-size:10px;color:var(--txt3);margin-top:2px">Volumen real del área este mes: ${Math.round(b.volumenTotalArea).toLocaleString('es-CL')} unidades</p>
+            <p style="font-size:10px;color:var(--txt3);margin-top:2px">Solo define su cuota en $ — no la cantidad a vender, eso va aparte abajo.</p>
+          </div>
+          <div class="campo">
+            <label>Unidades que espera vender este mes <span style="font-weight:400;color:var(--txt3)">— editable, dato independiente</span></label>
+            <input type="number" id="mv-unidades-esperadas" min="0" step="1" value="${Math.round(b.unidadesRealesProducto)}"
+              oninput="actualizarSimuladorMetaVenta()"
+              style="width:100%;padding:8px 12px;border:2px solid #2E7D32;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:15px;font-weight:700">
+            <p style="font-size:10px;color:var(--txt3);margin-top:2px">${b.unidadesRealesProducto > 0 ? `Precargado con sus ventas reales de ${b.mes}` : 'Sin ventas registradas aún — ingrese su estimación'} · Volumen total del área: ${Math.round(b.volumenTotalArea).toLocaleString('es-CL')} uni</p>
           </div>
         </div>
         <div id="mv-resultado-simulado"></div>
@@ -8758,6 +8780,7 @@ function actualizarSimuladorMetaVenta() {
 
   const precio = parseFloat(document.getElementById('mv-precio').value) || 0;
   const participacionPct = parseFloat(document.getElementById('mv-participacion').value) || 0;
+  const unidadesEsperadas = parseFloat(document.getElementById('mv-unidades-esperadas').value) || 0;
   const canal = document.getElementById('mv-canal').value;
   const utilidadObjetivoPct = canal === 'B2B' ? b.utilidadB2BPct : b.utilidadB2CPct;
 
@@ -8766,11 +8789,12 @@ function actualizarSimuladorMetaVenta() {
   const costoVariableUnit = b.costoMPUnit + b.costoInsumosUnit + costoMermaUnit;
   const margenContribucionUnit = precioNeto - costoVariableUnit;
 
-  // La cantidad estimada y la cuota de costos fijos+remuneración usan el MISMO
-  // % — este producto "representa" esa fracción del área, tanto en volumen
-  // como en la parte de costos fijos que le corresponde cargar.
-  const cantidadEstimada = b.volumenTotalArea * (participacionPct/100);
-  const montoEstimadoVenta = cantidadEstimada * precioNeto;
+  // El % define SOLO la cuota en $ (cuánto de los fijos le corresponde cargar).
+  // La cantidad de unidades a vender es un dato aparte, independiente — si
+  // ambos vinieran del mismo %, la comparación "¿alcanza o no?" daría siempre
+  // el mismo resultado sin importar qué % se elija (el % se cancela solo en
+  // la ecuación) — no aportaba nada real.
+  const montoEstimadoVenta = unidadesEsperadas * precioNeto;
   const totalFijosRemuneracion = b.fijosMonto + b.remuneracionMonto;
   const cuotaFijosRemuneracion = totalFijosRemuneracion * (participacionPct/100);
 
@@ -8783,8 +8807,8 @@ function actualizarSimuladorMetaVenta() {
   }
 
   const metaUnidadesCubrirCuota = cuotaFijosRemuneracion / margenContribucionUnit;
-  const margenGeneradoConEstimada = cantidadEstimada * margenContribucionUnit;
-  const cubreConParticipacionActual = margenGeneradoConEstimada >= cuotaFijosRemuneracion;
+  const margenGeneradoConEsperadas = unidadesEsperadas * margenContribucionUnit;
+  const cubreConUnidadesEsperadas = margenGeneradoConEsperadas >= cuotaFijosRemuneracion;
   const denominadorMeta = margenContribucionUnit - (utilidadObjetivoPct/100) * precioNeto;
   const metaUnidadesUtilidad = denominadorMeta > 0 ? cuotaFijosRemuneracion / denominadorMeta : null;
 
@@ -8799,9 +8823,9 @@ function actualizarSimuladorMetaVenta() {
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:14px">
       <div style="padding:12px;background:var(--bg);border-radius:var(--r-md)">
-        <p style="font-size:10px;text-transform:uppercase;color:var(--txt3);font-weight:700">Con ${participacionPct}% del volumen del área</p>
-        <p style="font-size:18px;font-weight:800;margin-top:2px">${Math.round(cantidadEstimada).toLocaleString('es-CL')} unidades</p>
-        <p style="font-size:11px;color:var(--txt3)">≈ ${clp(montoEstimadoVenta)} en ventas ese mes</p>
+        <p style="font-size:10px;text-transform:uppercase;color:var(--txt3);font-weight:700">Con las unidades que espera vender</p>
+        <p style="font-size:18px;font-weight:800;margin-top:2px">${Math.round(unidadesEsperadas).toLocaleString('es-CL')} unidades</p>
+        <p style="font-size:11px;color:var(--txt3)">≈ ${clp(montoEstimadoVenta)} en ventas · margen generado: ${clp(margenGeneradoConEsperadas)}</p>
       </div>
       <div style="padding:12px;background:var(--bg);border-radius:var(--r-md)">
         <p style="font-size:10px;text-transform:uppercase;color:var(--txt3);font-weight:700">Su cuota de fijos + remuneración</p>
@@ -8810,16 +8834,16 @@ function actualizarSimuladorMetaVenta() {
       </div>
     </div>
 
-    <div style="padding:14px;background:${cubreConParticipacionActual ? '#E8F5E9' : '#FFF3E0'};border-radius:var(--r-md);border:2px solid ${cubreConParticipacionActual ? '#2E7D32' : '#E65100'}">
-      <p style="font-size:11px;font-weight:700;text-transform:uppercase;color:${cubreConParticipacionActual ? '#2E7D32' : '#E65100'}">
-        <i class="ti ${cubreConParticipacionActual ? 'ti-circle-check' : 'ti-alert-triangle'}"></i>
-        ${cubreConParticipacionActual ? 'Con esa participación, cubre su cuota' : 'Con esa participación, NO alcanza a cubrir su cuota'}
+    <div style="padding:14px;background:${cubreConUnidadesEsperadas ? '#E8F5E9' : '#FFF3E0'};border-radius:var(--r-md);border:2px solid ${cubreConUnidadesEsperadas ? '#2E7D32' : '#E65100'}">
+      <p style="font-size:11px;font-weight:700;text-transform:uppercase;color:${cubreConUnidadesEsperadas ? '#2E7D32' : '#E65100'}">
+        <i class="ti ${cubreConUnidadesEsperadas ? 'ti-circle-check' : 'ti-alert-triangle'}"></i>
+        ${cubreConUnidadesEsperadas ? 'Con esas unidades, cubre su cuota' : 'Con esas unidades, NO alcanza a cubrir su cuota'}
       </p>
       <p style="font-size:22px;font-weight:800;margin-top:4px">${Math.ceil(metaUnidadesCubrirCuota).toLocaleString('es-CL')} unidades</p>
       <p style="font-size:11px;color:var(--txt3);margin-top:2px">
         Es la cantidad mínima que necesita vender para que el margen generado cubra exactamente su cuota de costos fijos + remuneración
-        (${clp(cuotaFijosRemuneracion)}). Con el ${participacionPct}% que puso, estimó ${Math.round(cantidadEstimada).toLocaleString('es-CL')} unidades
-        — ${cubreConParticipacionActual ? 'que alcanzan y sobran' : 'que no alcanzan, faltarían ' + Math.ceil(metaUnidadesCubrirCuota - cantidadEstimada).toLocaleString('es-CL') + ' más'}.
+        (${clp(cuotaFijosRemuneracion)}). Con las ${Math.round(unidadesEsperadas).toLocaleString('es-CL')} unidades que puso arriba
+        — ${cubreConUnidadesEsperadas ? 'alcanzan y sobran' : 'no alcanzan, faltarían ' + Math.ceil(metaUnidadesCubrirCuota - unidadesEsperadas).toLocaleString('es-CL') + ' más'}.
       </p>
     </div>
 
