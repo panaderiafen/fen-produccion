@@ -1469,6 +1469,15 @@ input, select, textarea { font-family: inherit; }
     border-top: none;
     border-bottom: 1px solid var(--border);
   }
+  /* El gris claro (var(--txt3)) que se usa para fechas, encabezados de columna
+     y notas casi no se nota al imprimir — se deja el mismo tamaño de letra,
+     solo se cambia a un café legible, sin afectar cómo se ve en pantalla. */
+  .encabezado-informe p,
+  .id-chico,
+  .nota-informe,
+  .tabla-informe th {
+    color: #6D4C41 !important;
+  }
   /* La app usa altura fija + scroll interno para funcionar en pantalla (#app,
      .layout, .content) — eso mismo hace que al imprimir solo se capture una
      "pantalla" de alto, cortando el resto. Se libera todo eso solo para
