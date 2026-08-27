@@ -8711,6 +8711,19 @@ async function cargarBaseMetaVenta(btn) {
       });
     } catch(e) {}
 
+    // Peso de este producto y de TODOS los productos activos del área — solo
+    // se usa si el producto no tiene ventas reales (nuevo), como base para
+    // sugerir un % razonable sin depender de un volumen ya asumido.
+    const pesoUnidadEsteProducto = (ingredientes.reduce((s,i)=>s+(parseFloat(i.gramos)||0),0)) / porciones;
+    const productosArea = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta' && codigoAreaDesdeReceta(r) === area);
+    let pesoTotalAreaProductos = 0;
+    productosArea.forEach(p => {
+      let ingP = [];
+      try { ingP = JSON.parse(p.ingredientes_JSON || '[]'); } catch(e) {}
+      const porcP = parseInt(p.porciones_base) || 1;
+      pesoTotalAreaProductos += ingP.reduce((s,i)=>s+(parseFloat(i.gramos)||0),0) / porcP;
+    });
+
     App._mvBase = {
       nombre: receta.nombre, ID_receta: idReceta, área: FEN.AREAS[area].nombre, mes,
       costoMPUnit, costoInsumosUnit,
@@ -8719,8 +8732,22 @@ async function cargarBaseMetaVenta(btn) {
       remuneracionMonto: parseFloat(cfg.remuneracion_monto) || 0,
       utilidadB2CPct: parseFloat(cfg.utilidad_b2c_pct) || 0,
       utilidadB2BPct: parseFloat(cfg.utilidad_b2b_pct) || 0,
-      volumenTotalArea, unidadesRealesProducto
+      volumenTotalArea, unidadesRealesProducto,
+      pesoUnidadEsteProducto, pesoTotalAreaProductos
     };
+
+    // Sugerencia de % — con historial real, usa ventas reales; sin historial
+    // (producto nuevo), usa el peso relativo dentro de todos los productos del área.
+    if (unidadesRealesProducto > 0 && volumenTotalArea > 0) {
+      App._mvParticipacionSugerida = Math.round((unidadesRealesProducto / volumenTotalArea) * 1000) / 10;
+      App._mvParticipacionFuente = 'historial';
+    } else if (pesoTotalAreaProductos > 0) {
+      App._mvParticipacionSugerida = Math.round((pesoUnidadEsteProducto / pesoTotalAreaProductos) * 1000) / 10;
+      App._mvParticipacionFuente = 'peso';
+    } else {
+      App._mvParticipacionSugerida = 10;
+      App._mvParticipacionFuente = 'defecto';
+    }
 
     const costoVariableUnit = costoMPUnit + costoInsumosUnit + (costoMPUnit * (App._mvBase.mermaPct/100));
     const canalInicial = document.getElementById('mv-canal').value;
@@ -8728,7 +8755,7 @@ async function cargarBaseMetaVenta(btn) {
     const precioSugerido = costoVariableUnit * (1 + utilidadPctInicial/100) * 1.19; // bruto, con IVA — coincide con la etiqueta del campo
 
     cont.innerHTML = renderSimuladorMetaVentaHTML(precioSugerido);
-    document.getElementById('mv-participacion').value = 10;
+    actualizarNotaParticipacion();
     actualizarSimuladorMetaVenta();
     actualizarGaugeUtilidad();
     desbloquearBtn(btn, '<i class="ti ti-target-arrow"></i> Cargar', true);
@@ -8753,11 +8780,20 @@ function renderSimuladorMetaVentaHTML(precioSugerido) {
             <p style="font-size:10px;color:var(--txt3);margin-top:2px">Sugerido: ${clp(precioSugerido)} — muévalo para ver el impacto</p>
           </div>
           <div class="campo">
-            <label>% de los costos fijos + remuneración que le corresponde cargar</label>
-            <input type="number" id="mv-participacion" min="0" max="100" step="0.5" value="10"
-              oninput="actualizarSimuladorMetaVenta();actualizarGaugeUtilidad()"
-              style="width:100%;padding:8px 12px;border:2px solid #6A1B9A;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:15px;font-weight:700">
-            <p style="font-size:10px;color:var(--txt3);margin-top:2px">Solo define su cuota en $ — no la cantidad a vender, eso va aparte abajo.</p>
+            <label style="display:flex;align-items:center;gap:6px">
+              % de los costos fijos + remuneración que le corresponde cargar
+              <button type="button" onclick="mostrarInfoParticipacion()" title="¿Cómo estimo un % más real?"
+                style="background:none;border:1px solid var(--border);border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer;color:var(--txt3);padding:0">i</button>
+            </label>
+            <div style="display:flex;gap:6px">
+              <input type="number" id="mv-participacion" min="0" max="100" step="0.5" value="${App._mvParticipacionSugerida ?? 10}"
+                oninput="actualizarSimuladorMetaVenta();actualizarGaugeUtilidad()"
+                style="flex:1;padding:8px 12px;border:2px solid #6A1B9A;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:15px;font-weight:700">
+              <button type="button" class="btn-secundario" onclick="sugerirParticipacionMetaVenta()" style="font-size:11px;padding:0 10px;white-space:nowrap">
+                <i class="ti ti-bulb"></i> Sugerir
+              </button>
+            </div>
+            <p id="mv-participacion-nota" style="font-size:10px;color:var(--txt3);margin-top:2px">Solo define su cuota en $ — no la cantidad a vender, eso va aparte abajo.</p>
           </div>
           <div class="campo">
             <label>Unidades que espera vender este mes <span style="font-weight:400;color:var(--txt3)">— editable, dato independiente</span></label>
@@ -8871,6 +8907,61 @@ function actualizarSimuladorMetaVenta() {
 // Gauge de % de utilidad — reacciona a los mismos campos de precio y cantidad
 // de arriba, calculado aparte (no depende de que actualizarSimuladorMetaVenta
 // termine bien) para que funcione incluso en el caso de margen negativo.
+// Actualiza la nota bajo el campo de % para que quede claro de dónde salió
+// la sugerencia — con historial real, o estimada por peso (producto nuevo).
+function actualizarNotaParticipacion() {
+  const nota = document.getElementById('mv-participacion-nota');
+  if (!nota) return;
+  const fuente = App._mvParticipacionFuente;
+  if (fuente === 'historial') {
+    nota.innerHTML = `Sugerido con base en ventas reales de este producto (${App._mvBase.unidadesRealesProducto.toFixed(0)} de ${Math.round(App._mvBase.volumenTotalArea).toLocaleString('es-CL')} unidades del área).`;
+  } else if (fuente === 'peso') {
+    nota.innerHTML = `Producto sin ventas todavía — sugerido según su peso relativo entre todos los productos activos del área.`;
+  } else {
+    nota.innerHTML = `Solo define su cuota en $ — no la cantidad a vender, eso va aparte abajo.`;
+  }
+}
+
+// Vuelve a calcular y aplicar la sugerencia — útil si el usuario la cambió a
+// mano y quiere volver al punto de partida sugerido.
+function sugerirParticipacionMetaVenta() {
+  const input = document.getElementById('mv-participacion');
+  if (!input || App._mvParticipacionSugerida === undefined) return;
+  input.value = App._mvParticipacionSugerida;
+  actualizarNotaParticipacion();
+  actualizarSimuladorMetaVenta();
+  actualizarGaugeUtilidad();
+  toast('Sugerencia aplicada');
+}
+
+function mostrarInfoParticipacion() {
+  mostrarModalInfo('¿Cómo estimo un % de participación más real?', `
+    <p style="margin-bottom:12px"><strong>1. Si el producto ya tiene historial (aunque sea parcial)</strong><br>
+    Lo más confiable: mire cuánto representó realmente en meses anteriores — unidades de este producto ÷ unidades
+    totales del área, usando datos reales de Ventas mensuales. Si vendió 300 de las 3.000 unidades que hizo el área
+    el mes pasado, eso es 10% — un punto de partida mucho mejor que adivinar.</p>
+
+    <p style="margin-bottom:12px"><strong>2. Si es un producto nuevo, sin historial</strong><br>
+    Busque un producto parecido que ya exista (mismo tipo, precio similar, mismo rol en la vitrina) y use su
+    participación histórica como referencia. Un producto chico y económico nuevo probablemente se parezca más a
+    otro producto chico que a uno grande o especial.</p>
+
+    <p style="margin-bottom:12px"><strong>3. Coherencia con el método de prorrateo que usa</strong><br>
+    Si en "Estructura de costo" usa el método <em>por peso</em>, tiene sentido que este % también se base en peso,
+    no solo en cantidad de unidades — así los dos números hablan el mismo idioma. Si usa <em>por unidad</em>, el %
+    es simplemente unidades esperadas de este producto ÷ unidades totales esperadas del área.</p>
+
+    <p style="margin-bottom:12px"><strong>4. El rol estratégico del producto</strong><br>
+    ¿Es un producto "gancho" (alto volumen, para atraer gente) o uno "especialidad" (bajo volumen, margen alto)?
+    Eso cambia mucho qué % es razonable esperar.</p>
+
+    <p style="margin-bottom:0"><strong>5. Empezar conservador y ajustar con el tiempo</strong><br>
+    Para un producto nunca vendido, mejor partir con un % modesto (5-10%) y revisar el mes siguiente con
+    "Rentabilidad real" — comparando lo que realmente pasó contra lo que asumió acá, para afinar la próxima vez.</p>
+  `);
+}
+
+
 function actualizarGaugeUtilidad() {
   const b = App._mvBase;
   const gauge = document.getElementById('mv-gauge-utilidad');
@@ -11081,6 +11172,27 @@ function desbloquearBtn(btn, htmlOriginal, exito) {
       btn.innerHTML = htmlOriginal || btn.dataset.originalHtml || 'Guardar';
     }
   }, 400);
+}
+
+// Modal informativo genérico — se crea y destruye solo, sin necesitar nada
+// pre-armado en index.html. Reutilizable para cualquier ayuda contextual.
+function mostrarModalInfo(titulo, contenidoHTML) {
+  const existente = document.getElementById('modal-info-generico');
+  if (existente) existente.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'modal-info-generico';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:var(--r-lg);max-width:560px;width:100%;max-height:85vh;overflow-y:auto;padding:24px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+        <h2 style="font-size:18px;font-weight:700;margin:0">${titulo}</h2>
+        <button onclick="document.getElementById('modal-info-generico').remove()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--txt3);line-height:1;padding:0 0 0 12px">✕</button>
+      </div>
+      <div style="font-size:13px;color:var(--txt2);line-height:1.6">${contenidoHTML}</div>
+    </div>`;
+  document.body.appendChild(overlay);
 }
 
 function toast(msg, tipo = '') {
