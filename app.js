@@ -8607,10 +8607,10 @@ async function renderVistaMetaVenta() {
   vista.innerHTML = `
     <div class="vista-header"><h1 class="vista-titulo">Meta de venta / punto de equilibrio</h1></div>
     <p style="font-size:12px;color:var(--txt3);margin-bottom:16px">
-      Al revés de "Rentabilidad real" — en vez de mirar ventas ya hechas, calcula cuántas unidades
-      necesita vender para cubrir costos, y cuántas más para llegar a la utilidad que quiere. Útil para
-      planificar un producto antes de sacarlo a la venta. Requiere Config de costeo y Estructura de costo
-      calculadas para el área/mes.
+      Al revés de "Rentabilidad real" — en vez de mirar ventas ya hechas, simula cuántas unidades
+      necesita vender para cubrir su parte de costos, y cuántas más para llegar a la utilidad que quiere.
+      Funciona igual para un producto nuevo que nunca se ha vendido — el precio es solo una sugerencia
+      inicial, se puede mover a mano y todo se recalcula al instante.
     </p>
     <div class="card" style="margin-bottom:16px">
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:16px">
@@ -8632,13 +8632,13 @@ async function renderVistaMetaVenta() {
         </div>
         <div class="campo">
           <label>Canal</label>
-          <select id="mv-canal" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+          <select id="mv-canal" onchange="actualizarSimuladorMetaVenta()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
             <option value="B2C">B2C</option>
             <option value="B2B">B2B</option>
           </select>
         </div>
-        <button class="btn-primario" onclick="calcularMetaVentaUI(this)">
-          <i class="ti ti-target-arrow"></i> Calcular
+        <button class="btn-primario" onclick="cargarBaseMetaVenta(this)">
+          <i class="ti ti-target-arrow"></i> Cargar
         </button>
       </div>
     </div>
@@ -8656,90 +8656,181 @@ function cargarProductosMetaVenta() {
   sel.innerHTML = `<option value="">— Elija un producto —</option>${productos.map(p => `<option value="${p.ID_receta}">${p.nombre}</option>`).join('')}`;
 }
 
-async function calcularMetaVentaUI(btn) {
+// Trae los datos BASE (costo variable de la receta, config de costeo, volumen
+// real del área) una sola vez desde el servidor — de ahí en adelante, mover el
+// precio o el % de participación recalcula todo en el navegador, sin volver a
+// consultar nada. Funciona igual con o sin ventas históricas: el costo variable
+// sale directo de los ingredientes de la receta, no de Estructura de costo.
+async function cargarBaseMetaVenta(btn) {
   const area = document.getElementById('mv-area').value;
   const mes = document.getElementById('mv-mes').value.trim();
   const idReceta = document.getElementById('mv-producto').value;
-  const canal = document.getElementById('mv-canal').value;
   const cont = document.getElementById('meta-venta-resultado');
   if (!idReceta) { toast('Elija un producto', 'error'); return; }
 
-  bloquearBtn(btn, 'Calculando...');
+  bloquearBtn(btn, 'Cargando...');
   cont.innerHTML = '<p style="color:var(--txt3)">Cargando...</p>';
 
+  const receta = App.recetas.find(r => r.ID_receta === idReceta);
+  if (!receta) { cont.innerHTML = '<p style="color:#C62828">Receta no encontrada.</p>'; desbloquearBtn(btn, '<i class="ti ti-target-arrow"></i> Cargar', true); return; }
+
+  let ingredientes = [], insumos = [];
+  try { ingredientes = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
+  try { insumos = JSON.parse(receta.insumos_JSON || '[]'); } catch(e) {}
+  const porciones = parseInt(receta.porciones_base) || 1;
+  const costoMPUnit = ingredientes.reduce((s,i) => s + (parseFloat(i.costo)||0), 0) / porciones;
+  const costoInsumosUnit = insumos.reduce((s,i) => s + (parseFloat(i.costo)||0), 0) / porciones;
+
   try {
-    const payload = encodeURIComponent(JSON.stringify({ accion: 'calcular_meta_venta', area, mes, ID_receta: idReceta, canal }));
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
-    const data = await res.json();
-    if (!data.ok) {
-      cont.innerHTML = `<div class="empty-state"><i class="ti ti-target-arrow"></i><h2>${data.msg}</h2></div>`;
-      desbloquearBtn(btn, '<i class="ti ti-target-arrow"></i> Calcular', true);
+    const payloadCfg = encodeURIComponent(JSON.stringify({ accion: 'leer_config_costeo', area, mes }));
+    const resCfg = await fetch(FEN.WEBAPP_URL + '?payload=' + payloadCfg, { cache: 'no-store' });
+    const dataCfg = await resCfg.json();
+    const filasCfg = dataCfg.filas || [];
+    if (!filasCfg.length) {
+      cont.innerHTML = `<div class="empty-state"><i class="ti ti-target-arrow"></i><h2>No hay Config de costeo guardada para ${FEN.AREAS[area].nombre} / ${mes}</h2></div>`;
+      desbloquearBtn(btn, '<i class="ti ti-target-arrow"></i> Cargar', true);
       return;
     }
-    cont.innerHTML = renderMetaVentaHTML(data);
-    desbloquearBtn(btn, '<i class="ti ti-target-arrow"></i> Calcular', true);
+    const cfg = filasCfg[filasCfg.length - 1];
+    const volumenTotalArea = await calcularVolumenMensualArea(area, mes) || 0;
+
+    App._mvBase = {
+      nombre: receta.nombre, ID_receta: idReceta, área: FEN.AREAS[area].nombre, mes,
+      costoMPUnit, costoInsumosUnit,
+      mermaPct: parseFloat(cfg.merma_pct) || 0,
+      fijosMonto: parseFloat(cfg.costos_fijos_monto) || 0,
+      remuneracionMonto: parseFloat(cfg.remuneracion_monto) || 0,
+      utilidadB2CPct: parseFloat(cfg.utilidad_b2c_pct) || 0,
+      utilidadB2BPct: parseFloat(cfg.utilidad_b2b_pct) || 0,
+      volumenTotalArea
+    };
+
+    const costoVariableUnit = costoMPUnit + costoInsumosUnit + (costoMPUnit * (App._mvBase.mermaPct/100));
+    const canalInicial = document.getElementById('mv-canal').value;
+    const utilidadPctInicial = canalInicial === 'B2B' ? App._mvBase.utilidadB2BPct : App._mvBase.utilidadB2CPct;
+    const precioSugerido = costoVariableUnit * (1 + utilidadPctInicial/100) * 1.19;
+
+    cont.innerHTML = renderSimuladorMetaVentaHTML(precioSugerido);
+    document.getElementById('mv-participacion').value = 10;
+    actualizarSimuladorMetaVenta();
+    desbloquearBtn(btn, '<i class="ti ti-target-arrow"></i> Cargar', true);
   } catch(e) {
     cont.innerHTML = `<p style="color:#C62828">Error: ${e.message}</p>`;
-    desbloquearBtn(btn, '<i class="ti ti-target-arrow"></i> Calcular', true);
+    desbloquearBtn(btn, '<i class="ti ti-target-arrow"></i> Cargar', true);
   }
 }
 
-function renderMetaVentaHTML(data) {
-  if (data.sinMargen) {
-    return `
-      <div class="card" style="border:2px solid #C62828">
-        <div class="card-head" style="background:#FFEBEE;color:#C62828"><i class="ti ti-alert-triangle"></i> ${data.nombre} — ${data.canal}</div>
-        <div style="padding:16px">
-          <p style="font-size:13px;color:#C62828;font-weight:600">${data.msg}</p>
-          <table class="tabla-informe" style="margin-top:10px">
-            <tbody>
-              <tr><td>Precio actual (neto)</td><td class="num">${clp(data.precio)}</td></tr>
-              <tr><td>Costo variable (MP+insumos+merma)</td><td class="num">${clp(data.costoVariableUnit)}</td></tr>
-              <tr style="font-weight:700"><td>Margen de contribución</td><td class="num" style="color:#C62828">${clp(data.margenContribucionUnit)}</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>`;
-  }
-
+function renderSimuladorMetaVentaHTML(precioSugerido) {
+  const b = App._mvBase;
   return `
     <div class="card">
-      <div class="card-head"><i class="ti ti-target-arrow"></i> ${data.nombre} — ${data.canal} — ${data.area}, ${data.mes}</div>
+      <div class="card-head"><i class="ti ti-target-arrow"></i> ${b.nombre} — ${b.área}, ${b.mes}</div>
       <div style="padding:16px">
-        <h4 style="font-size:11px;text-transform:uppercase;color:var(--txt3);margin-bottom:6px">Margen de contribución (por unidad)</h4>
-        <table class="tabla-informe">
-          <tbody>
-            <tr><td>Precio de venta (neto, sin IVA)</td><td class="num">${clp(data.precio)}</td></tr>
-            <tr><td>− Costo variable (MP + insumos + merma)</td><td class="num">${clp(data.costoVariableUnit)}</td></tr>
-            <tr style="font-weight:700;border-top:1px solid #999"><td>= Margen de contribución</td><td class="num">${clp(data.margenContribucionUnit)}</td></tr>
-          </tbody>
-        </table>
-        <p class="nota-informe">Este margen es lo que cada unidad vendida aporta para pagar costos fijos y remuneración — no depende de cuánto venda, a diferencia del costo fijo ya prorrateado.</p>
-
-        <h4 style="font-size:11px;text-transform:uppercase;color:var(--txt3);margin:16px 0 6px">Costos fijos + remuneración del área, este mes</h4>
-        <table class="tabla-informe">
-          <tbody>
-            <tr><td>Costos fijos totales</td><td class="num">${clp(data.fijosMonto)}</td></tr>
-            <tr><td>Remuneración total</td><td class="num">${clp(data.remuneracionMonto)}</td></tr>
-            <tr style="font-weight:700;border-top:1px solid #999"><td>Total a cubrir</td><td class="num">${clp(data.totalFijosRemuneracion)}</td></tr>
-          </tbody>
-        </table>
-
-        <div style="margin-top:16px;padding:14px;background:#E3F2FD;border-radius:var(--r-md)">
-          <p style="font-size:11px;font-weight:700;text-transform:uppercase;color:#1565C0">Punto de equilibrio — si este fuera el único producto del área</p>
-          <p style="font-size:22px;font-weight:800;color:#1565C0;margin-top:4px">${Math.ceil(data.puntoEquilibrioTotal).toLocaleString('es-CL')} unidades</p>
-          <p style="font-size:11px;color:var(--txt3);margin-top:4px">Vendiendo esta cantidad, el margen generado cubre exactamente los costos fijos + remuneración de toda el área ese mes — desde la unidad siguiente, empieza la utilidad real.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:16px">
+          <div class="campo">
+            <label>Precio de venta (neto, sin IVA) <span style="font-weight:400;color:var(--txt3)">— editable</span></label>
+            <input type="number" id="mv-precio" min="0" step="1" value="${Math.round(precioSugerido)}"
+              oninput="actualizarSimuladorMetaVenta()"
+              style="width:100%;padding:8px 12px;border:2px solid #1565C0;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:15px;font-weight:700">
+            <p style="font-size:10px;color:var(--txt3);margin-top:2px">Sugerido: ${clp(precioSugerido)} — muévalo para ver el impacto</p>
+          </div>
+          <div class="campo">
+            <label>% del volumen total del área que representa este producto</label>
+            <input type="number" id="mv-participacion" min="0" max="100" step="0.5" value="10"
+              oninput="actualizarSimuladorMetaVenta()"
+              style="width:100%;padding:8px 12px;border:2px solid #6A1B9A;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:15px;font-weight:700">
+            <p style="font-size:10px;color:var(--txt3);margin-top:2px">Volumen real del área este mes: ${Math.round(b.volumenTotalArea).toLocaleString('es-CL')} unidades</p>
+          </div>
         </div>
-
-        ${data.metaUnidadesUtilidad !== null ? `
-        <div style="margin-top:12px;padding:14px;background:#E8F5E9;border-radius:var(--r-md)">
-          <p style="font-size:11px;font-weight:700;text-transform:uppercase;color:#2E7D32">Meta para alcanzar el ${data.utilidadObjetivoPct}% de utilidad objetivo</p>
-          <p style="font-size:22px;font-weight:800;color:#2E7D32;margin-top:4px">${Math.ceil(data.metaUnidadesUtilidad).toLocaleString('es-CL')} unidades</p>
-          <p style="font-size:11px;color:var(--txt3);margin-top:4px">Vendiendo esta cantidad de este producto (asumiendo que es el único que sostiene el área), la utilidad generada equivale al ${data.utilidadObjetivoPct}% sobre las ventas totales.</p>
-        </div>` : `<p class="nota-informe" style="margin-top:12px">No se pudo calcular la meta de utilidad objetivo — el margen es muy bajo comparado con el % objetivo.</p>`}
+        <div id="mv-resultado-simulado"></div>
       </div>
     </div>`;
 }
+
+// Recalcula TODO en el navegador cada vez que cambia el precio, el % o el
+// canal — no vuelve a consultar el servidor. Esto es lo que permite "ir
+// moviendo valores y viendo qué pasa" en vivo.
+function actualizarSimuladorMetaVenta() {
+  const b = App._mvBase;
+  if (!b) return;
+  const cont = document.getElementById('mv-resultado-simulado');
+  if (!cont) return;
+
+  const precio = parseFloat(document.getElementById('mv-precio').value) || 0;
+  const participacionPct = parseFloat(document.getElementById('mv-participacion').value) || 0;
+  const canal = document.getElementById('mv-canal').value;
+  const utilidadObjetivoPct = canal === 'B2B' ? b.utilidadB2BPct : b.utilidadB2CPct;
+
+  const precioNeto = precio / 1.19;
+  const costoMermaUnit = b.costoMPUnit * (b.mermaPct/100);
+  const costoVariableUnit = b.costoMPUnit + b.costoInsumosUnit + costoMermaUnit;
+  const margenContribucionUnit = precioNeto - costoVariableUnit;
+
+  // La cantidad estimada y la cuota de costos fijos+remuneración usan el MISMO
+  // % — este producto "representa" esa fracción del área, tanto en volumen
+  // como en la parte de costos fijos que le corresponde cargar.
+  const cantidadEstimada = b.volumenTotalArea * (participacionPct/100);
+  const montoEstimadoVenta = cantidadEstimada * precioNeto;
+  const totalFijosRemuneracion = b.fijosMonto + b.remuneracionMonto;
+  const cuotaFijosRemuneracion = totalFijosRemuneracion * (participacionPct/100);
+
+  if (margenContribucionUnit <= 0) {
+    cont.innerHTML = `
+      <div style="padding:14px;background:#FFEBEE;border-radius:var(--r-md);border:2px solid #C62828">
+        <p style="font-size:13px;color:#C62828;font-weight:700"><i class="ti ti-alert-triangle"></i> Con este precio, ni siquiera cubre el costo variable (MP+insumos+merma: ${clp(costoVariableUnit)}) — vender más unidades solo genera más pérdida.</p>
+      </div>`;
+    return;
+  }
+
+  const metaUnidadesCubrirCuota = cuotaFijosRemuneracion / margenContribucionUnit;
+  const margenGeneradoConEstimada = cantidadEstimada * margenContribucionUnit;
+  const cubreConParticipacionActual = margenGeneradoConEstimada >= cuotaFijosRemuneracion;
+  const denominadorMeta = margenContribucionUnit - (utilidadObjetivoPct/100) * precioNeto;
+  const metaUnidadesUtilidad = denominadorMeta > 0 ? cuotaFijosRemuneracion / denominadorMeta : null;
+
+  cont.innerHTML = `
+    <table class="tabla-informe" style="margin-bottom:14px">
+      <tbody>
+        <tr><td>Precio de venta (neto)</td><td class="num">${clp(precioNeto)}</td></tr>
+        <tr><td>− Costo variable (MP ${clp(b.costoMPUnit)} + insumos ${clp(b.costoInsumosUnit)} + merma ${clp(costoMermaUnit)})</td><td class="num">${clp(costoVariableUnit)}</td></tr>
+        <tr style="font-weight:700;border-top:1px solid #999"><td>= Margen de contribución por unidad</td><td class="num">${clp(margenContribucionUnit)}</td></tr>
+      </tbody>
+    </table>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:14px">
+      <div style="padding:12px;background:var(--bg);border-radius:var(--r-md)">
+        <p style="font-size:10px;text-transform:uppercase;color:var(--txt3);font-weight:700">Con ${participacionPct}% del volumen del área</p>
+        <p style="font-size:18px;font-weight:800;margin-top:2px">${Math.round(cantidadEstimada).toLocaleString('es-CL')} unidades</p>
+        <p style="font-size:11px;color:var(--txt3)">≈ ${clp(montoEstimadoVenta)} en ventas ese mes</p>
+      </div>
+      <div style="padding:12px;background:var(--bg);border-radius:var(--r-md)">
+        <p style="font-size:10px;text-transform:uppercase;color:var(--txt3);font-weight:700">Su cuota de fijos + remuneración</p>
+        <p style="font-size:18px;font-weight:800;margin-top:2px">${clp(cuotaFijosRemuneracion)}</p>
+        <p style="font-size:11px;color:var(--txt3)">${participacionPct}% de ${clp(totalFijosRemuneracion)} totales del área</p>
+      </div>
+    </div>
+
+    <div style="padding:14px;background:${cubreConParticipacionActual ? '#E8F5E9' : '#FFF3E0'};border-radius:var(--r-md);border:2px solid ${cubreConParticipacionActual ? '#2E7D32' : '#E65100'}">
+      <p style="font-size:11px;font-weight:700;text-transform:uppercase;color:${cubreConParticipacionActual ? '#2E7D32' : '#E65100'}">
+        <i class="ti ${cubreConParticipacionActual ? 'ti-circle-check' : 'ti-alert-triangle'}"></i>
+        ${cubreConParticipacionActual ? 'Con esa participación, cubre su cuota' : 'Con esa participación, NO alcanza a cubrir su cuota'}
+      </p>
+      <p style="font-size:22px;font-weight:800;margin-top:4px">${Math.ceil(metaUnidadesCubrirCuota).toLocaleString('es-CL')} unidades</p>
+      <p style="font-size:11px;color:var(--txt3);margin-top:2px">
+        Es la cantidad mínima que necesita vender para que el margen generado cubra exactamente su cuota de costos fijos + remuneración
+        (${clp(cuotaFijosRemuneracion)}). Con el ${participacionPct}% que puso, estimó ${Math.round(cantidadEstimada).toLocaleString('es-CL')} unidades
+        — ${cubreConParticipacionActual ? 'que alcanzan y sobran' : 'que no alcanzan, faltarían ' + Math.ceil(metaUnidadesCubrirCuota - cantidadEstimada).toLocaleString('es-CL') + ' más'}.
+      </p>
+    </div>
+
+    ${metaUnidadesUtilidad !== null ? `
+    <div style="margin-top:12px;padding:14px;background:#E3F2FD;border-radius:var(--r-md)">
+      <p style="font-size:11px;font-weight:700;text-transform:uppercase;color:#1565C0">Meta para alcanzar el ${utilidadObjetivoPct}% de utilidad objetivo (sobre su propia cuota)</p>
+      <p style="font-size:22px;font-weight:800;color:#1565C0;margin-top:4px">${Math.ceil(metaUnidadesUtilidad).toLocaleString('es-CL')} unidades</p>
+    </div>` : `<p class="nota-informe" style="margin-top:12px">No se pudo calcular la meta de utilidad objetivo con este precio — pruebe subiéndolo un poco.</p>`}
+  `;
+}
+
 
 async function renderVistaRentabilidadReal() {
   const vista = document.getElementById('vista-rentabilidad-real');
