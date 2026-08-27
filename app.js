@@ -8725,7 +8725,7 @@ async function cargarBaseMetaVenta(btn) {
     const costoVariableUnit = costoMPUnit + costoInsumosUnit + (costoMPUnit * (App._mvBase.mermaPct/100));
     const canalInicial = document.getElementById('mv-canal').value;
     const utilidadPctInicial = canalInicial === 'B2B' ? App._mvBase.utilidadB2BPct : App._mvBase.utilidadB2CPct;
-    const precioSugerido = costoVariableUnit * (1 + utilidadPctInicial/100); // neto, sin IVA — coincide con la etiqueta del campo
+    const precioSugerido = costoVariableUnit * (1 + utilidadPctInicial/100) * 1.19; // bruto, con IVA — coincide con la etiqueta del campo
 
     cont.innerHTML = renderSimuladorMetaVentaHTML(precioSugerido);
     document.getElementById('mv-participacion').value = 10;
@@ -8745,7 +8745,7 @@ function renderSimuladorMetaVentaHTML(precioSugerido) {
       <div style="padding:16px">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:16px">
           <div class="campo">
-            <label>Precio de venta (neto, sin IVA) <span style="font-weight:400;color:var(--txt3)">— editable</span></label>
+            <label>Precio de venta (bruto, con IVA) <span style="font-weight:400;color:var(--txt3)">— editable</span></label>
             <input type="number" id="mv-precio" min="0" step="1" value="${Math.round(precioSugerido)}"
               oninput="actualizarSimuladorMetaVenta()"
               style="width:100%;padding:8px 12px;border:2px solid #1565C0;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:15px;font-weight:700">
@@ -8786,7 +8786,7 @@ function actualizarSimuladorMetaVenta() {
   const canal = document.getElementById('mv-canal').value;
   const utilidadObjetivoPct = canal === 'B2B' ? b.utilidadB2BPct : b.utilidadB2CPct;
 
-  const precioNeto = precio; // el campo ya es neto (sin IVA), no hace falta convertir
+  const precioNeto = precio / 1.19; // el campo es bruto (con IVA) — se convierte a neto para el margen
   const costoMermaUnit = b.costoMPUnit * (b.mermaPct/100);
   const costoVariableUnit = b.costoMPUnit + b.costoInsumosUnit + costoMermaUnit;
   const margenContribucionUnit = precioNeto - costoVariableUnit;
@@ -8817,7 +8817,8 @@ function actualizarSimuladorMetaVenta() {
   cont.innerHTML = `
     <table class="tabla-informe" style="margin-bottom:14px">
       <tbody>
-        <tr><td>Precio de venta (neto)</td><td class="num">${clp(precioNeto)}</td></tr>
+        <tr><td>Precio de venta (bruto, con IVA)</td><td class="num">${clp(precio)}</td></tr>
+        <tr style="color:var(--txt3)"><td>÷ 1.19 = Precio de venta (neto)</td><td class="num">${clp(precioNeto)}</td></tr>
         <tr><td>− Costo variable (MP ${clp(b.costoMPUnit)} + insumos ${clp(b.costoInsumosUnit)} + merma ${clp(costoMermaUnit)})</td><td class="num">${clp(costoVariableUnit)}</td></tr>
         <tr style="font-weight:700;border-top:1px solid #999"><td>= Margen de contribución por unidad</td><td class="num">${clp(margenContribucionUnit)}</td></tr>
       </tbody>
