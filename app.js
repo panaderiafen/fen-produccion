@@ -8634,7 +8634,7 @@ async function renderVistaMetaVenta() {
         </div>
         <div class="campo">
           <label>Canal</label>
-          <select id="mv-canal" onchange="actualizarSimuladorMetaVenta()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+          <select id="mv-canal" onchange="actualizarSimuladorMetaVenta();actualizarGaugeUtilidad()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
             <option value="B2C">B2C</option>
             <option value="B2B">B2B</option>
           </select>
@@ -8730,6 +8730,7 @@ async function cargarBaseMetaVenta(btn) {
     cont.innerHTML = renderSimuladorMetaVentaHTML(precioSugerido);
     document.getElementById('mv-participacion').value = 10;
     actualizarSimuladorMetaVenta();
+    actualizarGaugeUtilidad();
     desbloquearBtn(btn, '<i class="ti ti-target-arrow"></i> Cargar', true);
   } catch(e) {
     cont.innerHTML = `<p style="color:#C62828">Error: ${e.message}</p>`;
@@ -8747,26 +8748,35 @@ function renderSimuladorMetaVentaHTML(precioSugerido) {
           <div class="campo">
             <label>Precio de venta (bruto, con IVA) <span style="font-weight:400;color:var(--txt3)">— editable</span></label>
             <input type="number" id="mv-precio" min="0" step="1" value="${Math.round(precioSugerido)}"
-              oninput="actualizarSimuladorMetaVenta()"
+              oninput="actualizarSimuladorMetaVenta();actualizarGaugeUtilidad()"
               style="width:100%;padding:8px 12px;border:2px solid #1565C0;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:15px;font-weight:700">
             <p style="font-size:10px;color:var(--txt3);margin-top:2px">Sugerido: ${clp(precioSugerido)} — muévalo para ver el impacto</p>
           </div>
           <div class="campo">
             <label>% de los costos fijos + remuneración que le corresponde cargar</label>
             <input type="number" id="mv-participacion" min="0" max="100" step="0.5" value="10"
-              oninput="actualizarSimuladorMetaVenta()"
+              oninput="actualizarSimuladorMetaVenta();actualizarGaugeUtilidad()"
               style="width:100%;padding:8px 12px;border:2px solid #6A1B9A;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:15px;font-weight:700">
             <p style="font-size:10px;color:var(--txt3);margin-top:2px">Solo define su cuota en $ — no la cantidad a vender, eso va aparte abajo.</p>
           </div>
           <div class="campo">
             <label>Unidades que espera vender este mes <span style="font-weight:400;color:var(--txt3)">— editable, dato independiente</span></label>
             <input type="number" id="mv-unidades-esperadas" min="0" step="1" value="${Math.round(b.unidadesRealesProducto)}"
-              oninput="actualizarSimuladorMetaVenta()"
+              oninput="actualizarSimuladorMetaVenta();actualizarGaugeUtilidad()"
               style="width:100%;padding:8px 12px;border:2px solid #2E7D32;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:15px;font-weight:700">
             <p style="font-size:10px;color:var(--txt3);margin-top:2px">${b.unidadesRealesProducto > 0 ? `Precargado con sus ventas reales de ${b.mes}` : 'Sin ventas registradas aún — ingrese su estimación'} · Volumen total del área: ${Math.round(b.volumenTotalArea).toLocaleString('es-CL')} uni</p>
           </div>
         </div>
         <div id="mv-resultado-simulado"></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <div class="card-head"><i class="ti ti-gauge"></i> Simulador de % de utilidad</div>
+      <div style="padding:16px">
+        <p style="font-size:11px;color:var(--txt3);margin-bottom:12px">
+          Usa el mismo precio y cantidad de arriba — muévalos y este indicador reacciona al instante.
+        </p>
+        <div id="mv-gauge-utilidad"></div>
       </div>
     </div>`;
 }
@@ -8856,6 +8866,70 @@ function actualizarSimuladorMetaVenta() {
       <p style="font-size:22px;font-weight:800;color:#1565C0;margin-top:4px">${Math.ceil(metaUnidadesUtilidad).toLocaleString('es-CL')} unidades</p>
     </div>` : `<p class="nota-informe" style="margin-top:12px">No se pudo calcular la meta de utilidad objetivo con este precio — pruebe subiéndolo un poco.</p>`}
   `;
+}
+
+// Gauge de % de utilidad — reacciona a los mismos campos de precio y cantidad
+// de arriba, calculado aparte (no depende de que actualizarSimuladorMetaVenta
+// termine bien) para que funcione incluso en el caso de margen negativo.
+function actualizarGaugeUtilidad() {
+  const b = App._mvBase;
+  const gauge = document.getElementById('mv-gauge-utilidad');
+  if (!b || !gauge) return;
+
+  const precioInput = document.getElementById('mv-precio');
+  const unidadesInput = document.getElementById('mv-unidades-esperadas');
+  const participacionInput = document.getElementById('mv-participacion');
+  if (!precioInput || !unidadesInput || !participacionInput) return;
+
+  const precioBruto = parseFloat(precioInput.value) || 0;
+  const precioNeto = precioBruto / 1.19;
+  const unidades = parseFloat(unidadesInput.value) || 0;
+  const participacionPct = parseFloat(participacionInput.value) || 0;
+  const canal = document.getElementById('mv-canal').value;
+  const utilidadObjetivoPct = canal === 'B2B' ? b.utilidadB2BPct : b.utilidadB2CPct;
+
+  const costoMermaUnit = b.costoMPUnit * (b.mermaPct/100);
+  const costoVariableUnit = b.costoMPUnit + b.costoInsumosUnit + costoMermaUnit;
+  const totalFijosRemuneracion = b.fijosMonto + b.remuneracionMonto;
+  const cuotaFijosRemuneracion = totalFijosRemuneracion * (participacionPct/100);
+
+  const ingresoTotal = unidades * precioNeto;
+  const costoVariableTotal = unidades * costoVariableUnit;
+  const utilidadTotal = ingresoTotal - costoVariableTotal - cuotaFijosRemuneracion;
+  const utilidadPct = ingresoTotal > 0 ? (utilidadTotal / ingresoTotal) * 100 : null;
+
+  if (utilidadPct === null || unidades === 0) {
+    gauge.innerHTML = `<p style="font-size:12px;color:var(--txt3);text-align:center;padding:20px">Ingrese unidades y precio arriba para ver el indicador.</p>`;
+    return;
+  }
+
+  // 3 estados: rojo (pérdida), naranjo (positivo pero lejos de la meta), verde (alcanza o supera la meta)
+  let color, bg, borde, estado, icono;
+  if (utilidadPct < 0) {
+    color = '#C62828'; bg = '#FFEBEE'; borde = '#EF9A9A'; estado = 'Pérdida'; icono = 'ti-trending-down';
+  } else if (utilidadPct < utilidadObjetivoPct) {
+    color = '#E65100'; bg = '#FFF3E0'; borde = '#FFB74D'; estado = 'Positivo, pero lejos de la meta'; icono = 'ti-alert-triangle';
+  } else {
+    color = '#2E7D32'; bg = '#E8F5E9'; borde = '#81C784'; estado = 'Alcanza la meta'; icono = 'ti-circle-check';
+  }
+
+  // Barra visual simple: 0% = vacía, objetivo = marca de referencia, capada a un rango razonable para que se vea bien
+  const rangoMax = Math.max(utilidadObjetivoPct * 1.6, utilidadPct + 5, 10);
+  const posBarra = Math.max(0, Math.min(100, (utilidadPct / rangoMax) * 100));
+  const posObjetivo = Math.max(0, Math.min(100, (utilidadObjetivoPct / rangoMax) * 100));
+
+  gauge.innerHTML = `
+    <div style="padding:16px;background:${bg};border:2px solid ${borde};border-radius:var(--r-md);text-align:center">
+      <p style="font-size:11px;font-weight:700;text-transform:uppercase;color:${color}"><i class="ti ${icono}"></i> ${estado}</p>
+      <p style="font-size:36px;font-weight:800;color:${color};margin-top:4px">${utilidadPct.toFixed(1)}%</p>
+      <p style="font-size:11px;color:var(--txt3);margin-top:2px">Utilidad: ${clp(utilidadTotal)} sobre ${clp(ingresoTotal)} en ventas</p>
+
+      <div style="position:relative;height:10px;background:#fff;border-radius:99px;margin:14px 4px 4px;overflow:hidden">
+        <div style="position:absolute;left:0;top:0;bottom:0;width:${posBarra}%;background:${color};transition:width .2s"></div>
+        <div style="position:absolute;left:${posObjetivo}%;top:-3px;bottom:-3px;width:2px;background:#333"></div>
+      </div>
+      <p style="font-size:10px;color:var(--txt3);margin-top:4px">La línea marca el objetivo (${utilidadObjetivoPct}%)</p>
+    </div>`;
 }
 
 
