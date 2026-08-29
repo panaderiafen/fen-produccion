@@ -49,11 +49,10 @@ async function leerHoja(nombreHoja) {
 }
 
 function csvAObjetos(csv) {
-  const lineas = csv.split('\n').filter(l => l.trim());
-  if (lineas.length < 2) return [];
-  const headers = parseCsvLinea(lineas[0]);
-  return lineas.slice(1).map(linea => {
-    const valores = parseCsvLinea(linea);
+  const filas = parseCsvCompleto(csv);
+  if (filas.length < 2) return [];
+  const headers = filas[0];
+  return filas.slice(1).map(valores => {
     const obj = {};
     headers.forEach((h, i) => {
       let v = (valores[i]||'').trim().replace(/^"|"$/g,'');
@@ -65,6 +64,47 @@ function csvAObjetos(csv) {
     });
     return obj;
   }).filter(o => Object.values(o).some(v => v));
+}
+
+// Parser de CSV completo, no línea por línea — cortar por '\n' antes de mirar
+// las comillas rompía cualquier celda con texto de varias líneas (ej. pasos de
+// preparación redactados como párrafo): el salto de línea DENTRO de una celda
+// entre comillas se interpretaba como si fuera el fin de esa fila, partiendo
+// una sola receta en muchas filas fantasma, cada una con un fragmento del texto.
+// Este parser recorre todo el texto una sola vez, llevando la cuenta de si está
+// dentro de comillas, y solo trata una coma o un salto de línea como separador
+// real cuando NO está dentro de un campo entre comillas.
+function parseCsvCompleto(texto) {
+  const filas = [];
+  let fila = [];
+  let campo = '';
+  let dentroComillas = false;
+
+  for (let i = 0; i < texto.length; i++) {
+    const c = texto[i];
+    if (c === '"') {
+      if (dentroComillas && texto[i+1] === '"') { campo += '"'; i++; }
+      else dentroComillas = !dentroComillas;
+    } else if (c === ',' && !dentroComillas) {
+      fila.push(campo);
+      campo = '';
+    } else if ((c === '\n' || c === '\r') && !dentroComillas) {
+      // \r\n cuenta como un solo salto — evita filas vacías de más
+      if (c === '\r' && texto[i+1] === '\n') i++;
+      fila.push(campo);
+      campo = '';
+      if (fila.some(v => v.trim())) filas.push(fila); // omitir filas totalmente vacías
+      fila = [];
+    } else {
+      campo += c;
+    }
+  }
+  // Última fila, si el texto no terminó con salto de línea
+  if (campo !== '' || fila.length) {
+    fila.push(campo);
+    if (fila.some(v => v.trim())) filas.push(fila);
+  }
+  return filas;
 }
 
 function parseCsvLinea(linea) {
