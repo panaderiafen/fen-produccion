@@ -857,12 +857,13 @@ function renderVistaFormReceta(recetaId, tipoForzado) {
           <thead>
             <tr>
               <th style="min-width:200px">Ingrediente</th>
+              ${(App.areaCodigo === 'BOL' || esPan) ? '<th style="min-width:70px">Unidad</th>' : ''}
               <th>Gramos <span style="font-size:9px;color:var(--txt3);font-weight:400">(usar .)</span></th>
               ${esPan ? '<th style="color:var(--area-color)">% panadero</th>' : ''}
               <th></th>
             </tr>
           </thead>
-          ${esPan ? `<tfoot><tr><td colspan="4" style="padding:6px 12px;font-size:11px;color:var(--txt3)">
+          ${esPan ? `<tfoot><tr><td colspan="5" style="padding:6px 12px;font-size:11px;color:var(--txt3)">
             <i class="ti ti-info-circle"></i> Puedes ingresar el % y los gramos se calculan solos, o viceversa.
           </td></tr></tfoot>` : ''}
           <tbody id="tbody-ingr"></tbody>
