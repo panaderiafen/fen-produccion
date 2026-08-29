@@ -358,9 +358,9 @@ input, select, textarea { font-family: inherit; }
   white-space: nowrap;
 }
 .tabla-ingr td {
-  padding: 5px 12px;
+  padding: 8px 12px 5px;
   border-bottom: 1px solid var(--border);
-  vertical-align: middle;
+  vertical-align: top;
 }
 .tabla-ingr tbody tr:last-child td { border-bottom: none; }
 .tabla-ingr td input, .tabla-ingr td select {
