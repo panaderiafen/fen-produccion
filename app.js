@@ -6487,6 +6487,14 @@ function abrirAccionesMP(mpId) {
     botones.push({ icono: 'ti-arrows-join', label: 'Fusionar con otra MP (duplicado)', color: '#6A1B9A',
       accion: `fusionarMPUI('${mpId}','${nombreEscapado}')` });
   }
+  if (tipoActual !== 'sub_receta') {
+    botones.push({ icono: 'ti-alert-triangle', label: m.es_critica === 'si' ? 'Configurar control de stock ✓' : 'Marcar como MP crítica (control de stock)',
+      color: m.es_critica === 'si' ? '#1565C0' : undefined, accion: `abrirModalConfigStockMP('${mpId}')` });
+    if (m.es_critica === 'si') {
+      botones.push({ icono: 'ti-truck-delivery', label: 'Registrar llegada de stock', color: '#2E7D32',
+        accion: `registrarLlegadaStockUI('${mpId}','${nombreEscapado}')` });
+    }
+  }
 
   document.getElementById('acciones-mp-botones').innerHTML = botones.map(b => `
     <button class="btn-secundario" style="width:100%;justify-content:flex-start;gap:10px;padding:12px 14px;font-size:14px;${b.color?'color:'+b.color:''}"
@@ -6496,6 +6504,87 @@ function abrirAccionesMP(mpId) {
   `).join('');
 
   document.getElementById('modal-acciones-mp').classList.remove('hidden');
+}
+
+// ── CONTROL DE STOCK — MP CRÍTICA ──────────────────────────────
+function abrirModalConfigStockMP(mpId) {
+  const m = App.materiasPrimas.find(x => x.ID_MP === mpId);
+  if (!m) return;
+  const esCritica = m.es_critica === 'si';
+
+  mostrarModalInfo(`Control de stock — ${m.nombre}`, `
+    <div style="margin-bottom:14px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600">
+        <input type="checkbox" id="stk-es-critica" ${esCritica?'checked':''} onchange="document.getElementById('stk-campos').classList.toggle('hidden', !this.checked)" style="width:auto">
+        Es MP crítica — activar seguimiento de stock
+      </label>
+      <p style="font-size:11px;color:var(--txt3);margin-top:2px">Al marcarla, aparece en "Control de Stock" y en las alertas de "Recetas del día" cuando el consumo planificado la haga cruzar su stock de seguridad.</p>
+    </div>
+    <div id="stk-campos" class="${esCritica?'':'hidden'}">
+      <div class="campo" style="margin-bottom:10px">
+        <label style="font-size:12px;font-weight:600">Stock actual (${m.unidad_compra === 'un' ? 'unidades' : 'kg/lt según su unidad de compra'})</label>
+        <input type="number" id="stk-actual" min="0" step="0.1" value="${m.stock_actual || 0}"
+          style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:'DM Mono',monospace">
+        <p style="font-size:10px;color:var(--txt3);margin-top:2px">Ajústelo solo si hace un conteo físico y no calza — normalmente se actualiza con "Registrar llegada".</p>
+      </div>
+      <div class="campo" style="margin-bottom:10px">
+        <label style="font-size:12px;font-weight:600">Stock de seguridad (el mínimo antes de alertar)</label>
+        <input type="number" id="stk-seguridad" min="0" step="0.1" value="${m.stock_seguridad || 0}"
+          style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:'DM Mono',monospace">
+      </div>
+      <div class="campo">
+        <label style="font-size:12px;font-weight:600">% de merma extra (ej. harina de mesón)</label>
+        <input type="number" id="stk-merma" min="0" step="0.5" value="${m.merma_pct_stock || 0}"
+          style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:'DM Mono',monospace">
+        <p style="font-size:10px;color:var(--txt3);margin-top:2px">Se suma al consumo que ya calculan las recetas — no lo reemplaza.</p>
+      </div>
+    </div>
+    <button class="btn-primario" style="width:100%;margin-top:16px" onclick="guardarConfigStockMP('${mpId}')">
+      <i class="ti ti-device-floppy"></i> Guardar
+    </button>
+  `);
+}
+
+async function guardarConfigStockMP(mpId) {
+  const esCritica = document.getElementById('stk-es-critica').checked;
+  const stockActual = parseFloat(document.getElementById('stk-actual')?.value) || 0;
+  const stockSeguridad = parseFloat(document.getElementById('stk-seguridad')?.value) || 0;
+  const mermaPct = parseFloat(document.getElementById('stk-merma')?.value) || 0;
+
+  await escribirEnSheet('editar_campo_mp', { ID_MP: mpId, campo: 'es_critica', valor: esCritica ? 'si' : 'no' });
+  if (esCritica) {
+    await escribirEnSheet('editar_campo_mp', { ID_MP: mpId, campo: 'stock_actual', valor: stockActual });
+    await escribirEnSheet('editar_campo_mp', { ID_MP: mpId, campo: 'stock_seguridad', valor: stockSeguridad });
+    await escribirEnSheet('editar_campo_mp', { ID_MP: mpId, campo: 'merma_pct_stock', valor: mermaPct });
+  }
+
+  const m = App.materiasPrimas.find(x => x.ID_MP === mpId);
+  if (m) { m.es_critica = esCritica ? 'si' : 'no'; m.stock_actual = stockActual; m.stock_seguridad = stockSeguridad; m.merma_pct_stock = mermaPct; }
+
+  document.getElementById('modal-info-generico')?.remove();
+  toast('Configuración de stock guardada');
+  Cache.invalidar('mp_maestro');
+  await cargarMP();
+  renderVistaMP();
+}
+
+function registrarLlegadaStockUI(mpId, nombre) {
+  const cantidad = prompt(`¿Cuánto llegó de "${nombre}"? (en la misma unidad de compra que ya tiene configurada)`, '');
+  if (cantidad === null) return;
+  const valor = parseFloat(cantidad);
+  if (isNaN(valor) || valor <= 0) { toast('Cantidad inválida', 'error'); return; }
+
+  escribirEnSheet('registrar_llegada_stock_mp', { ID_MP: mpId, cantidad: valor }).then(resp => {
+    if (resp?.ok) {
+      toast(resp.msg);
+      const m = App.materiasPrimas.find(x => x.ID_MP === mpId);
+      if (m) m.stock_actual = resp.stock_actual;
+      Cache.invalidar('mp_maestro');
+      renderVistaMP();
+    } else {
+      toast(resp?.msg || 'No se pudo registrar', 'error');
+    }
+  });
 }
 
 function cerrarModalAccionesMP() {
