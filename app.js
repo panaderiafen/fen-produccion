@@ -2685,6 +2685,99 @@ async function copiarPlanSemanaAnterior(btn) {
   }
 }
 
+// ── CONTROL DE STOCK — consumo proyectado desde el Plan semanal ────────────
+// Baja recursivamente por los ingredientes (igual que la corrección de Masa
+// Madre de hoy) hasta encontrar cuánto de la MP buscada hay, sin importar
+// cuántas capas de sub-receta haya en el medio (ej. Ciabatta → Masa Ciabatta →
+// Harina T000).
+function _consumoMPEnIngredientes(ingredientes, factorEscala, mpIdBuscado) {
+  let total = 0;
+  ingredientes.forEach(ing => {
+    if (ing.id === mpIdBuscado) {
+      total += (parseFloat(ing.gramos) || 0) * factorEscala;
+      return;
+    }
+    const mp = App.materiasPrimas.find(m => m.ID_MP === ing.id);
+    if (!mp || mp.tipo !== 'sub_receta') return;
+    let recetaSub = App.recetas.find(r => r.ID_receta === ing.id);
+    if (!recetaSub) recetaSub = App.recetas.find(r => r.nombre === mp.nombre && r.tipo_receta === 'sub_receta');
+    if (!recetaSub) return;
+    let ingredientesSub = [];
+    try { ingredientesSub = JSON.parse(recetaSub.ingredientes_JSON || '[]'); } catch(e) {}
+    const pesoBaseSub = ingredientesSub.reduce((s,i) => s + (parseFloat(i.gramos)||0), 0);
+    if (!pesoBaseSub) return;
+    const gramosUsadosAqui = (parseFloat(ing.gramos) || 0) * factorEscala;
+    const factorSub = gramosUsadosAqui / pesoBaseSub;
+    total += _consumoMPEnIngredientes(ingredientesSub, factorSub, mpIdBuscado);
+  });
+  return total;
+}
+
+// Stock proyectado día a día para una MP crítica, según lo que el Plan semanal
+// del área (App.planSemana, ya cargado) consumiría si se ejecuta tal cual está
+// — el stock ACTUAL nunca se toca acá, esto es solo una proyección.
+function calcularConsumoDiarioMPCritica(mpId) {
+  const dias = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo'];
+  const diasLabel = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  const m = App.materiasPrimas.find(x => x.ID_MP === mpId);
+  if (!m) return null;
+  const mermaPct = parseFloat(m.merma_pct_stock) || 0;
+  const stockInicial = parseFloat(m.stock_actual) || 0;
+  const stockSeguridad = parseFloat(m.stock_seguridad) || 0;
+  const esKg = (m.unidad_compra || 'kg') !== 'un';
+
+  let acumulado = stockInicial;
+  const serie = dias.map((_, diaIdx) => {
+    let consumoDiaGramos = 0;
+    Object.entries(App.planSemana || {}).forEach(([rid, cantidades]) => {
+      const unidades = cantidades[diaIdx] || 0;
+      if (!unidades) return;
+      const receta = App.recetas.find(r => r.ID_receta === rid);
+      if (!receta) return;
+      let ingredientes = [];
+      try { ingredientes = JSON.parse(receta.ingredientes_JSON || '[]'); } catch(e) {}
+      const porciones = parseInt(receta.porciones_base) || 1;
+      const factor = unidades / porciones;
+      consumoDiaGramos += _consumoMPEnIngredientes(ingredientes, factor, mpId);
+    });
+    consumoDiaGramos = consumoDiaGramos * (1 + mermaPct/100);
+    // Si la MP se compra por kg/lt, los ingredientes están en gramos — convertir.
+    const consumoDia = esKg ? consumoDiaGramos / 1000 : consumoDiaGramos;
+    acumulado -= consumoDia;
+    return { dia: diasLabel[diaIdx], consumo: consumoDia, stockProyectado: acumulado };
+  });
+
+  const primerDiaCritico = serie.find(s => s.stockProyectado < stockSeguridad);
+  return { ID_MP: mpId, nombre: m.nombre, stockInicial, stockSeguridad, serie, primerDiaCritico, unidad: esKg ? 'kg' : 'un' };
+}
+
+// Revisa todas las MP críticas habilitadas para el área actual, y muestra una
+// ventana emergente si el plan que se acaba de guardar hace que alguna cruce
+// su stock de seguridad en algún día de la semana.
+function verificarAlertasStockCriticoPlan() {
+  const areaActual = App.areaCodigo;
+  const mpCriticas = App.materiasPrimas.filter(m => {
+    if (m.es_critica !== 'si') return false;
+    const areas = (m.areas_habilitadas || '').split(',').map(a => a.trim());
+    return areas.includes(areaActual);
+  });
+  if (!mpCriticas.length) return;
+
+  const conAlerta = mpCriticas.map(m => calcularConsumoDiarioMPCritica(m.ID_MP)).filter(r => r && r.primerDiaCritico);
+  if (!conAlerta.length) return;
+
+  mostrarModalInfo('⚠ Stock crítico proyectado esta semana', `
+    <p style="margin-bottom:14px">Con el plan que acaba de guardar, esta semana empezaría a consumir el stock de seguridad de:</p>
+    ${conAlerta.map(r => `
+      <div style="padding:12px;background:#FFF3E0;border-left:3px solid #E65100;border-radius:var(--r-sm);margin-bottom:10px">
+        <strong>${r.nombre}</strong><br>
+        <span style="font-size:12px">A partir del <strong>${r.primerDiaCritico.dia}</strong>, el stock proyectado caería a
+        ${r.primerDiaCritico.stockProyectado.toFixed(1)} ${r.unidad} (bajo su mínimo de ${r.stockSeguridad} ${r.unidad}).</span>
+      </div>`).join('')}
+    <p style="font-size:12px;color:var(--txt3);margin-top:8px">Considere solicitar el pedido con anticipación, o revisar si el plan puede ajustarse.</p>
+  `);
+}
+
 async function guardarPlanificacion() {
   const btn = document.querySelector('#vista-planificacion .btn-primario');
   bloquearBtn(btn, 'Guardando plan...');
@@ -2749,6 +2842,7 @@ async function guardarPlanificacion() {
     });
     desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan', true);
     toast('Plan guardado correctamente');
+    verificarAlertasStockCriticoPlan();
   } catch(e) {
     desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan', false);
     toast('Guardado local OK (Sheet no disponible)');
@@ -3413,11 +3507,42 @@ function renderVistaControlStockJefa() {
             <button class="btn-primario" onclick="registrarLlegadaStockUI('${m.ID_MP}','${(m.nombre||'').replace(/'/g,"\\'")}')">
               <i class="ti ti-truck-delivery"></i> Registrar llegada
             </button>
+            <button class="btn-secundario" onclick="toggleProyeccionStockMP('${m.ID_MP}')">
+              <i class="ti ti-calendar-stats"></i> Ver proyección
+            </button>
           </div>
+          <div id="proyeccion-stock-${m.ID_MP}" class="hidden" style="padding:0 16px 16px"></div>
         </div>`;
       }).join('')}
   `;
   mostrarVista('control-stock');
+}
+
+// Despliega/oculta la proyección día por día de una MP crítica específica —
+// usa el mismo cálculo que la alerta automática, para poder revisarlo cuando
+// quiera, sin tener que volver a guardar el Plan semanal.
+function toggleProyeccionStockMP(mpId) {
+  const cont = document.getElementById('proyeccion-stock-' + mpId);
+  if (!cont) return;
+  if (!cont.classList.contains('hidden')) { cont.classList.add('hidden'); cont.innerHTML = ''; return; }
+
+  const r = calcularConsumoDiarioMPCritica(mpId);
+  if (!r) { cont.innerHTML = '<p style="font-size:12px;color:var(--txt3)">No se pudo calcular.</p>'; cont.classList.remove('hidden'); return; }
+
+  cont.innerHTML = `
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:460px">
+        <thead><tr>
+          ${r.serie.map(s => `<th style="padding:4px 6px;text-align:center;color:var(--txt3);font-weight:600">${s.dia}</th>`).join('')}
+        </tr></thead>
+        <tbody><tr>
+          ${r.serie.map(s => `<td style="padding:4px 6px;text-align:center;font-family:'DM Mono',monospace;${s.stockProyectado < r.stockSeguridad ? 'color:#C62828;font-weight:700;background:#FFEBEE' : ''}">${s.stockProyectado.toFixed(1)}</td>`).join('')}
+        </tr></tbody>
+      </table>
+    </div>
+    <p style="font-size:10px;color:var(--txt3);margin-top:6px">Proyectado desde el Plan semanal actual — no es el stock real, es "si se ejecuta este plan tal cual está". Stock de seguridad: ${r.stockSeguridad} ${r.unidad}.</p>
+  `;
+  cont.classList.remove('hidden');
 }
 
 async function renderVistaRegistroMerma() {
