@@ -362,6 +362,7 @@ function renderSidebar() {
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL' || App.areaCodigo === 'CAF') {
       items.push({ id: 'config-subrecetas',   icon: 'ti-adjustments',     label: App.areaCodigo === 'CAF' ? 'Configuración' : 'Config sub recetas' });
     }
+    items.push({ id: 'control-stock', icon: 'ti-alert-triangle', label: 'Control de Stock' });
     items.forEach(item => nav.appendChild(crearNavItem(item)));
   } else {
     const grupos = [
@@ -501,6 +502,7 @@ function navegarA(vistaId) {
     case 'consolidado-mensual': renderVistaConsolidado();    break;
     case 'registros-caf':       renderVistaRegistrosCAF();    break;
     case 'registro-merma':      renderVistaRegistroMerma();   break;
+    case 'control-stock':       renderVistaControlStockJefa(); break;
     case 'pre-elaboraciones':   renderVistaPreElaboraciones(); break;
     case 'rellenos-otras-recetas': renderVistaRellenosOtrasRecetas(); break;
     case 'plan-ps-pc':          renderVistaPlanPSPC(); break;
@@ -3368,6 +3370,55 @@ let _cafRegistros = [];
 
 // ── REGISTRO DE MERMA (PAN/BOL/CAF/PAS) ───────────────────────
 let _mermaRegistros = [];
+
+// ── CONTROL DE STOCK (vista de jefa) ────────────────────────────
+// Muestra solo las MP marcadas como críticas y habilitadas para su propia
+// área — la jefa puede registrar llegadas ella misma, sin depender de Admin.
+// Reutiliza la misma acción de backend que ya usa Admin en Materias primas.
+function renderVistaControlStockJefa() {
+  const vista = document.getElementById('vista-control-stock');
+  const areaActual = App.areaCodigo;
+
+  const mpCriticas = App.materiasPrimas.filter(m => {
+    if (m.es_critica !== 'si') return false;
+    const areas = (m.areas_habilitadas || '').split(',').map(a => a.trim());
+    return areas.includes(areaActual);
+  });
+
+  vista.innerHTML = `
+    <div class="vista-header"><h1 class="vista-titulo">Control de Stock</h1></div>
+    <p style="font-size:12px;color:var(--txt3);margin-bottom:16px">
+      Materias primas críticas de su área — registre acá cuando llegue un pedido nuevo.
+      Si necesita marcar una MP nueva como crítica o ajustar sus umbrales, pídaselo a Admin.
+    </p>
+    ${!mpCriticas.length ? `
+      <div class="empty-state"><i class="ti ti-alert-triangle"></i><h2>Sin MP críticas configuradas todavía</h2>
+        <p>Admin puede marcar una materia prima como crítica desde Materias primas.</p>
+      </div>` : mpCriticas.map(m => {
+        const stockActual = parseFloat(m.stock_actual) || 0;
+        const stockSeguridad = parseFloat(m.stock_seguridad) || 0;
+        const bajoSeguridad = stockActual < stockSeguridad;
+        return `
+        <div class="card" style="margin-bottom:12px;${bajoSeguridad ? 'border-color:#EF9A9A' : ''}">
+          <div style="padding:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+            <div style="flex:1;min-width:180px">
+              <div style="font-size:15px;font-weight:700">${m.nombre}</div>
+              <div style="font-size:11px;color:var(--txt3);margin-top:2px">Stock de seguridad: ${stockSeguridad.toLocaleString('es-CL')} ${m.unidad_compra==='un'?'un':'kg/lt'}</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:10px;text-transform:uppercase;color:var(--txt3);font-weight:700">Stock actual</div>
+              <div style="font-size:22px;font-weight:800;color:${bajoSeguridad?'#C62828':'#2E7D32'}">${stockActual.toLocaleString('es-CL')}</div>
+              ${bajoSeguridad ? '<div style="font-size:10px;color:#C62828;font-weight:600"><i class="ti ti-alert-triangle"></i> Bajo el mínimo</div>' : ''}
+            </div>
+            <button class="btn-primario" onclick="registrarLlegadaStockUI('${m.ID_MP}','${(m.nombre||'').replace(/'/g,"\\'")}')">
+              <i class="ti ti-truck-delivery"></i> Registrar llegada
+            </button>
+          </div>
+        </div>`;
+      }).join('')}
+  `;
+  mostrarVista('control-stock');
+}
 
 async function renderVistaRegistroMerma() {
   const vista = document.getElementById('vista-registro-merma');
@@ -6580,7 +6631,11 @@ function registrarLlegadaStockUI(mpId, nombre) {
       const m = App.materiasPrimas.find(x => x.ID_MP === mpId);
       if (m) m.stock_actual = resp.stock_actual;
       Cache.invalidar('mp_maestro');
-      renderVistaMP();
+      if (document.getElementById('vista-control-stock')?.classList.contains('active')) {
+        renderVistaControlStockJefa();
+      } else {
+        renderVistaMP();
+      }
     } else {
       toast(resp?.msg || 'No se pudo registrar', 'error');
     }
