@@ -3154,6 +3154,28 @@ function renderVistaRecetasDelDia() {
 
   const vista = document.getElementById('vista-recetas-dia');
   const diaActual = diasNombres[diaIdx];
+
+  // Alerta de stock crítico — se recalcula en vivo cada vez que entra a esta
+  // pantalla (no es un aviso guardado que hay que marcar como leído). Mientras
+  // el plan siga cruzando el stock de seguridad, sigue apareciendo; apenas
+  // registre una llegada que lo resuelva, desaparece sola.
+  const mpCriticasArea = App.materiasPrimas.filter(m => {
+    if (m.es_critica !== 'si') return false;
+    const areas = (m.areas_habilitadas || '').split(',').map(a => a.trim());
+    return areas.includes(App.areaCodigo);
+  });
+  const alertasStock = mpCriticasArea
+    .map(m => calcularConsumoDiarioMPCritica(m.ID_MP))
+    .filter(r => r && r.primerDiaCritico);
+  // Índice del día (0=Lun) desde el que cada MP queda en zona crítica — una vez
+  // que cruza, se queda abajo el resto de la semana (no vuelve a subir solo).
+  const diasEnZonaCritica = new Set();
+  alertasStock.forEach(r => {
+    const diasLabel = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+    const idxInicio = diasLabel.indexOf(r.primerDiaCritico.dia);
+    for (let i = idxInicio; i < 7; i++) diasEnZonaCritica.add(i);
+  });
+
   vista.innerHTML = `
     <div class="vista-header">
       <div>
@@ -3161,11 +3183,19 @@ function renderVistaRecetasDelDia() {
         <h1 class="vista-titulo">Recetas del día</h1>
       </div>
     </div>
+    ${alertasStock.length ? `
+    <div style="padding:14px 16px;background:#FFF3E0;border-left:4px solid #E65100;border-radius:var(--r-md);margin-bottom:16px">
+      <p style="font-size:12px;font-weight:700;color:#E65100;margin-bottom:6px"><i class="ti ti-alert-triangle"></i> Stock crítico esta semana, según el Plan semanal actual</p>
+      ${alertasStock.map(r => `
+        <p style="font-size:12px;color:#333;margin:2px 0">
+          <strong>${r.nombre}</strong>: a partir del <strong>${r.primerDiaCritico.dia}</strong>, quedaría bajo su stock de seguridad (${r.stockSeguridad} ${r.unidad}) — considere solicitar pedido.
+        </p>`).join('')}
+    </div>` : ''}
     <div class="dia-selector-wrap">
       ${diasNombres.map((d,i) => `
-        <button class="dia-btn ${i===diaIdx?'dia-btn-activo':''}"
+        <button class="dia-btn ${i===diaIdx?'dia-btn-activo':''}" style="position:relative"
           onclick="cambiarDia(${i},this)">
-          ${d}
+          ${d}${diasEnZonaCritica.has(i) ? '<span style="position:absolute;top:-3px;right:-3px;width:8px;height:8px;background:#E65100;border-radius:50%"></span>' : ''}
         </button>`).join('')}
     </div>
     <div class="dia-activo-label">
@@ -7432,7 +7462,7 @@ async function renderVistaPlanProductosCongelados() {
 
   const cfg = cargarConfigSubrecetas();
   const bolCfg = cfg.bol || {};
-  const capacidadProductos = bolCfg.capacidad_congelacion_productos || 60;
+  const capacidadProductos = bolCfg.capacidad_productos || 200;
   const stockInicial = bolCfg.stock_productos || {};
 
   const congelacionSemana = _planCongelacionProdCache.filter(p => p.semana_ID === semanaActual);
@@ -7454,10 +7484,18 @@ async function renderVistaPlanProductosCongelados() {
     serie.push({ dia: 'Próximo Lun', congelado: congProximo, descongelado: descongProximo, stock: acumulado + congProximo - descongProximo });
     stockDiarioPorProducto[r.ID_receta] = serie;
   });
-  const stockFinalTotal = productos.reduce((s,r) => {
-    const serie = stockDiarioPorProducto[r.ID_receta];
-    return s + (serie.length ? serie[dias.length-1].stock : 0);
-  }, 0);
+  // El total sumado de TODOS los productos, día por día (solo Lun-Sáb — la
+  // columna "Próximo Lun" es planificación anticipada de la semana SIGUIENTE,
+  // no cuenta para el pico de esta semana). El congelador se ocupa a diario,
+  // no solo al cierre — un miércoles con mucho volumen puede pasarse de
+  // capacidad aunque el sábado ya haya bajado. Antes solo se miraba el
+  // último día, así que un pico a mitad de semana pasaba desapercibido.
+  const totalesPorDia = dias.map((d, i) => {
+    const total = productos.reduce((s,r) => s + (stockDiarioPorProducto[r.ID_receta]?.[i]?.stock || 0), 0);
+    return { dia: d, total };
+  });
+  const picoSemana = totalesPorDia.reduce((max, d) => d.total > max.total ? d : max, totalesPorDia[0] || { dia: '', total: 0 });
+  const stockFinalTotal = picoSemana.total;
 
   vista.innerHTML = `
     <div class="vista-header">
@@ -7478,7 +7516,7 @@ async function renderVistaPlanProductosCongelados() {
       </div>
       <div style="padding:14px 16px">
         <p style="font-size:13px;font-weight:700;margin-bottom:10px;color:${stockFinalTotal > capacidadProductos ? '#C62828' : '#2E7D32'}">
-          Proyectado al cierre de la semana: ${stockFinalTotal} / ${capacidadProductos} espacios
+          Punto más alto de la semana: ${stockFinalTotal} / ${capacidadProductos} espacios (${picoSemana.dia})
           ${stockFinalTotal > capacidadProductos ? ' — ⚠️ sobre capacidad' : ''}
         </p>
         ${productos.map(r => {
@@ -7677,10 +7715,15 @@ async function renderVistaPlanMasaBase() {
     serie.push({ dia: 'Próximo Lun', elaborado: elaboradoProximo, descongelado: descongeladoProximo, stock: acumulado + elaboradoProximo - descongeladoProximo });
     stockDiarioPorMasa[r.ID_receta] = serie;
   });
-  const stockFinalTotal = masasBase.reduce((s,r) => {
-    const serie = stockDiarioPorMasa[r.ID_receta];
-    return s + (serie.length ? serie[dias.length-1].stock : 0); // cierre de la semana actual (domingo), no de "Próximo Lun"
-  }, 0);
+  // El total sumado de TODAS las masas, día por día (solo Lun-Sáb) — mismo
+  // criterio que Productos Congelados: el congelador se ocupa a diario, un
+  // pico a mitad de semana puede pasarse de capacidad aunque el cierre esté bien.
+  const totalesPorDiaMasas = dias.map((d, i) => {
+    const total = masasBase.reduce((s,r) => s + (stockDiarioPorMasa[r.ID_receta]?.[i]?.stock || 0), 0);
+    return { dia: d, total };
+  });
+  const picoSemanaMasas = totalesPorDiaMasas.reduce((max, d) => d.total > max.total ? d : max, totalesPorDiaMasas[0] || { dia: '', total: 0 });
+  const stockFinalTotal = picoSemanaMasas.total;
 
   vista.innerHTML = `
     <div class="vista-header">
@@ -7696,7 +7739,7 @@ async function renderVistaPlanMasaBase() {
       </div>
       <div style="padding:14px 16px">
         <p style="font-size:13px;font-weight:700;margin-bottom:10px;color:${stockFinalTotal > capacidadCongelador ? '#C62828' : '#2E7D32'}">
-          Proyectado al cierre de la semana: ${stockFinalTotal} / ${capacidadCongelador} espacios
+          Punto más alto de la semana: ${stockFinalTotal} / ${capacidadCongelador} espacios (${picoSemanaMasas.dia})
           ${stockFinalTotal > capacidadCongelador ? ' — ⚠️ sobre capacidad' : ''}
         </p>
         ${masasBase.map(r => {
