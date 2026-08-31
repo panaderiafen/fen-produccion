@@ -1098,6 +1098,18 @@ function renderResumenSemanal() {
 
 
 // ── VISTA CONFIGURACIÓN SUB RECETAS ──────────────────────────
+// Guarda "unidades_por_caja" para un producto congelado — escribe en la hoja de
+// trabajo del área y en Maestro_recetas a la vez (vía editarCampoReceta), y
+// actualiza App.recetas en memoria para que quede reflejado sin recargar.
+async function guardarUnidadesPorCaja(idReceta, valor) {
+  const cantidad = parseInt(valor) || 0;
+  const receta = App.recetas.find(r => r.ID_receta === idReceta);
+  const hoja = FEN.AREAS[App.areaCodigo]?.hoja_recetas;
+  await escribirEnSheet('editar_campo_receta', { hoja, ID_receta: idReceta, campo: 'unidades_por_caja', valor: cantidad });
+  if (receta) receta.unidades_por_caja = cantidad;
+  toast('Guardado');
+}
+
 function renderVistaConfigSubrecetas() {
   const cfg = cargarConfigSubrecetas();
   const vista = document.getElementById('vista-config-subrecetas');
@@ -1248,8 +1260,9 @@ function renderVistaConfigSubrecetas() {
           <input type="number" id="cfg-bol-cap-masas" value="${cfg.bol?.capacidad_congelacion_masas || 40}" min="1" step="1">
         </div>
         <div class="campo">
-          <label>Capacidad máxima productos terminados</label>
-          <input type="number" id="cfg-bol-productos" value="${cfg.bol?.capacidad_productos || 200}" min="1" step="1">
+          <label>Capacidad máxima congelación productos (en cajas)</label>
+          <input type="number" id="cfg-bol-productos" value="${cfg.bol?.capacidad_productos || 25}" min="1" step="1">
+          <p style="font-size:10px;color:var(--txt3);margin-top:2px">Cuántas cajas caben en el congelador — no unidades sueltas. Configure "unidades por caja" de cada producto en la tarjeta de abajo.</p>
         </div>
         <div class="campo">
           <label>Mantequilla por empaste (g)</label>
@@ -1261,6 +1274,30 @@ function renderVistaConfigSubrecetas() {
         </div>
       </div>
     </div>` : ''}
+
+    ${App.areaCodigo === 'BOL' ? (() => {
+      const productosCongelados = App.recetas.filter(r => r.estado === 'consolidada' && r.tipo_receta !== 'sub_receta' && r.se_congela === 'si');
+      return `
+    <div class="card" style="margin-top:16px">
+      <div class="card-head"><i class="ti ti-package"></i> Unidades por caja — productos congelados</div>
+      <div style="padding:12px 16px">
+        <p style="font-size:11px;color:var(--txt3);margin-bottom:12px">
+          Cuántas unidades de cada producto entran en una caja del congelador — se usa para convertir el stock
+          proyectado a cajas en "Productos Congelados", y compararlo contra la capacidad de arriba.
+        </p>
+        ${!productosCongelados.length ? `<p style="font-size:12px;color:var(--txt3)">Sin productos marcados como "Se congela" todavía.</p>` :
+        productosCongelados.map(p => `
+          <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)">
+            <span style="flex:1;font-size:13px">${p.nombre}</span>
+            <input type="number" min="1" step="1" value="${p.unidades_por_caja || ''}" placeholder="ej. 10"
+              style="width:80px;padding:6px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:'DM Mono',monospace;text-align:center"
+              onchange="guardarUnidadesPorCaja('${p.ID_receta}',this.value)">
+            <span style="font-size:11px;color:var(--txt3)">uni/caja</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>`;
+    })() : ''}
 
     <div class="form-acciones">
       <div></div>
