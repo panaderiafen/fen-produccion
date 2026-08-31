@@ -360,7 +360,7 @@ function renderSidebar() {
       items.push({ id: 'registros-caf', icon: 'ti-clipboard-list', label: 'Bitácora de turno' });
     }
     if (App.areaCodigo === 'PAN' || App.areaCodigo === 'BOL' || App.areaCodigo === 'CAF') {
-      items.push({ id: 'config-subrecetas',   icon: 'ti-adjustments',     label: App.areaCodigo === 'CAF' ? 'Configuración' : 'Config sub recetas' });
+      items.push({ id: 'config-subrecetas',   icon: 'ti-adjustments',     label: 'Configuraciones' });
     }
     items.push({ id: 'control-stock', icon: 'ti-alert-triangle', label: 'Control de Stock' });
     items.forEach(item => nav.appendChild(crearNavItem(item)));
@@ -7484,18 +7484,24 @@ async function renderVistaPlanProductosCongelados() {
     serie.push({ dia: 'Próximo Lun', congelado: congProximo, descongelado: descongProximo, stock: acumulado + congProximo - descongProximo });
     stockDiarioPorProducto[r.ID_receta] = serie;
   });
-  // El total sumado de TODOS los productos, día por día (solo Lun-Sáb — la
-  // columna "Próximo Lun" es planificación anticipada de la semana SIGUIENTE,
-  // no cuenta para el pico de esta semana). El congelador se ocupa a diario,
-  // no solo al cierre — un miércoles con mucho volumen puede pasarse de
-  // capacidad aunque el sábado ya haya bajado. Antes solo se miraba el
-  // último día, así que un pico a mitad de semana pasaba desapercibido.
+  // El total sumado de TODOS los productos, día por día — pero convertido a
+  // CAJAS, no unidades sueltas: cada producto se redondea hacia arriba a la
+  // caja más cercana antes de sumar (una caja a medio llenar sigue ocupando el
+  // espacio de una caja completa). Solo Lun-Sáb — la columna "Próximo Lun" es
+  // planificación anticipada de la semana SIGUIENTE, no cuenta para esta.
   const totalesPorDia = dias.map((d, i) => {
-    const total = productos.reduce((s,r) => s + (stockDiarioPorProducto[r.ID_receta]?.[i]?.stock || 0), 0);
-    return { dia: d, total };
+    const totalCajas = productos.reduce((s,r) => {
+      const stockDia = stockDiarioPorProducto[r.ID_receta]?.[i]?.stock || 0;
+      if (stockDia <= 0) return s;
+      const uniPorCaja = parseInt(r.unidades_por_caja) || 0;
+      const cajas = uniPorCaja > 0 ? Math.ceil(stockDia / uniPorCaja) : stockDia; // sin configurar: cuenta 1 unidad = 1 "caja", para no perder el aviso
+      return s + cajas;
+    }, 0);
+    return { dia: d, total: totalCajas };
   });
+  const sinUnidadesPorCaja = productos.filter(r => !(parseInt(r.unidades_por_caja) > 0));
+  const stockFinalTotal = totalesPorDia.reduce((max, d) => d.total > max.total ? d.total : max, 0);
   const picoSemana = totalesPorDia.reduce((max, d) => d.total > max.total ? d : max, totalesPorDia[0] || { dia: '', total: 0 });
-  const stockFinalTotal = picoSemana.total;
 
   vista.innerHTML = `
     <div class="vista-header">
@@ -7516,9 +7522,24 @@ async function renderVistaPlanProductosCongelados() {
       </div>
       <div style="padding:14px 16px">
         <p style="font-size:13px;font-weight:700;margin-bottom:10px;color:${stockFinalTotal > capacidadProductos ? '#C62828' : '#2E7D32'}">
-          Punto más alto de la semana: ${stockFinalTotal} / ${capacidadProductos} espacios (${picoSemana.dia})
+          Capacidad: ${capacidadProductos} cajas — punto más alto de la semana: ${stockFinalTotal} cajas (${picoSemana.dia})
           ${stockFinalTotal > capacidadProductos ? ' — ⚠️ sobre capacidad' : ''}
         </p>
+        <div style="overflow-x:auto;margin-bottom:10px">
+          <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:400px">
+            <thead><tr>
+              ${totalesPorDia.map(t => `<th style="padding:4px 6px;text-align:center;color:var(--txt3);font-weight:600">${t.dia}</th>`).join('')}
+            </tr></thead>
+            <tbody><tr>
+              ${totalesPorDia.map(t => `<td style="padding:4px 6px;text-align:center;font-family:'DM Mono',monospace;font-weight:700;${t.total > capacidadProductos ? 'color:#C62828;background:#FFEBEE' : 'color:#2E7D32'}">${t.total}</td>`).join('')}
+            </tr></tbody>
+          </table>
+        </div>
+        ${sinUnidadesPorCaja.length ? `
+        <p style="font-size:11px;color:#E65100;background:#FFF3E0;padding:8px 10px;border-radius:var(--r-sm);margin-bottom:10px">
+          <i class="ti ti-alert-triangle"></i> ${sinUnidadesPorCaja.map(r=>r.nombre).join(', ')} sin "unidades por caja" configurada —
+          se está contando 1 unidad = 1 caja para no perder el aviso, pero no es exacto. Configúrelo en "Configuraciones".
+        </p>` : ''}
         ${productos.map(r => {
           const serie = stockDiarioPorProducto[r.ID_receta];
           return `
