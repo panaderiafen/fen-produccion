@@ -7544,23 +7544,21 @@ async function renderVistaPlanProductosCongelados() {
           const serie = stockDiarioPorProducto[r.ID_receta];
           return `
           <div style="padding:10px 0;border-bottom:1px solid var(--border)">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <div style="margin-bottom:6px">
               <span style="font-size:12px;font-weight:600">${r.nombre}</span>
-              <div style="display:flex;gap:6px;align-items:center">
-                <label style="font-size:10px;color:var(--txt3)">Stock inicial (lunes):</label>
-                <input type="number" id="stock-prod-${r.ID_receta}" min="0" step="1" value="${stockInicial[r.ID_receta] || 0}"
-                  style="max-width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px" placeholder="0">
-                <button class="btn-secundario" style="font-size:10px;padding:4px 8px" onclick="guardarStockInicialProducto('${r.ID_receta}')">
-                  <i class="ti ti-device-floppy"></i>
-                </button>
-              </div>
             </div>
             <div style="overflow-x:auto">
-              <table style="width:100%;border-collapse:collapse;font-size:10px;min-width:460px">
+              <table style="width:100%;border-collapse:collapse;font-size:10px;min-width:520px">
                 <thead><tr>
+                  <th style="padding:3px 4px;text-align:center;color:#00695C;font-weight:600;border-right:2px solid #80CBC4">Stock inicial</th>
                   ${diasConProximo.map((d,i) => `<th style="padding:3px 4px;text-align:center;color:${i===7?'#6A1B9A':'var(--txt3)'};font-weight:600;${i===7?'border-left:2px solid #CE93D8':''}">${d}</th>`).join('')}
                 </tr></thead>
                 <tbody><tr>
+                  <td style="padding:3px 4px;text-align:center;background:#E0F2F1;border-right:2px solid #80CBC4">
+                    <input type="number" id="stock-prod-${r.ID_receta}" min="0" step="1" value="${stockInicial[r.ID_receta] || 0}"
+                      onchange="guardarStockInicialProducto('${r.ID_receta}')"
+                      style="width:56px;padding:3px 4px;border:1px solid #80CBC4;border-radius:var(--r-sm);font-size:10px;text-align:center;font-family:'DM Mono',monospace;background:#fff" placeholder="0">
+                  </td>
                   ${serie.map((s,i) => `<td style="padding:3px 4px;text-align:center;font-family:'DM Mono',monospace;${i===7?'border-left:2px solid #CE93D8;background:#F3E5F5':''};${s.stock > capacidadProductos ? 'color:#C62828;font-weight:700' : ''}">${s.stock}</td>`).join('')}
                 </tr></tbody>
               </table>
@@ -7569,7 +7567,8 @@ async function renderVistaPlanProductosCongelados() {
         }).join('')}
         <p style="font-size:11px;color:var(--txt3);margin-top:8px">
           El stock de cada día se calcula solo: stock inicial + lo congelado − lo descongelado, acumulado desde el lunes.
-          Ajuste "Stock inicial" a mano solo si hace un conteo físico y no calza. Corre semana a semana, no se resetea.
+          <span style="color:#00695C">Ajuste "Stock inicial" (columna verde, antes del lunes) a mano solo si hace un conteo físico y no calza.</span>
+          Corre semana a semana, no se resetea.
           <span style="color:#6A1B9A">La columna "Próximo Lun" es planificación anticipada — al llegar esa semana, queda como su primer día automáticamente.</span>
         </p>
       </div>
