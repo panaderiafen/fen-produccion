@@ -8649,6 +8649,12 @@ function renderVistaEstadoResultados() {
       Todo el negocio junto, varios meses lado a lado. No incluye gastos financieros ni impuesto todavía — pendiente el desglose
       de interés de las cuotas de préstamo.
     </p>
+    <div class="no-print" style="padding:12px 16px;background:#FFF3E0;border-radius:var(--r-md);margin-bottom:16px;font-size:12px;color:#E65100">
+      <strong><i class="ti ti-alert-triangle"></i> Antes de confiar en un mes específico</strong>, confirme que tenga, para ese mes y cada área:
+      <strong>1)</strong> Config de costeo guardada → <strong>2)</strong> Estructuras de costo calculadas (le da el costo de MP por producto)
+      → <strong>3)</strong> Ventas mensuales sincronizadas (cruza con el costo de MP para estimar "MP consumida").
+      Si falta alguno, "Costo de ventas" puede salir en $0 o muy bajo para esos productos, inflando la utilidad sin aviso.
+    </div>
     <div class="card no-print" style="margin-bottom:16px">
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:16px">
         <div class="campo">
