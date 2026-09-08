@@ -8730,8 +8730,7 @@ function renderEstadoResultadosHTML(datosPorMes) {
             ${fila('Ventas netas', t => t.ventasNeto)}
             ${fila('(−) Costo de ventas (MP consumida)', t => -t.mpConsumida)}
             ${fila('= Utilidad bruta', t => t.ventasNeto - t.mpConsumida, true)}
-            ${fila('(−) Costos fijos propios', t => -t.fijosPropios)}
-            ${fila('(−) Costos fijos compartidos', t => -t.fijosCompartidos)}
+            ${fila('(−) Costos fijos operacionales', t => -(t.fijosPropios + t.fijosCompartidos))}
             ${fila('(−) Remuneración', t => -(t.remuneracionPropia + t.remuneracionCompartida))}
             ${fila('= Utilidad operacional', t => t.utilidad, true)}
             <tr>
