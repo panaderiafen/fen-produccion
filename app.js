@@ -8966,13 +8966,6 @@ async function renderVistaMetaVenta() {
             <option value="">— Elija un producto —</option>
           </select>
         </div>
-        <div class="campo">
-          <label>Canal</label>
-          <select id="mv-canal" onchange="actualizarSimuladorMetaVenta();actualizarGaugeUtilidad()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
-            <option value="B2C">B2C</option>
-            <option value="B2B">B2B</option>
-          </select>
-        </div>
         <button class="btn-primario" onclick="cargarBaseMetaVenta(this)">
           <i class="ti ti-target-arrow"></i> Cargar
         </button>
@@ -9030,20 +9023,22 @@ async function cargarBaseMetaVenta(btn) {
     const cfg = filasCfg[filasCfg.length - 1];
     const volumenTotalArea = await calcularVolumenMensualArea(area, mes) || 0;
 
-    // Ventas reales de ESTE producto específico, si ya tiene — se usa como
-    // sugerencia inicial de "cuánto espero vender", pero queda editable. Si es
-    // un producto nuevo sin ventas, simplemente no hay sugerencia (parte en 0).
-    let unidadesRealesProducto = 0;
+    // Ventas reales de ESTE producto específico, si ya tiene — separadas por
+    // canal, para poder mostrar B2C y B2B lado a lado. Si es un producto nuevo
+    // sin ventas, simplemente no hay sugerencia (parte en 0 en ambos).
+    let unidadesRealesB2C = 0, unidadesRealesB2B = 0;
     try {
       const payloadVentas = encodeURIComponent(JSON.stringify({ accion: 'leer_ventas_mensuales' }));
       const resVentas = await fetch(FEN.WEBAPP_URL + '?payload=' + payloadVentas, { cache: 'no-store' });
       const dataVentas = await resVentas.json();
       (dataVentas.ventas || []).forEach(v => {
         if (v.ID_receta === idReceta && _normalizarMesFrontend(v.mes) === _normalizarMesFrontend(mes)) {
-          unidadesRealesProducto += parseFloat(v.cantidad_vendida) || 0;
+          if (v.canal === 'B2B') unidadesRealesB2B += parseFloat(v.cantidad_vendida) || 0;
+          else unidadesRealesB2C += parseFloat(v.cantidad_vendida) || 0;
         }
       });
     } catch(e) {}
+    const unidadesRealesProducto = unidadesRealesB2C + unidadesRealesB2B;
 
     // Peso de este producto y de TODOS los productos activos del área — solo
     // se usa si el producto no tiene ventas reales (nuevo), como base para
@@ -9066,7 +9061,7 @@ async function cargarBaseMetaVenta(btn) {
       remuneracionMonto: parseFloat(cfg.remuneracion_monto) || 0,
       utilidadB2CPct: parseFloat(cfg.utilidad_b2c_pct) || 0,
       utilidadB2BPct: parseFloat(cfg.utilidad_b2b_pct) || 0,
-      volumenTotalArea, unidadesRealesProducto,
+      volumenTotalArea, unidadesRealesProducto, unidadesRealesB2C, unidadesRealesB2B,
       pesoUnidadEsteProducto, pesoTotalAreaProductos
     };
 
@@ -9084,11 +9079,10 @@ async function cargarBaseMetaVenta(btn) {
     }
 
     const costoVariableUnit = costoMPUnit + costoInsumosUnit + (costoMPUnit * (App._mvBase.mermaPct/100));
-    const canalInicial = document.getElementById('mv-canal').value;
-    const utilidadPctInicial = canalInicial === 'B2B' ? App._mvBase.utilidadB2BPct : App._mvBase.utilidadB2CPct;
-    const precioSugerido = costoVariableUnit * (1 + utilidadPctInicial/100) * 1.19; // bruto, con IVA — coincide con la etiqueta del campo
+    const precioSugeridoB2C = costoVariableUnit * (1 + App._mvBase.utilidadB2CPct/100) * 1.19;
+    const precioSugeridoB2B = costoVariableUnit * (1 + App._mvBase.utilidadB2BPct/100) * 1.19;
 
-    cont.innerHTML = renderSimuladorMetaVentaHTML(precioSugerido);
+    cont.innerHTML = renderSimuladorMetaVentaHTML(precioSugeridoB2C, precioSugeridoB2B);
     actualizarNotaParticipacion();
     actualizarSimuladorMetaVenta();
     actualizarGaugeUtilidad();
@@ -9099,52 +9093,73 @@ async function cargarBaseMetaVenta(btn) {
   }
 }
 
-function renderSimuladorMetaVentaHTML(precioSugerido) {
+function renderSimuladorMetaVentaHTML(precioSugeridoB2C, precioSugeridoB2B) {
   const b = App._mvBase;
   return `
     <div class="card">
       <div class="card-head"><i class="ti ti-target-arrow"></i> ${b.nombre} — ${b.área}, ${b.mes}</div>
       <div style="padding:16px">
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:16px">
-          <div class="campo">
-            <label>Precio de venta (bruto, con IVA) <span style="font-weight:400;color:var(--txt3)">— editable</span></label>
-            <input type="number" id="mv-precio" min="0" step="1" value="${Math.round(precioSugerido)}"
-              oninput="actualizarSimuladorMetaVenta();actualizarGaugeUtilidad()"
-              style="width:100%;padding:8px 12px;border:2px solid #1565C0;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:15px;font-weight:700">
-            <p style="font-size:10px;color:var(--txt3);margin-top:2px">Sugerido: ${clp(precioSugerido)} — muévalo para ver el impacto</p>
-          </div>
-          <div class="campo">
-            <label style="display:flex;align-items:center;gap:6px">
-              % de los costos fijos + remuneración que le corresponde cargar
-              <button type="button" onclick="mostrarInfoParticipacion()" title="¿Cómo estimo un % más real?"
-                style="background:none;border:1px solid var(--border);border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer;color:var(--txt3);padding:0">i</button>
-            </label>
-            <div style="display:flex;gap:6px">
-              <input type="number" id="mv-participacion" min="0" max="100" step="0.5" value="${App._mvParticipacionSugerida ?? 10}"
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+          <div style="padding:14px;background:#E3F2FD;border-radius:var(--r-md)">
+            <h4 style="margin:0 0 10px;font-size:13px;color:#1565C0">B2C</h4>
+            <div class="campo" style="margin-bottom:10px">
+              <label style="font-size:11px">Precio (bruto, con IVA)</label>
+              <input type="number" id="mv-precio-b2c" min="0" step="1" value="${Math.round(precioSugeridoB2C)}"
                 oninput="actualizarSimuladorMetaVenta();actualizarGaugeUtilidad()"
-                style="flex:1;padding:8px 12px;border:2px solid #6A1B9A;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:15px;font-weight:700">
-              <button type="button" class="btn-secundario" onclick="sugerirParticipacionMetaVenta()" style="font-size:11px;padding:0 10px;white-space:nowrap">
-                <i class="ti ti-bulb"></i> Sugerir
-              </button>
+                style="width:100%;padding:7px 10px;border:2px solid #1565C0;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:14px;font-weight:700">
+              <p style="font-size:9px;color:var(--txt3);margin-top:2px">Sugerido: ${clp(precioSugeridoB2C)}</p>
             </div>
-            <p id="mv-participacion-nota" style="font-size:10px;color:var(--txt3);margin-top:2px">Solo define su cuota en $ — no la cantidad a vender, eso va aparte abajo.</p>
+            <div class="campo">
+              <label style="font-size:11px">Unidades esperadas</label>
+              <input type="number" id="mv-unidades-b2c" min="0" step="1" value="${Math.round(b.unidadesRealesB2C)}"
+                oninput="actualizarSimuladorMetaVenta();actualizarGaugeUtilidad()"
+                style="width:100%;padding:7px 10px;border:2px solid #1565C0;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:14px;font-weight:700">
+              <p style="font-size:9px;color:var(--txt3);margin-top:2px">${b.unidadesRealesB2C > 0 ? `Real de ${b.mes}` : 'Sin ventas B2C aún'}</p>
+            </div>
           </div>
-          <div class="campo">
-            <label>Unidades que espera vender este mes <span style="font-weight:400;color:var(--txt3)">— editable, dato independiente</span></label>
-            <input type="number" id="mv-unidades-esperadas" min="0" step="1" value="${Math.round(b.unidadesRealesProducto)}"
+          <div style="padding:14px;background:#F3E5F5;border-radius:var(--r-md)">
+            <h4 style="margin:0 0 10px;font-size:13px;color:#6A1B9A">B2B</h4>
+            <div class="campo" style="margin-bottom:10px">
+              <label style="font-size:11px">Precio (bruto, con IVA)</label>
+              <input type="number" id="mv-precio-b2b" min="0" step="1" value="${Math.round(precioSugeridoB2B)}"
+                oninput="actualizarSimuladorMetaVenta();actualizarGaugeUtilidad()"
+                style="width:100%;padding:7px 10px;border:2px solid #6A1B9A;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:14px;font-weight:700">
+              <p style="font-size:9px;color:var(--txt3);margin-top:2px">Sugerido: ${clp(precioSugeridoB2B)}</p>
+            </div>
+            <div class="campo">
+              <label style="font-size:11px">Unidades esperadas</label>
+              <input type="number" id="mv-unidades-b2b" min="0" step="1" value="${Math.round(b.unidadesRealesB2B)}"
+                oninput="actualizarSimuladorMetaVenta();actualizarGaugeUtilidad()"
+                style="width:100%;padding:7px 10px;border:2px solid #6A1B9A;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:14px;font-weight:700">
+              <p style="font-size:9px;color:var(--txt3);margin-top:2px">${b.unidadesRealesB2B > 0 ? `Real de ${b.mes}` : 'Sin ventas B2B aún'}</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="campo" style="margin-bottom:16px">
+          <label style="display:flex;align-items:center;gap:6px">
+            % de los costos fijos + remuneración que le corresponde cargar (al producto completo, ambos canales juntos)
+            <button type="button" onclick="mostrarInfoParticipacion()" title="¿Cómo estimo un % más real?"
+              style="background:none;border:1px solid var(--border);border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer;color:var(--txt3);padding:0">i</button>
+          </label>
+          <div style="display:flex;gap:6px">
+            <input type="number" id="mv-participacion" min="0" max="100" step="0.5" value="${App._mvParticipacionSugerida ?? 10}"
               oninput="actualizarSimuladorMetaVenta();actualizarGaugeUtilidad()"
-              style="width:100%;padding:8px 12px;border:2px solid #2E7D32;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:15px;font-weight:700">
-            <p style="font-size:10px;color:var(--txt3);margin-top:2px">${b.unidadesRealesProducto > 0 ? `Precargado con sus ventas reales de ${b.mes}` : 'Sin ventas registradas aún — ingrese su estimación'} · Volumen total del área: ${Math.round(b.volumenTotalArea).toLocaleString('es-CL')} uni</p>
+              style="flex:1;max-width:200px;padding:8px 12px;border:2px solid #333;border-radius:var(--r-sm);font-family:'DM Mono',monospace;font-size:15px;font-weight:700">
+            <button type="button" class="btn-secundario" onclick="sugerirParticipacionMetaVenta()" style="font-size:11px;padding:0 10px;white-space:nowrap">
+              <i class="ti ti-bulb"></i> Sugerir
+            </button>
           </div>
+          <p id="mv-participacion-nota" style="font-size:10px;color:var(--txt3);margin-top:2px">Solo define su cuota en $ — no la cantidad a vender, eso va arriba, por canal.</p>
         </div>
         <div id="mv-resultado-simulado"></div>
       </div>
     </div>
     <div class="card" style="margin-top:16px">
-      <div class="card-head"><i class="ti ti-gauge"></i> Simulador de % de utilidad</div>
+      <div class="card-head"><i class="ti ti-gauge"></i> Simulador de % de utilidad (combinado)</div>
       <div style="padding:16px">
         <p style="font-size:11px;color:var(--txt3);margin-bottom:12px">
-          Usa el mismo precio y cantidad de arriba — muévalos y este indicador reacciona al instante.
+          Usa los precios y cantidades de ambos canales de arriba, sumados — muévalos y este indicador reacciona al instante.
         </p>
         <div id="mv-gauge-utilidad"></div>
       </div>
@@ -9160,81 +9175,87 @@ function actualizarSimuladorMetaVenta() {
   const cont = document.getElementById('mv-resultado-simulado');
   if (!cont) return;
 
-  const precio = parseFloat(document.getElementById('mv-precio').value) || 0;
+  const precioB2CBruto = parseFloat(document.getElementById('mv-precio-b2c').value) || 0;
+  const precioB2BBruto = parseFloat(document.getElementById('mv-precio-b2b').value) || 0;
+  const unidadesB2C = parseFloat(document.getElementById('mv-unidades-b2c').value) || 0;
+  const unidadesB2B = parseFloat(document.getElementById('mv-unidades-b2b').value) || 0;
   const participacionPct = parseFloat(document.getElementById('mv-participacion').value) || 0;
-  const unidadesEsperadas = parseFloat(document.getElementById('mv-unidades-esperadas').value) || 0;
-  const canal = document.getElementById('mv-canal').value;
-  const utilidadObjetivoPct = canal === 'B2B' ? b.utilidadB2BPct : b.utilidadB2CPct;
 
-  const precioNeto = precio / 1.19; // el campo es bruto (con IVA) — se convierte a neto para el margen
+  const precioB2CNeto = precioB2CBruto / 1.19;
+  const precioB2BNeto = precioB2BBruto / 1.19;
   const costoMermaUnit = b.costoMPUnit * (b.mermaPct/100);
   const costoVariableUnit = b.costoMPUnit + b.costoInsumosUnit + costoMermaUnit;
-  const margenContribucionUnit = precioNeto - costoVariableUnit;
+  const margenB2C = precioB2CNeto - costoVariableUnit;
+  const margenB2B = precioB2BNeto - costoVariableUnit;
 
-  // El % define SOLO la cuota en $ (cuánto de los fijos le corresponde cargar).
-  // La cantidad de unidades a vender es un dato aparte, independiente — si
-  // ambos vinieran del mismo %, la comparación "¿alcanza o no?" daría siempre
-  // el mismo resultado sin importar qué % se elija (el % se cancela solo en
-  // la ecuación) — no aportaba nada real.
-  const montoEstimadoVenta = unidadesEsperadas * precioNeto;
+  // El % define SOLO la cuota en $ del producto completo (ambos canales juntos)
+  // — no depende de cuánto venda en cada canal específicamente. Las unidades
+  // de cada canal son datos aparte, independientes.
   const totalFijosRemuneracion = b.fijosMonto + b.remuneracionMonto;
   const cuotaFijosRemuneracion = totalFijosRemuneracion * (participacionPct/100);
 
-  if (margenContribucionUnit <= 0) {
+  const ingresoB2C = unidadesB2C * precioB2CNeto;
+  const ingresoB2B = unidadesB2B * precioB2BNeto;
+  const ingresoTotal = ingresoB2C + ingresoB2B;
+  const margenGeneradoB2C = unidadesB2C * margenB2C;
+  const margenGeneradoB2B = unidadesB2B * margenB2B;
+  const margenGeneradoTotal = margenGeneradoB2C + margenGeneradoB2B;
+
+  if (margenB2C <= 0 && margenB2B <= 0) {
     cont.innerHTML = `
       <div style="padding:14px;background:#FFEBEE;border-radius:var(--r-md);border:2px solid #C62828">
-        <p style="font-size:13px;color:#C62828;font-weight:700"><i class="ti ti-alert-triangle"></i> Con este precio, ni siquiera cubre el costo variable (MP+insumos+merma: ${clp(costoVariableUnit)}) — vender más unidades solo genera más pérdida.</p>
+        <p style="font-size:13px;color:#C62828;font-weight:700"><i class="ti ti-alert-triangle"></i> Con estos precios, ni siquiera cubre el costo variable (MP+insumos+merma: ${clp(costoVariableUnit)}) en ningún canal — vender más unidades solo genera más pérdida.</p>
       </div>`;
     return;
   }
 
-  const metaUnidadesCubrirCuota = cuotaFijosRemuneracion / margenContribucionUnit;
-  const margenGeneradoConEsperadas = unidadesEsperadas * margenContribucionUnit;
-  const cubreConUnidadesEsperadas = margenGeneradoConEsperadas >= cuotaFijosRemuneracion;
-  const denominadorMeta = margenContribucionUnit - (utilidadObjetivoPct/100) * precioNeto;
-  const metaUnidadesUtilidad = denominadorMeta > 0 ? cuotaFijosRemuneracion / denominadorMeta : null;
+  const cubre = margenGeneradoTotal >= cuotaFijosRemuneracion;
+  const diferencia = margenGeneradoTotal - cuotaFijosRemuneracion;
+  // Si falta, dos formas alternativas de cubrir la diferencia — sumando SOLO en un canal a la vez, para dar una referencia concreta
+  const faltanUnidadesB2C = !cubre && margenB2C > 0 ? Math.ceil(-diferencia / margenB2C) : null;
+  const faltanUnidadesB2B = !cubre && margenB2B > 0 ? Math.ceil(-diferencia / margenB2B) : null;
 
   cont.innerHTML = `
     <table class="tabla-informe" style="margin-bottom:14px">
       <tbody>
-        <tr><td>Precio de venta (bruto, con IVA)</td><td class="num">${clp(precio)}</td></tr>
-        <tr style="color:var(--txt3)"><td>÷ 1.19 = Precio de venta (neto)</td><td class="num">${clp(precioNeto)}</td></tr>
-        <tr><td>− Costo variable (MP ${clp(b.costoMPUnit)} + insumos ${clp(b.costoInsumosUnit)} + merma ${clp(costoMermaUnit)})</td><td class="num">${clp(costoVariableUnit)}</td></tr>
-        <tr style="font-weight:700;border-top:1px solid #999"><td>= Margen de contribución por unidad</td><td class="num">${clp(margenContribucionUnit)}</td></tr>
+        <tr><td>Margen de contribución B2C (${clp(precioB2CNeto)} − ${clp(costoVariableUnit)})</td><td class="num">${clp(margenB2C)}</td></tr>
+        <tr><td>Margen de contribución B2B (${clp(precioB2BNeto)} − ${clp(costoVariableUnit)})</td><td class="num">${clp(margenB2B)}</td></tr>
       </tbody>
     </table>
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:14px">
-      <div style="padding:12px;background:var(--bg);border-radius:var(--r-md)">
-        <p style="font-size:10px;text-transform:uppercase;color:var(--txt3);font-weight:700">Con las unidades que espera vender</p>
-        <p style="font-size:18px;font-weight:800;margin-top:2px">${Math.round(unidadesEsperadas).toLocaleString('es-CL')} unidades</p>
-        <p style="font-size:11px;color:var(--txt3)">≈ ${clp(montoEstimadoVenta)} en ventas · margen generado: ${clp(margenGeneradoConEsperadas)}</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:14px">
+      <div style="padding:12px;background:#E3F2FD;border-radius:var(--r-md)">
+        <p style="font-size:10px;text-transform:uppercase;color:#1565C0;font-weight:700">B2C</p>
+        <p style="font-size:16px;font-weight:800;margin-top:2px">${Math.round(unidadesB2C).toLocaleString('es-CL')} uni</p>
+        <p style="font-size:11px;color:var(--txt3)">${clp(ingresoB2C)} · margen: ${clp(margenGeneradoB2C)}</p>
+      </div>
+      <div style="padding:12px;background:#F3E5F5;border-radius:var(--r-md)">
+        <p style="font-size:10px;text-transform:uppercase;color:#6A1B9A;font-weight:700">B2B</p>
+        <p style="font-size:16px;font-weight:800;margin-top:2px">${Math.round(unidadesB2B).toLocaleString('es-CL')} uni</p>
+        <p style="font-size:11px;color:var(--txt3)">${clp(ingresoB2B)} · margen: ${clp(margenGeneradoB2B)}</p>
       </div>
       <div style="padding:12px;background:var(--bg);border-radius:var(--r-md)">
         <p style="font-size:10px;text-transform:uppercase;color:var(--txt3);font-weight:700">Su cuota de fijos + remuneración</p>
-        <p style="font-size:18px;font-weight:800;margin-top:2px">${clp(cuotaFijosRemuneracion)}</p>
-        <p style="font-size:11px;color:var(--txt3)">${participacionPct}% de ${clp(totalFijosRemuneracion)} totales del área</p>
+        <p style="font-size:16px;font-weight:800;margin-top:2px">${clp(cuotaFijosRemuneracion)}</p>
+        <p style="font-size:11px;color:var(--txt3)">${participacionPct}% de ${clp(totalFijosRemuneracion)} totales</p>
       </div>
     </div>
 
-    <div style="padding:14px;background:${cubreConUnidadesEsperadas ? '#E8F5E9' : '#FFF3E0'};border-radius:var(--r-md);border:2px solid ${cubreConUnidadesEsperadas ? '#2E7D32' : '#E65100'}">
-      <p style="font-size:11px;font-weight:700;text-transform:uppercase;color:${cubreConUnidadesEsperadas ? '#2E7D32' : '#E65100'}">
-        <i class="ti ${cubreConUnidadesEsperadas ? 'ti-circle-check' : 'ti-alert-triangle'}"></i>
-        ${cubreConUnidadesEsperadas ? 'Con esas unidades, cubre su cuota' : 'Con esas unidades, NO alcanza a cubrir su cuota'}
+    <div style="padding:14px;background:${cubre ? '#E8F5E9' : '#FFF3E0'};border-radius:var(--r-md);border:2px solid ${cubre ? '#2E7D32' : '#E65100'}">
+      <p style="font-size:11px;font-weight:700;text-transform:uppercase;color:${cubre ? '#2E7D32' : '#E65100'}">
+        <i class="ti ${cubre ? 'ti-circle-check' : 'ti-alert-triangle'}"></i>
+        ${cubre ? 'Entre los dos canales, cubre su cuota' : 'Entre los dos canales, NO alcanza a cubrir su cuota'}
       </p>
-      <p style="font-size:22px;font-weight:800;margin-top:4px">${Math.ceil(metaUnidadesCubrirCuota).toLocaleString('es-CL')} unidades</p>
-      <p style="font-size:11px;color:var(--txt3);margin-top:2px">
-        Es la cantidad mínima que necesita vender para que el margen generado cubra exactamente su cuota de costos fijos + remuneración
-        (${clp(cuotaFijosRemuneracion)}). Con las ${Math.round(unidadesEsperadas).toLocaleString('es-CL')} unidades que puso arriba
-        — ${cubreConUnidadesEsperadas ? 'alcanzan y sobran' : 'no alcanzan, faltarían ' + Math.ceil(metaUnidadesCubrirCuota - unidadesEsperadas).toLocaleString('es-CL') + ' más'}.
-      </p>
+      <p style="font-size:20px;font-weight:800;margin-top:4px">Margen total: ${clp(margenGeneradoTotal)} ${cubre ? '(sobran ' + clp(diferencia) + ')' : '(faltan ' + clp(-diferencia) + ')'}</p>
+      ${!cubre ? `
+      <p style="font-size:11px;color:var(--txt3);margin-top:6px">
+        Para cubrir la diferencia, le faltarían aprox.
+        ${faltanUnidadesB2C !== null ? `<strong>${faltanUnidadesB2C.toLocaleString('es-CL')} unidades más de B2C</strong>` : ''}
+        ${faltanUnidadesB2C !== null && faltanUnidadesB2B !== null ? ' — o ' : ''}
+        ${faltanUnidadesB2B !== null ? `<strong>${faltanUnidadesB2B.toLocaleString('es-CL')} unidades más de B2B</strong>` : ''}
+        (una u otra opción por separado, no las dos juntas).
+      </p>` : ''}
     </div>
-
-    ${metaUnidadesUtilidad !== null ? `
-    <div style="margin-top:12px;padding:14px;background:#E3F2FD;border-radius:var(--r-md)">
-      <p style="font-size:11px;font-weight:700;text-transform:uppercase;color:#1565C0">Meta para alcanzar el ${utilidadObjetivoPct}% de utilidad objetivo (sobre su propia cuota)</p>
-      <p style="font-size:22px;font-weight:800;color:#1565C0;margin-top:4px">${Math.ceil(metaUnidadesUtilidad).toLocaleString('es-CL')} unidades</p>
-    </div>` : `<p class="nota-informe" style="margin-top:12px">No se pudo calcular la meta de utilidad objetivo con este precio — pruebe subiéndolo un poco.</p>`}
   `;
 }
 
@@ -9301,32 +9322,41 @@ function actualizarGaugeUtilidad() {
   const gauge = document.getElementById('mv-gauge-utilidad');
   if (!b || !gauge) return;
 
-  const precioInput = document.getElementById('mv-precio');
-  const unidadesInput = document.getElementById('mv-unidades-esperadas');
+  const precioB2CInput = document.getElementById('mv-precio-b2c');
+  const precioB2BInput = document.getElementById('mv-precio-b2b');
+  const unidadesB2CInput = document.getElementById('mv-unidades-b2c');
+  const unidadesB2BInput = document.getElementById('mv-unidades-b2b');
   const participacionInput = document.getElementById('mv-participacion');
-  if (!precioInput || !unidadesInput || !participacionInput) return;
+  if (!precioB2CInput || !precioB2BInput || !unidadesB2CInput || !unidadesB2BInput || !participacionInput) return;
 
-  const precioBruto = parseFloat(precioInput.value) || 0;
-  const precioNeto = precioBruto / 1.19;
-  const unidades = parseFloat(unidadesInput.value) || 0;
+  const precioB2CNeto = (parseFloat(precioB2CInput.value) || 0) / 1.19;
+  const precioB2BNeto = (parseFloat(precioB2BInput.value) || 0) / 1.19;
+  const unidadesB2C = parseFloat(unidadesB2CInput.value) || 0;
+  const unidadesB2B = parseFloat(unidadesB2BInput.value) || 0;
   const participacionPct = parseFloat(participacionInput.value) || 0;
-  const canal = document.getElementById('mv-canal').value;
-  const utilidadObjetivoPct = canal === 'B2B' ? b.utilidadB2BPct : b.utilidadB2CPct;
 
   const costoMermaUnit = b.costoMPUnit * (b.mermaPct/100);
   const costoVariableUnit = b.costoMPUnit + b.costoInsumosUnit + costoMermaUnit;
   const totalFijosRemuneracion = b.fijosMonto + b.remuneracionMonto;
   const cuotaFijosRemuneracion = totalFijosRemuneracion * (participacionPct/100);
 
-  const ingresoTotal = unidades * precioNeto;
-  const costoVariableTotal = unidades * costoVariableUnit;
+  const ingresoB2C = unidadesB2C * precioB2CNeto;
+  const ingresoB2B = unidadesB2B * precioB2BNeto;
+  const ingresoTotal = ingresoB2C + ingresoB2B;
+  const costoVariableTotal = (unidadesB2C + unidadesB2B) * costoVariableUnit;
   const utilidadTotal = ingresoTotal - costoVariableTotal - cuotaFijosRemuneracion;
   const utilidadPct = ingresoTotal > 0 ? (utilidadTotal / ingresoTotal) * 100 : null;
 
-  if (utilidadPct === null || unidades === 0) {
-    gauge.innerHTML = `<p style="font-size:12px;color:var(--txt3);text-align:center;padding:20px">Ingrese unidades y precio arriba para ver el indicador.</p>`;
+  if (utilidadPct === null || (unidadesB2C + unidadesB2B) === 0) {
+    gauge.innerHTML = `<p style="font-size:12px;color:var(--txt3);text-align:center;padding:20px">Ingrese unidades y precio arriba (en al menos un canal) para ver el indicador.</p>`;
     return;
   }
+
+  // Objetivo ponderado — combina el % objetivo de B2C y B2B según cuánto pesa
+  // cada uno en los ingresos actuales, para tener un solo número de referencia.
+  const utilidadObjetivoPct = ingresoTotal > 0
+    ? ((ingresoB2C * b.utilidadB2CPct) + (ingresoB2B * b.utilidadB2BPct)) / ingresoTotal
+    : (b.utilidadB2CPct + b.utilidadB2BPct) / 2;
 
   // 3 estados: rojo (pérdida), naranjo (positivo pero lejos de la meta), verde (alcanza o supera la meta)
   let color, bg, borde, estado, icono;
@@ -9347,13 +9377,13 @@ function actualizarGaugeUtilidad() {
     <div style="padding:16px;background:${bg};border:2px solid ${borde};border-radius:var(--r-md);text-align:center">
       <p style="font-size:11px;font-weight:700;text-transform:uppercase;color:${color}"><i class="ti ${icono}"></i> ${estado}</p>
       <p style="font-size:36px;font-weight:800;color:${color};margin-top:4px">${utilidadPct.toFixed(1)}%</p>
-      <p style="font-size:11px;color:var(--txt3);margin-top:2px">Utilidad: ${clp(utilidadTotal)} sobre ${clp(ingresoTotal)} en ventas</p>
+      <p style="font-size:11px;color:var(--txt3);margin-top:2px">Utilidad: ${clp(utilidadTotal)} sobre ${clp(ingresoTotal)} en ventas (B2C+B2B)</p>
 
       <div style="position:relative;height:10px;background:#fff;border-radius:99px;margin:14px 4px 4px;overflow:hidden">
         <div style="position:absolute;left:0;top:0;bottom:0;width:${posBarra}%;background:${color};transition:width .2s"></div>
         <div style="position:absolute;left:${posObjetivo}%;top:-3px;bottom:-3px;width:2px;background:#333"></div>
       </div>
-      <p style="font-size:10px;color:var(--txt3);margin-top:4px">La línea marca el objetivo (${utilidadObjetivoPct}%)</p>
+      <p style="font-size:10px;color:var(--txt3);margin-top:4px">La línea marca el objetivo ponderado según su mezcla de ventas actual (${utilidadObjetivoPct.toFixed(1)}%)</p>
     </div>`;
 }
 
