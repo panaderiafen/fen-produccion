@@ -388,6 +388,7 @@ function renderSidebar() {
         { id: 'analisis-merma',    icon: 'ti-trash',                 label: 'Análisis de $ merma' },
         { id: 'ventas-mensuales',  icon: 'ti-report-money',          label: 'Ventas mensuales (B2B/B2C)' },
         { id: 'informe-general',   icon: 'ti-building-store',        label: 'Informe general del negocio' },
+        { id: 'estado-resultados', icon: 'ti-report-analytics',      label: 'Estado de Resultados' },
       ]},
       { id: 'configuracion', label: 'Configuración', icon: 'ti-adjustments', items: [
         { id: 'correos-contacto', icon: 'ti-mail', label: 'Correos de contacto' },
@@ -468,7 +469,7 @@ function navegarA(vistaId) {
       { id: 'flujo-diario', items: ['aprobaciones','materias-primas'] },
       { id: 'catalogo', items: ['maestro-admin','productos-reventa'] },
       { id: 'costeo', items: ['config-costeo','costos','auditoria-costos','inversiones','rentabilidad-real','meta-venta','informe-auditoria'] },
-      { id: 'analisis', items: ['estimacion-bol','analisis-merma','ventas-mensuales','informe-general'] },
+      { id: 'analisis', items: ['estimacion-bol','analisis-merma','ventas-mensuales','informe-general','estado-resultados'] },
       { id: 'configuracion', items: ['correos-contacto'] },
     ];
     const grupo = gruposAdmin.find(g => g.items.includes(vistaId));
@@ -516,6 +517,7 @@ function navegarA(vistaId) {
     case 'meta-venta':          renderVistaMetaVenta(); break;
     case 'informe-auditoria':   renderVistaInformeAuditoria(); break;
     case 'informe-general':     renderVistaInformeGeneral(); break;
+    case 'estado-resultados':   renderVistaEstadoResultados(); break;
     case 'config-costeo':       renderVistaConfigCosteo();   break;
     case 'correos-contacto':    renderVistaCorreosContacto(); break;
     case 'productos-reventa':   renderVistaProductosReventa(); break;
@@ -8627,6 +8629,126 @@ async function sincronizarVentasMensualesUI(btn) {
 // = monto_neto / cantidad_vendida) con EC_productos (costo real calculado).
 // ── INFORME DE TRAZABILIDAD — traza completa del cálculo, para imprimir ────
 // ── INFORME GENERAL DEL NEGOCIO — panorama completo, ventas − gastos ────────
+// ── ESTADO DE RESULTADOS — varios meses lado a lado, con estructura contable ──
+// Reutiliza el mismo cálculo de "Informe general del negocio" (una llamada por
+// mes), pero organizado con el orden contable clásico: ventas → costo de ventas
+// → utilidad bruta → gastos operacionales → utilidad operacional. Se detiene
+// ahí — gastos financieros e impuesto quedan pendientes hasta tener el
+// desglose de interés/capital de los préstamos.
+function renderVistaEstadoResultados() {
+  const vista = document.getElementById('vista-estado-resultados');
+  const hoy = new Date();
+  const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+  const hace5 = new Date(hoy.getFullYear(), hoy.getMonth()-5, 1);
+  const mesInicialDefault = `${hace5.getFullYear()}-${String(hace5.getMonth()+1).padStart(2,'0')}`;
+
+  vista.innerHTML = `
+    <div class="vista-header no-print"><h1 class="vista-titulo">Estado de Resultados</h1></div>
+    <p class="no-print" style="font-size:12px;color:var(--txt3);margin-bottom:16px">
+      Ventas − costo de ventas (MP consumida) − gastos operacionales (fijos + remuneración + depreciación) = utilidad operacional.
+      Todo el negocio junto, varios meses lado a lado. No incluye gastos financieros ni impuesto todavía — pendiente el desglose
+      de interés de las cuotas de préstamo.
+    </p>
+    <div class="card no-print" style="margin-bottom:16px">
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:16px">
+        <div class="campo">
+          <label>Desde (YYYY-MM)</label>
+          <input type="text" id="er-mes-desde" value="${mesInicialDefault}" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <div class="campo">
+          <label>Hasta (YYYY-MM)</label>
+          <input type="text" id="er-mes-hasta" value="${mesActual}" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <button class="btn-primario" onclick="generarEstadoResultadosUI(this)">
+          <i class="ti ti-report-analytics"></i> Generar
+        </button>
+      </div>
+    </div>
+    <div id="estado-resultados-resultado"></div>
+  `;
+  mostrarVista('estado-resultados');
+}
+
+function _mesesEntreFrontend(desde, hasta) {
+  const [a1,m1] = desde.split('-').map(Number);
+  const [a2,m2] = hasta.split('-').map(Number);
+  const meses = [];
+  let a = a1, m = m1;
+  while (a < a2 || (a === a2 && m <= m2)) {
+    meses.push(`${a}-${String(m).padStart(2,'0')}`);
+    m++; if (m > 12) { m = 1; a++; }
+  }
+  return meses;
+}
+
+async function generarEstadoResultadosUI(btn) {
+  const desde = document.getElementById('er-mes-desde').value.trim();
+  const hasta = document.getElementById('er-mes-hasta').value.trim();
+  const cont = document.getElementById('estado-resultados-resultado');
+  const meses = _mesesEntreFrontend(desde, hasta);
+  if (!meses.length || meses.length > 24) { toast('Rango de meses inválido', 'error'); return; }
+
+  bloquearBtn(btn, 'Generando...');
+  cont.innerHTML = '<p style="color:var(--txt3)">Cargando...</p>';
+
+  try {
+    const datosPorMes = [];
+    for (const mes of meses) {
+      const payload = encodeURIComponent(JSON.stringify({ accion: 'generar_informe_general', mes }));
+      const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' });
+      const data = await res.json();
+      datosPorMes.push({ mes, data: data.ok ? data : null });
+    }
+    cont.innerHTML = renderEstadoResultadosHTML(datosPorMes);
+    desbloquearBtn(btn, '<i class="ti ti-report-analytics"></i> Generar', true);
+  } catch(e) {
+    cont.innerHTML = `<p style="color:#C62828">Error: ${e.message}</p>`;
+    desbloquearBtn(btn, '<i class="ti ti-report-analytics"></i> Generar', true);
+  }
+}
+
+function renderEstadoResultadosHTML(datosPorMes) {
+  const fila = (label, getValor, destacado) => `
+    <tr style="${destacado ? 'font-weight:700;border-top:1px solid #999' : ''}">
+      <td>${label}</td>
+      ${datosPorMes.map(({data}) => `<td class="num">${data ? clp(getValor(data.total)) : '—'}</td>`).join('')}
+    </tr>`;
+
+  return `
+    <div id="contenido-imprimible">
+      <div class="encabezado-informe">
+        <h1>Estado de Resultados</h1>
+        <p>${datosPorMes[0]?.mes} a ${datosPorMes[datosPorMes.length-1]?.mes} · Generado ${new Date().toLocaleDateString('es-CL')}</p>
+      </div>
+      <div class="bloque-informe">
+        <table class="tabla-informe">
+          <thead><tr>
+            <th>Concepto</th>
+            ${datosPorMes.map(({mes}) => `<th class="num">${mes}</th>`).join('')}
+          </tr></thead>
+          <tbody>
+            ${fila('Ventas netas', t => t.ventasNeto)}
+            ${fila('(−) Costo de ventas (MP consumida)', t => -t.mpConsumida)}
+            ${fila('= Utilidad bruta', t => t.ventasNeto - t.mpConsumida, true)}
+            ${fila('(−) Costos fijos propios', t => -t.fijosPropios)}
+            ${fila('(−) Costos fijos compartidos', t => -t.fijosCompartidos)}
+            ${fila('(−) Remuneración', t => -(t.remuneracionPropia + t.remuneracionCompartida))}
+            ${fila('= Utilidad operacional', t => t.utilidad, true)}
+            <tr>
+              <td style="color:var(--txt3)">Margen operacional %</td>
+              ${datosPorMes.map(({data}) => `<td class="num" style="color:var(--txt3)">${data && data.total.ventasNeto > 0 ? ((data.total.utilidad/data.total.ventasNeto)*100).toFixed(1)+'%' : '—'}</td>`).join('')}
+            </tr>
+          </tbody>
+        </table>
+        <p class="nota-informe">No incluye gastos financieros (intereses de préstamo) ni impuesto a la utilidad — pendiente el desglose interés/capital de las cuotas.</p>
+      </div>
+    </div>
+    <button class="btn-primario no-print" style="margin-top:16px" onclick="window.print()">
+      <i class="ti ti-printer"></i> Descargar PDF / Imprimir
+    </button>
+  `;
+}
+
 function renderVistaInformeGeneral() {
   const vista = document.getElementById('vista-informe-general');
   const hoy = new Date();
