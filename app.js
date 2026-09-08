@@ -9218,7 +9218,11 @@ function actualizarSimuladorMetaVenta() {
   cont.innerHTML = `
     <table class="tabla-informe" style="margin-bottom:14px">
       <tbody>
-        <tr><td>Margen de contribución B2C (${clp(precioB2CNeto)} − ${clp(costoVariableUnit)})</td><td class="num">${clp(margenB2C)}</td></tr>
+        <tr><td>Costo MP</td><td class="num">${clp(b.costoMPUnit)}</td></tr>
+        <tr><td>Costo insumos</td><td class="num">${clp(b.costoInsumosUnit)}</td></tr>
+        <tr><td>Merma (${b.mermaPct}% de MP)</td><td class="num">${clp(costoMermaUnit)}</td></tr>
+        <tr style="font-weight:700;border-top:1px solid #999"><td>= Costo variable total (mismo para ambos canales)</td><td class="num">${clp(costoVariableUnit)}</td></tr>
+        <tr><td style="padding-top:10px">Margen de contribución B2C (${clp(precioB2CNeto)} − ${clp(costoVariableUnit)})</td><td class="num" style="padding-top:10px">${clp(margenB2C)}</td></tr>
         <tr><td>Margen de contribución B2B (${clp(precioB2BNeto)} − ${clp(costoVariableUnit)})</td><td class="num">${clp(margenB2B)}</td></tr>
       </tbody>
     </table>
