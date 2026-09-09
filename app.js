@@ -8705,6 +8705,14 @@ async function generarEstadoResultadosUI(btn) {
       const data = await res.json();
       datosPorMes.push({ mes, data: data.ok ? data : null });
     }
+    try {
+      const payloadVer = encodeURIComponent(JSON.stringify({ accion: 'leer_verificacion_ventas_externa' }));
+      const resVer = await fetch(FEN.WEBAPP_URL + '?payload=' + payloadVer, { cache: 'no-store' });
+      const dataVer = await resVer.json();
+      App._erVerificaciones = dataVer.filas || [];
+    } catch(e) { App._erVerificaciones = []; }
+
+    App._erDatosPorMes = datosPorMes;
     cont.innerHTML = renderEstadoResultadosHTML(datosPorMes);
     desbloquearBtn(btn, '<i class="ti ti-report-analytics"></i> Generar', true);
   } catch(e) {
@@ -8756,6 +8764,54 @@ async function mostrarDesgloseVentasCanal(mes, canal) {
   }
 }
 
+// Arma la fila de B2B o B2C con verificación externa: el monto que fën calculó
+// (de Ventas_mensuales_consolidadas), un campo editable para lo que el sistema
+// mismo declara, y un semáforo que compara ambos — en vez de mostrar cifras
+// derivadas que fën no puede confirmar por sí solo, deja la verdad en manos de
+// la fuente real, y solo avisa si no calzan.
+const TOLERANCIA_VERIFICACION = 0.005; // 0.5% de diferencia — redondeos normales no disparan la alerta
+function filaVerificacionVentas(sistema, datosPorMes) {
+  const filasCelda = datosPorMes.map(({mes, data}) => {
+    if (!data) return `<td class="num">—</td>`;
+    const montoFen = data.ventasPorCanal?.[sistema] || 0;
+    const verificacion = (App._erVerificaciones || []).find(v => v.mes === mes && v.sistema === sistema);
+    const declarado = verificacion ? parseFloat(verificacion.monto_declarado) || 0 : null;
+
+    let semaforo = '';
+    if (declarado !== null && declarado > 0) {
+      const diferencia = montoFen - declarado;
+      const diferenciaPct = Math.abs(diferencia) / declarado;
+      if (diferenciaPct <= TOLERANCIA_VERIFICACION) {
+        semaforo = `<div style="font-size:9px;color:#2E7D32"><i class="ti ti-circle-check"></i> Coincide</div>`;
+      } else {
+        semaforo = `<div style="font-size:9px;color:#C62828;font-weight:700"><i class="ti ti-alert-triangle"></i> Difiere ${clp(diferencia)}</div>`;
+      }
+    } else {
+      semaforo = `<div style="font-size:9px;color:var(--txt3)">Sin verificar</div>`;
+    }
+
+    return `<td class="num" style="${declarado !== null && Math.abs(montoFen-declarado)/Math.max(declarado,1) > TOLERANCIA_VERIFICACION ? 'background:#FFEBEE' : ''}">
+      <div style="font-weight:700">${clp(montoFen)}</div>
+      <input type="number" placeholder="Declarado" value="${declarado !== null ? Math.round(declarado) : ''}"
+        onchange="guardarVerificacionVentasUI('${mes}','${sistema}',this.value)"
+        style="width:100%;margin-top:3px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;font-size:10px;text-align:right;font-family:'DM Mono',monospace">
+      ${semaforo}
+    </td>`;
+  }).join('');
+
+  return `<tr style="color:var(--txt3)"><td style="vertical-align:top;padding-top:10px">&nbsp;&nbsp;${sistema}</td>${filasCelda}</tr>`;
+}
+
+async function guardarVerificacionVentasUI(mes, sistema, valor) {
+  const monto = parseFloat(valor) || 0;
+  await escribirEnSheet('guardar_verificacion_ventas_externa', { mes, sistema, monto });
+  // Actualizar en memoria y re-pintar, sin volver a pedir todo el informe de nuevo
+  const idx = (App._erVerificaciones || []).findIndex(v => v.mes === mes && v.sistema === sistema);
+  if (idx >= 0) App._erVerificaciones[idx].monto_declarado = monto;
+  else (App._erVerificaciones = App._erVerificaciones || []).push({ mes, sistema, monto_declarado: monto });
+  document.getElementById('estado-resultados-resultado').innerHTML = renderEstadoResultadosHTML(App._erDatosPorMes);
+}
+
 function renderEstadoResultadosHTML(datosPorMes) {
   const fila = (label, getValor, destacado) => `
     <tr style="${destacado ? 'font-weight:700;border-top:1px solid #999' : ''}">
@@ -8776,14 +8832,8 @@ function renderEstadoResultadosHTML(datosPorMes) {
             ${datosPorMes.map(({mes}) => `<th class="num">${mes}</th>`).join('')}
           </tr></thead>
           <tbody>
-            <tr style="color:var(--txt3)">
-              <td>&nbsp;&nbsp;B2B <i class="ti ti-click" style="font-size:10px;opacity:.5" title="Clic en un monto para ver el desglose"></i></td>
-              ${datosPorMes.map(({mes,data}) => `<td class="num" style="cursor:${data?'pointer':'default'};text-decoration:${data?'underline dotted':'none'}" ${data?`onclick="mostrarDesgloseVentasCanal('${mes}','B2B')"`:''} title="Ver desglose por producto">${data ? clp(data.ventasPorCanal?.B2B || 0) : '—'}</td>`).join('')}
-            </tr>
-            <tr style="color:var(--txt3)">
-              <td>&nbsp;&nbsp;B2C <i class="ti ti-click" style="font-size:10px;opacity:.5" title="Clic en un monto para ver el desglose"></i></td>
-              ${datosPorMes.map(({mes,data}) => `<td class="num" style="cursor:${data?'pointer':'default'};text-decoration:${data?'underline dotted':'none'}" ${data?`onclick="mostrarDesgloseVentasCanal('${mes}','B2C')"`:''} title="Ver desglose por producto">${data ? clp(data.ventasPorCanal?.B2C || 0) : '—'}</td>`).join('')}
-            </tr>
+            ${filaVerificacionVentas('B2B', datosPorMes)}
+            ${filaVerificacionVentas('B2C', datosPorMes)}
             <tr style="color:var(--txt3)">
               <td>&nbsp;&nbsp;Otros (Servicios/Reventa)</td>
               ${datosPorMes.map(({data}) => `<td class="num">${data ? clp(data.ventasOtros || 0) : '—'}</td>`).join('')}
