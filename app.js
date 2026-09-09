@@ -8713,6 +8713,49 @@ async function generarEstadoResultadosUI(btn) {
   }
 }
 
+// Trae y muestra, en una ventana, el desglose por producto de un monto
+// específico (Ventas B2B o B2C de un mes) — el primer paso de "poder trazar
+// el origen de cada número", haciendo clic directo en vez de tener que
+// preguntar. Reutiliza los mismos datos que ya lee "Ventas mensuales", filtrados
+// al mes/canal exactos, sin necesitar ningún cambio de backend.
+async function mostrarDesgloseVentasCanal(mes, canal) {
+  mostrarModalInfo(`Desglose ${canal} — ${mes}`, '<p style="color:var(--txt3);font-size:12px">Cargando...</p>');
+  try {
+    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_ventas_mensuales' }));
+    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { cache: 'no-store' });
+    const data = await res.json();
+    const filas = (data.ventas || []).filter(v =>
+      _normalizarMesFrontend(v.mes) === _normalizarMesFrontend(mes) && (v.canal === 'B2B' ? 'B2B' : 'B2C') === canal
+    );
+
+    const porProducto = {};
+    filas.forEach(v => {
+      const id = v.ID_receta;
+      if (!porProducto[id]) {
+        const receta = App.recetas.find(r => r.ID_receta === id);
+        porProducto[id] = { nombre: receta?.nombre || id, área: v['área'] || v.área || '—', cantidad: 0, monto: 0 };
+      }
+      porProducto[id].cantidad += parseFloat(v.cantidad_vendida) || 0;
+      porProducto[id].monto += parseFloat(v.monto_neto) || 0;
+    });
+    const lista = Object.entries(porProducto).map(([id,p]) => ({ ID_receta: id, ...p })).sort((a,b) => b.monto - a.monto);
+    const total = lista.reduce((s,p) => s + p.monto, 0);
+
+    const contenido = !lista.length ? '<p style="color:var(--txt3);font-size:12px">Sin ventas registradas para este mes/canal.</p>' : `
+      <p style="font-size:11px;color:var(--txt3);margin-bottom:10px">Fuente: Ventas_mensuales_consolidadas, filtrado por mes="${mes}" y canal="${canal}", agrupado por producto.</p>
+      <table class="tabla-informe">
+        <thead><tr><th>Producto</th><th>Área</th><th class="num">Cantidad</th><th class="num">Monto neto</th></tr></thead>
+        <tbody>
+          ${lista.map(p => `<tr><td>${p.nombre} <span style="font-size:9px;color:var(--txt3)">${p.ID_receta}</span></td><td style="font-size:11px">${p.área}</td><td class="num">${p.cantidad.toLocaleString('es-CL')}</td><td class="num">${clp(p.monto)}</td></tr>`).join('')}
+          <tr style="font-weight:700;border-top:1px solid #999"><td colspan="3">Total</td><td class="num">${clp(total)}</td></tr>
+        </tbody>
+      </table>`;
+    mostrarModalInfo(`Desglose ${canal} — ${mes}`, contenido);
+  } catch(e) {
+    mostrarModalInfo(`Desglose ${canal} — ${mes}`, `<p style="color:#C62828;font-size:12px">Error: ${e.message}</p>`);
+  }
+}
+
 function renderEstadoResultadosHTML(datosPorMes) {
   const fila = (label, getValor, destacado) => `
     <tr style="${destacado ? 'font-weight:700;border-top:1px solid #999' : ''}">
@@ -8733,7 +8776,15 @@ function renderEstadoResultadosHTML(datosPorMes) {
             ${datosPorMes.map(({mes}) => `<th class="num">${mes}</th>`).join('')}
           </tr></thead>
           <tbody>
-            ${fila('Ventas netas', t => t.ventasNeto)}
+            <tr style="color:var(--txt3)">
+              <td>&nbsp;&nbsp;B2B <i class="ti ti-click" style="font-size:10px;opacity:.5" title="Clic en un monto para ver el desglose"></i></td>
+              ${datosPorMes.map(({mes,data}) => `<td class="num" style="cursor:${data?'pointer':'default'};text-decoration:${data?'underline dotted':'none'}" ${data?`onclick="mostrarDesgloseVentasCanal('${mes}','B2B')"`:''} title="Ver desglose por producto">${data ? clp(data.ventasPorCanal?.B2B || 0) : '—'}</td>`).join('')}
+            </tr>
+            <tr style="color:var(--txt3)">
+              <td>&nbsp;&nbsp;B2C <i class="ti ti-click" style="font-size:10px;opacity:.5" title="Clic en un monto para ver el desglose"></i></td>
+              ${datosPorMes.map(({mes,data}) => `<td class="num" style="cursor:${data?'pointer':'default'};text-decoration:${data?'underline dotted':'none'}" ${data?`onclick="mostrarDesgloseVentasCanal('${mes}','B2C')"`:''} title="Ver desglose por producto">${data ? clp(data.ventasPorCanal?.B2C || 0) : '—'}</td>`).join('')}
+            </tr>
+            ${fila('Ventas netas (total)', t => t.ventasNeto)}
             ${fila('(−) Costo de ventas (MP consumida)', t => -t.mpConsumida)}
             ${fila('= Utilidad bruta', t => t.ventasNeto - t.mpConsumida, true)}
             ${fila('(−) Costos fijos operacionales', t => -(t.fijosPropios + t.fijosCompartidos))}
@@ -8745,6 +8796,7 @@ function renderEstadoResultadosHTML(datosPorMes) {
             </tr>
           </tbody>
         </table>
+        <p class="nota-informe">B2B y B2C desglosados para poder contrastar cada uno contra sus propios reportes — útil si algún número no le cuadra.</p>
         <p class="nota-informe">No incluye gastos financieros (intereses de préstamo) ni impuesto a la utilidad — pendiente el desglose interés/capital de las cuotas.</p>
       </div>
     </div>
