@@ -8784,7 +8784,11 @@ function renderEstadoResultadosHTML(datosPorMes) {
               <td>&nbsp;&nbsp;B2C <i class="ti ti-click" style="font-size:10px;opacity:.5" title="Clic en un monto para ver el desglose"></i></td>
               ${datosPorMes.map(({mes,data}) => `<td class="num" style="cursor:${data?'pointer':'default'};text-decoration:${data?'underline dotted':'none'}" ${data?`onclick="mostrarDesgloseVentasCanal('${mes}','B2C')"`:''} title="Ver desglose por producto">${data ? clp(data.ventasPorCanal?.B2C || 0) : '—'}</td>`).join('')}
             </tr>
-            ${fila('Ventas netas (total)', t => t.ventasNeto)}
+            <tr style="color:var(--txt3)">
+              <td>&nbsp;&nbsp;Otros (Servicios/Reventa)</td>
+              ${datosPorMes.map(({data}) => `<td class="num">${data ? clp(data.ventasOtros || 0) : '—'}</td>`).join('')}
+            </tr>
+            ${fila('Ventas netas (4 áreas de producción)', t => t.ventasNeto, true)}
             ${fila('(−) Costo de ventas (MP consumida)', t => -t.mpConsumida)}
             ${fila('= Utilidad bruta', t => t.ventasNeto - t.mpConsumida, true)}
             ${fila('(−) Costos fijos operacionales', t => -(t.fijosPropios + t.fijosCompartidos))}
@@ -8796,6 +8800,7 @@ function renderEstadoResultadosHTML(datosPorMes) {
             </tr>
           </tbody>
         </table>
+        <p class="nota-informe">B2B + B2C + Otros = Ventas netas de las 4 áreas de producción + lo de Servicios/Reventa por separado (sin costo de producción asociado, por eso no se mezcla con "Costo de ventas" de abajo).</p>
         <p class="nota-informe">B2B y B2C desglosados para poder contrastar cada uno contra sus propios reportes — útil si algún número no le cuadra.</p>
         <p class="nota-informe">No incluye gastos financieros (intereses de préstamo) ni impuesto a la utilidad — pendiente el desglose interés/capital de las cuotas.</p>
       </div>
