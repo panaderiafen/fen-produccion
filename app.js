@@ -8516,6 +8516,16 @@ async function renderVistaVentasMensuales() {
           <input type="text" id="url-ventas-b2c" value="${urls.b2c || ''}" placeholder="https://docs.google.com/.../output=csv"
             style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
         </div>
+        <div class="campo" style="margin-bottom:14px">
+          <label>Link CSV — Ventas Total B2B <span style="font-weight:400;color:var(--txt3)">(para verificación en Estado de Resultados)</span></label>
+          <input type="text" id="url-ventas-total-b2b" value="${urls.ventasTotalB2B || ''}" placeholder="https://docs.google.com/.../output=csv"
+            style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <div class="campo" style="margin-bottom:14px">
+          <label>Link CSV — Cobros mensuales B2B <span style="font-weight:400;color:var(--txt3)">(para Flujo de Caja, próximamente)</span></label>
+          <input type="text" id="url-cobros-b2b" value="${urls.cobrosB2B || ''}" placeholder="https://docs.google.com/.../output=csv"
+            style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
         <button class="btn-secundario" onclick="guardarUrlsVentasUI(this)">
           <i class="ti ti-device-floppy"></i> Guardar links
         </button>
@@ -8528,11 +8538,15 @@ async function renderVistaVentasMensuales() {
         <button class="btn-primario" onclick="sincronizarVentasMensualesUI(this)">
           <i class="ti ti-download"></i> Sincronizar ventas ahora
         </button>
+        <button class="btn-secundario" onclick="sincronizarCobrosB2BUI(this)" style="margin-left:8px">
+          <i class="ti ti-cash"></i> Sincronizar Cobros B2B
+        </button>
         <p style="font-size:11px;color:var(--txt3);margin-top:10px">
           ${Object.keys(mesesPorCanal).length
             ? Object.entries(mesesPorCanal).map(([canal, mes]) => `Último mes recibido de ${canal}: <strong>${mes}</strong>`).join(' · ')
             : 'Todavía no se ha sincronizado nada.'}
         </p>
+        <p style="font-size:10px;color:var(--txt3);margin-top:4px">"Cobros mensuales B2B" se guarda aparte, listo para cuando construyamos Flujo de Caja — no se usa todavía en ningún cálculo.</p>
       </div>
     </div>
 
@@ -8594,9 +8608,11 @@ async function renderVistaVentasMensuales() {
 async function guardarUrlsVentasUI(btn) {
   const b2b = document.getElementById('url-ventas-b2b')?.value.trim() || '';
   const b2c = document.getElementById('url-ventas-b2c')?.value.trim() || '';
+  const ventasTotalB2B = document.getElementById('url-ventas-total-b2b')?.value.trim() || '';
+  const cobrosB2B = document.getElementById('url-cobros-b2b')?.value.trim() || '';
   bloquearBtn(btn, 'Guardando...');
   try {
-    await escribirEnSheet('guardar_urls_ventas_csv', { b2b, b2c });
+    await escribirEnSheet('guardar_urls_ventas_csv', { b2b, b2c, ventasTotalB2B, cobrosB2B });
     toast('Links guardados');
   } catch(e) {
     toast('Error: ' + e.message, 'error');
@@ -8619,6 +8635,21 @@ async function sincronizarVentasMensualesUI(btn) {
     toast('Error: ' + e.message, 'error');
     desbloquearBtn(btn, '<i class="ti ti-download"></i> Sincronizar ventas ahora', true);
   }
+}
+
+async function sincronizarCobrosB2BUI(btn) {
+  bloquearBtn(btn, 'Sincronizando...');
+  try {
+    const resp = await escribirEnSheet('sincronizar_cobros_b2b', {});
+    if (resp?.ok) {
+      toast(resp.msg);
+    } else {
+      toast('Error: ' + (resp?.msg || ''), 'error');
+    }
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+  }
+  desbloquearBtn(btn, '<i class="ti ti-cash"></i> Sincronizar Cobros B2B', true);
 }
 
 // ── ADMIN: INVERSIONES Y DEPRECIACIÓN ──────────────────────────
@@ -8712,6 +8743,13 @@ async function generarEstadoResultadosUI(btn) {
       App._erVerificaciones = dataVer.filas || [];
     } catch(e) { App._erVerificaciones = []; }
 
+    try {
+      const payloadB2B = encodeURIComponent(JSON.stringify({ accion: 'leer_ventas_total_b2b_externo' }));
+      const resB2B = await fetch(FEN.WEBAPP_URL + '?payload=' + payloadB2B, { cache: 'no-store' });
+      const dataB2B = await resB2B.json();
+      App._erVentasTotalB2B = dataB2B.filas || [];
+    } catch(e) { App._erVentasTotalB2B = []; }
+
     App._erDatosPorMes = datosPorMes;
     cont.innerHTML = renderEstadoResultadosHTML(datosPorMes);
     desbloquearBtn(btn, '<i class="ti ti-report-analytics"></i> Generar', true);
@@ -8769,32 +8807,51 @@ async function mostrarDesgloseVentasCanal(mes, canal) {
 // mismo declara, y un semáforo que compara ambos — en vez de mostrar cifras
 // derivadas que fën no puede confirmar por sí solo, deja la verdad en manos de
 // la fuente real, y solo avisa si no calzan.
-const TOLERANCIA_VERIFICACION = 0.005; // 0.5% de diferencia — redondeos normales no disparan la alerta
+// Para B2B, el "declarado" ya no es manual — se trae en vivo desde el CSV
+// VentasMensualesTotalB2B, así no hay que ingresarlo a mano. B2C sigue siendo
+// manual hasta que exista un CSV equivalente de su parte.
+const TOLERANCIA_NARANJA = 15000; // hasta $15.000 de diferencia: naranja, no rojo
 function filaVerificacionVentas(sistema, datosPorMes) {
+  const esAutomatico = sistema === 'B2B';
   const filasCelda = datosPorMes.map(({mes, data}) => {
     if (!data) return `<td class="num">—</td>`;
     const montoFen = data.ventasPorCanal?.[sistema] || 0;
-    const verificacion = (App._erVerificaciones || []).find(v => v.mes === mes && v.sistema === sistema);
-    const declarado = verificacion ? parseFloat(verificacion.monto_declarado) || 0 : null;
 
-    let semaforo = '';
+    let declarado = null;
+    if (esAutomatico) {
+      const filaB2B = (App._erVentasTotalB2B || []).find(f => f.mes === mes);
+      declarado = filaB2B ? parseFloat(filaB2B.total_neto) || 0 : null;
+    } else {
+      const verificacion = (App._erVerificaciones || []).find(v => v.mes === mes && v.sistema === sistema);
+      declarado = verificacion ? parseFloat(verificacion.monto_declarado) || 0 : null;
+    }
+
+    let semaforo = '', bgCelda = '';
     if (declarado !== null && declarado > 0) {
       const diferencia = montoFen - declarado;
-      const diferenciaPct = Math.abs(diferencia) / declarado;
-      if (diferenciaPct <= TOLERANCIA_VERIFICACION) {
-        semaforo = `<div style="font-size:9px;color:#2E7D32"><i class="ti ti-circle-check"></i> Coincide</div>`;
+      const diferenciaAbs = Math.abs(diferencia);
+      if (diferenciaAbs === 0) {
+        semaforo = `<div style="font-size:9px;color:#2E7D32"><i class="ti ti-circle-check"></i> Coincide exacto</div>`;
+      } else if (diferenciaAbs <= TOLERANCIA_NARANJA) {
+        semaforo = `<div style="font-size:9px;color:#E65100;font-weight:700"><i class="ti ti-alert-circle"></i> Difiere ${clp(diferencia)}</div>`;
+        bgCelda = 'background:#FFF3E0';
       } else {
         semaforo = `<div style="font-size:9px;color:#C62828;font-weight:700"><i class="ti ti-alert-triangle"></i> Difiere ${clp(diferencia)}</div>`;
+        bgCelda = 'background:#FFEBEE';
       }
     } else {
       semaforo = `<div style="font-size:9px;color:var(--txt3)">Sin verificar</div>`;
     }
 
-    return `<td class="num" style="${declarado !== null && Math.abs(montoFen-declarado)/Math.max(declarado,1) > TOLERANCIA_VERIFICACION ? 'background:#FFEBEE' : ''}">
+    const campoDeclarado = esAutomatico
+      ? `<div style="font-size:9px;color:var(--txt3);margin-top:3px">Declarado B2B: ${declarado !== null ? clp(declarado) : '—'}</div>`
+      : `<input type="number" placeholder="Declarado" value="${declarado !== null ? Math.round(declarado) : ''}"
+          onchange="guardarVerificacionVentasUI('${mes}','${sistema}',this.value)"
+          style="width:100%;margin-top:3px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;font-size:10px;text-align:right;font-family:'DM Mono',monospace">`;
+
+    return `<td class="num" style="${bgCelda}">
       <div style="font-weight:700">${clp(montoFen)}</div>
-      <input type="number" placeholder="Declarado" value="${declarado !== null ? Math.round(declarado) : ''}"
-        onchange="guardarVerificacionVentasUI('${mes}','${sistema}',this.value)"
-        style="width:100%;margin-top:3px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;font-size:10px;text-align:right;font-family:'DM Mono',monospace">
+      ${campoDeclarado}
       ${semaforo}
     </td>`;
   }).join('');
@@ -8834,10 +8891,6 @@ function renderEstadoResultadosHTML(datosPorMes) {
           <tbody>
             ${filaVerificacionVentas('B2B', datosPorMes)}
             ${filaVerificacionVentas('B2C', datosPorMes)}
-            <tr style="color:var(--txt3)">
-              <td>&nbsp;&nbsp;Otros (Servicios/Reventa)</td>
-              ${datosPorMes.map(({data}) => `<td class="num">${data ? clp(data.ventasOtros || 0) : '—'}</td>`).join('')}
-            </tr>
             ${fila('Ventas netas (4 áreas de producción)', t => t.ventasNeto, true)}
             ${fila('(−) Costo de ventas (MP consumida)', t => -t.mpConsumida)}
             ${fila('= Utilidad bruta', t => t.ventasNeto - t.mpConsumida, true)}
@@ -8850,7 +8903,6 @@ function renderEstadoResultadosHTML(datosPorMes) {
             </tr>
           </tbody>
         </table>
-        <p class="nota-informe">B2B + B2C + Otros = Ventas netas de las 4 áreas de producción + lo de Servicios/Reventa por separado (sin costo de producción asociado, por eso no se mezcla con "Costo de ventas" de abajo).</p>
         <p class="nota-informe">B2B y B2C desglosados para poder contrastar cada uno contra sus propios reportes — útil si algún número no le cuadra.</p>
         <p class="nota-informe">No incluye gastos financieros (intereses de préstamo) ni impuesto a la utilidad — pendiente el desglose interés/capital de las cuotas.</p>
       </div>
