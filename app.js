@@ -8526,6 +8526,16 @@ async function renderVistaVentasMensuales() {
           <input type="text" id="url-cobros-b2b" value="${urls.cobrosB2B || ''}" placeholder="https://docs.google.com/.../output=csv"
             style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
         </div>
+        <div class="campo" style="margin-bottom:14px">
+          <label>Link CSV — Verificación por sucursal B2C <span style="font-weight:400;color:var(--txt3)">(para verificación en Estado de Resultados)</span></label>
+          <input type="text" id="url-verificacion-b2c" value="${urls.verificacionB2C || ''}" placeholder="https://docs.google.com/.../output=csv"
+            style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
+        <div class="campo" style="margin-bottom:14px">
+          <label>Link CSV — Flujo de caja proyectado B2C <span style="font-weight:400;color:var(--txt3)">(para Flujo de Caja, próximamente)</span></label>
+          <input type="text" id="url-flujocaja-b2c" value="${urls.flujoCajaB2C || ''}" placeholder="https://docs.google.com/.../output=csv"
+            style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+        </div>
         <button class="btn-secundario" onclick="guardarUrlsVentasUI(this)">
           <i class="ti ti-device-floppy"></i> Guardar links
         </button>
@@ -8610,9 +8620,11 @@ async function guardarUrlsVentasUI(btn) {
   const b2c = document.getElementById('url-ventas-b2c')?.value.trim() || '';
   const ventasTotalB2B = document.getElementById('url-ventas-total-b2b')?.value.trim() || '';
   const cobrosB2B = document.getElementById('url-cobros-b2b')?.value.trim() || '';
+  const verificacionB2C = document.getElementById('url-verificacion-b2c')?.value.trim() || '';
+  const flujoCajaB2C = document.getElementById('url-flujocaja-b2c')?.value.trim() || '';
   bloquearBtn(btn, 'Guardando...');
   try {
-    await escribirEnSheet('guardar_urls_ventas_csv', { b2b, b2c, ventasTotalB2B, cobrosB2B });
+    await escribirEnSheet('guardar_urls_ventas_csv', { b2b, b2c, ventasTotalB2B, cobrosB2B, verificacionB2C, flujoCajaB2C });
     toast('Links guardados');
   } catch(e) {
     toast('Error: ' + e.message, 'error');
@@ -8737,18 +8749,18 @@ async function generarEstadoResultadosUI(btn) {
       datosPorMes.push({ mes, data: data.ok ? data : null });
     }
     try {
-      const payloadVer = encodeURIComponent(JSON.stringify({ accion: 'leer_verificacion_ventas_externa' }));
-      const resVer = await fetch(FEN.WEBAPP_URL + '?payload=' + payloadVer, { cache: 'no-store' });
-      const dataVer = await resVer.json();
-      App._erVerificaciones = dataVer.filas || [];
-    } catch(e) { App._erVerificaciones = []; }
-
-    try {
       const payloadB2B = encodeURIComponent(JSON.stringify({ accion: 'leer_ventas_total_b2b_externo' }));
       const resB2B = await fetch(FEN.WEBAPP_URL + '?payload=' + payloadB2B, { cache: 'no-store' });
       const dataB2B = await resB2B.json();
       App._erVentasTotalB2B = dataB2B.filas || [];
     } catch(e) { App._erVentasTotalB2B = []; }
+
+    try {
+      const payloadB2C = encodeURIComponent(JSON.stringify({ accion: 'leer_ventas_total_b2c_externo' }));
+      const resB2C = await fetch(FEN.WEBAPP_URL + '?payload=' + payloadB2C, { cache: 'no-store' });
+      const dataB2C = await resB2C.json();
+      App._erVentasTotalB2C = dataB2C.filas || [];
+    } catch(e) { App._erVentasTotalB2C = []; }
 
     App._erDatosPorMes = datosPorMes;
     cont.innerHTML = renderEstadoResultadosHTML(datosPorMes);
@@ -8803,28 +8815,23 @@ async function mostrarDesgloseVentasCanal(mes, canal) {
 }
 
 // Arma la fila de B2B o B2C con verificación externa: el monto que fën calculó
-// (de Ventas_mensuales_consolidadas), un campo editable para lo que el sistema
-// mismo declara, y un semáforo que compara ambos — en vez de mostrar cifras
-// derivadas que fën no puede confirmar por sí solo, deja la verdad en manos de
-// la fuente real, y solo avisa si no calzan.
-// Para B2B, el "declarado" ya no es manual — se trae en vivo desde el CSV
-// VentasMensualesTotalB2B, así no hay que ingresarlo a mano. B2C sigue siendo
-// manual hasta que exista un CSV equivalente de su parte.
+// (de Ventas_mensuales_consolidadas) contra lo que CADA sistema declara por su
+// cuenta — B2B via VentasMensualesTotalB2B, B2C via VerificacionVentasFen
+// (usando su fila TOTAL, que ya suma ambas sucursales). Ambos automáticos,
+// nada manual — si fën no puede confirmar un número contra la fuente real, no
+// lo muestra como si lo pudiera.
 const TOLERANCIA_NARANJA = 15000; // hasta $15.000 de diferencia: naranja, no rojo
+const FUENTE_VERIFICACION = {
+  B2B: { cache: '_erVentasTotalB2B', etiqueta: 'Declarado B2B (VentasMensualesTotalB2B)' },
+  B2C: { cache: '_erVentasTotalB2C', etiqueta: 'Declarado B2C (VerificacionVentasFen, TOTAL)' }
+};
 function filaVerificacionVentas(sistema, datosPorMes) {
-  const esAutomatico = sistema === 'B2B';
+  const fuente = FUENTE_VERIFICACION[sistema];
   const filasCelda = datosPorMes.map(({mes, data}) => {
     if (!data) return `<td class="num">—</td>`;
     const montoFen = data.ventasPorCanal?.[sistema] || 0;
-
-    let declarado = null;
-    if (esAutomatico) {
-      const filaB2B = (App._erVentasTotalB2B || []).find(f => f.mes === mes);
-      declarado = filaB2B ? parseFloat(filaB2B.total_neto) || 0 : null;
-    } else {
-      const verificacion = (App._erVerificaciones || []).find(v => v.mes === mes && v.sistema === sistema);
-      declarado = verificacion ? parseFloat(verificacion.monto_declarado) || 0 : null;
-    }
+    const filaDeclarada = (App[fuente.cache] || []).find(f => f.mes === mes);
+    const declarado = filaDeclarada ? parseFloat(filaDeclarada.total_neto) || 0 : null;
 
     let semaforo = '', bgCelda = '';
     if (declarado !== null && declarado > 0) {
@@ -8840,33 +8847,17 @@ function filaVerificacionVentas(sistema, datosPorMes) {
         bgCelda = 'background:#FFEBEE';
       }
     } else {
-      semaforo = `<div style="font-size:9px;color:var(--txt3)">Sin verificar</div>`;
+      semaforo = `<div style="font-size:9px;color:var(--txt3)">Sin verificar — falta el link CSV o ese mes no está publicado</div>`;
     }
-
-    const campoDeclarado = esAutomatico
-      ? `<div style="font-size:9px;color:var(--txt3);margin-top:3px">Declarado B2B: ${declarado !== null ? clp(declarado) : '—'}</div>`
-      : `<input type="number" placeholder="Declarado" value="${declarado !== null ? Math.round(declarado) : ''}"
-          onchange="guardarVerificacionVentasUI('${mes}','${sistema}',this.value)"
-          style="width:100%;margin-top:3px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;font-size:10px;text-align:right;font-family:'DM Mono',monospace">`;
 
     return `<td class="num" style="${bgCelda}">
       <div style="font-weight:700">${clp(montoFen)}</div>
-      ${campoDeclarado}
+      <div style="font-size:9px;color:var(--txt3);margin-top:3px">${fuente.etiqueta}: ${declarado !== null ? clp(declarado) : '—'}</div>
       ${semaforo}
     </td>`;
   }).join('');
 
   return `<tr style="color:var(--txt3)"><td style="vertical-align:top;padding-top:10px">&nbsp;&nbsp;${sistema}</td>${filasCelda}</tr>`;
-}
-
-async function guardarVerificacionVentasUI(mes, sistema, valor) {
-  const monto = parseFloat(valor) || 0;
-  await escribirEnSheet('guardar_verificacion_ventas_externa', { mes, sistema, monto });
-  // Actualizar en memoria y re-pintar, sin volver a pedir todo el informe de nuevo
-  const idx = (App._erVerificaciones || []).findIndex(v => v.mes === mes && v.sistema === sistema);
-  if (idx >= 0) App._erVerificaciones[idx].monto_declarado = monto;
-  else (App._erVerificaciones = App._erVerificaciones || []).push({ mes, sistema, monto_declarado: monto });
-  document.getElementById('estado-resultados-resultado').innerHTML = renderEstadoResultadosHTML(App._erDatosPorMes);
 }
 
 function renderEstadoResultadosHTML(datosPorMes) {
