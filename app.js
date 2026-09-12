@@ -10124,8 +10124,11 @@ function renderListaProductosReventa() {
                 <button class="btn-secundario" style="font-size:12px;padding:5px 10px;margin-right:4px" onclick="abrirAjusteStockReventa('${p.ID_reventa}','${(p.nombre||'').replace(/'/g,"\\'")}')">
                   <i class="ti ti-adjustments"></i> Stock
                 </button>
-                <button class="btn-secundario" style="font-size:12px;padding:5px 10px" onclick="abrirFormProductoReventa('${p.ID_reventa}')">
+                <button class="btn-secundario" style="font-size:12px;padding:5px 10px;margin-right:4px" onclick="abrirFormProductoReventa('${p.ID_reventa}')">
                   <i class="ti ti-pencil"></i>
+                </button>
+                <button class="btn-secundario" style="font-size:12px;padding:5px 10px;color:#C62828;border-color:#EF9A9A" onclick="desactivarProductoReventa('${p.ID_reventa}','${(p.nombre||'').replace(/'/g,"\\'")}')" title="Desactivar — nunca borre la fila del Sheet directamente, rompe el vínculo con B2B/B2C">
+                  <i class="ti ti-eye-off"></i>
                 </button>
               </td>
             </tr>`;
@@ -10134,6 +10137,17 @@ function renderListaProductosReventa() {
       </table>
     </div>
   `;
+}
+
+// Desactiva un producto de reventa SIN borrar la fila — mismo espíritu que
+// "descontinuada" en recetas normales. Borrar la fila del Sheet directamente
+// rompe la referencia con B2B/B2C, que pueden tener ventas históricas ancladas
+// a ese ID (así fue como REV001 quedó con área vacía al sincronizar ventas).
+async function desactivarProductoReventa(id, nombre) {
+  if (!confirm(`¿Desactivar "${nombre}"?\n\nSigue existiendo (no se borra la fila) — sale de la lista y de "Se vende directo", pero su ID se conserva para que las ventas históricas de B2B/B2C sigan reconociéndolo correctamente.`)) return;
+  await escribirEnSheet('editar_producto_reventa', { ID_reventa: id, activo: 'no' });
+  toast('Producto desactivado — su ID se conserva, nunca borre la fila del Sheet directamente');
+  renderVistaProductosReventa();
 }
 
 function abrirFormProductoReventa(idExistente) {
