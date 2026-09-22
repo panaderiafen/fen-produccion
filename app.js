@@ -7404,37 +7404,17 @@ function avanzarStockSemanaMasaBase(masasBase, dias, semanaActual) {
 // independiente de la de masa base, aunque comparten el mismo aparato físico.
 let _planCongelacionProdCache = null;
 let _planDescongelacionProdCache = null;
+let _stockInicialProdCache = null;
 
-function avanzarStockSemanaProductosCongelados(productos, dias, semanaActual) {
-  const cfg = cargarConfigSubrecetas();
-  if (!cfg.bol) cfg.bol = {};
-  const semanaGuardada = cfg.bol.stock_productos_semana;
-
-  if (!semanaGuardada) {
-    cfg.bol.stock_productos_semana = semanaActual;
-    guardarConfigSubrecetas(cfg);
-    return;
-  }
-  if (semanaGuardada === semanaActual) return;
-
-  const stockPrevio = cfg.bol.stock_productos || {};
-  const congSemanaVieja = _planCongelacionProdCache.filter(p => p.semana_ID === semanaGuardada);
-  const descongSemanaVieja = _planDescongelacionProdCache.filter(p => p.semana_ID === semanaGuardada);
-
-  const nuevoStock = {};
-  productos.forEach(r => {
-    let acumulado = parseFloat(stockPrevio[r.ID_receta]) || 0;
-    dias.forEach(d => {
-      const congelado = parseFloat(congSemanaVieja.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
-      const descongelado = parseFloat(descongSemanaVieja.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
-      acumulado = acumulado + congelado - descongelado;
-    });
-    nuevoStock[r.ID_receta] = acumulado;
-  });
-
-  cfg.bol.stock_productos = nuevoStock;
-  cfg.bol.stock_productos_semana = semanaActual;
-  guardarConfigSubrecetas(cfg);
+// Suma lo congelado/descongelado de UN producto en UNA semana, sobre todos
+// los días registrados en el cache (Lun-Dom) — usada tanto para calcular el
+// avance automático de "stock inicial" como para la trazabilidad.
+function _totalesCongDescongSemana(recetaId, semanaId) {
+  const cong = _planCongelacionProdCache.filter(p => p.ID_receta === recetaId && p.semana_ID === semanaId)
+    .reduce((s,p) => s + (parseFloat(p.cantidad_unidades) || 0), 0);
+  const descong = _planDescongelacionProdCache.filter(p => p.ID_receta === recetaId && p.semana_ID === semanaId)
+    .reduce((s,p) => s + (parseFloat(p.cantidad_unidades) || 0), 0);
+  return { cong, descong };
 }
 
 async function renderVistaPlanProductosCongelados() {
@@ -7442,30 +7422,68 @@ async function renderVistaPlanProductosCongelados() {
   vista.innerHTML = '<div class="vista-header"><h1 class="vista-titulo">Productos Congelados</h1></div><p style="color:var(--txt3)">Cargando...</p>';
   mostrarVista('plan-productos-congelados');
 
-  // Las dos lecturas se piden en paralelo (antes eran secuenciales: una
-  // esperaba a que la otra terminara del todo antes de empezar, duplicando
-  // el tiempo de carga de la pantalla).
+  // Las tres lecturas se piden en paralelo (antes eran secuenciales: cada una
+  // esperaba a que la anterior terminara del todo antes de empezar, sumando
+  // tiempo de carga innecesario).
   const p1 = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_congelacion_productos' }));
   const p2 = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_descongelacion_productos' }));
-  const [res1, res2] = await Promise.allSettled([
+  const p3 = encodeURIComponent(JSON.stringify({ accion: 'leer_stock_inicial_productos' }));
+  const [res1, res2, res3] = await Promise.allSettled([
     fetch(FEN.WEBAPP_URL + '?payload=' + p1, { redirect: 'follow', cache: 'no-store' }).then(r => r.json()),
-    fetch(FEN.WEBAPP_URL + '?payload=' + p2, { redirect: 'follow', cache: 'no-store' }).then(r => r.json())
+    fetch(FEN.WEBAPP_URL + '?payload=' + p2, { redirect: 'follow', cache: 'no-store' }).then(r => r.json()),
+    fetch(FEN.WEBAPP_URL + '?payload=' + p3, { redirect: 'follow', cache: 'no-store' }).then(r => r.json())
   ]);
   _planCongelacionProdCache = (res1.status === 'fulfilled' ? res1.value.filas : null) || [];
   _planDescongelacionProdCache = (res2.status === 'fulfilled' ? res2.value.filas : null) || [];
+  _stockInicialProdCache = (res3.status === 'fulfilled' ? res3.value.filas : null) || [];
 
   const productos = App.recetas.filter(r => r.estado === 'consolidada' && r.se_congela === 'si');
   const dias = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
   const semanaActual = obtenerSemanaActual();
+  const semanaAnterior = obtenerSemanaAnterior();
   const semanaSiguiente = obtenerSemanaHace(-1).id;
   const diasConProximo = [...dias, 'Próximo Lun'];
 
-  avanzarStockSemanaProductosCongelados(productos, dias, semanaActual);
+  // Avance automático de lunes a lunes: si esta semana todavía no tiene una
+  // fila propia de stock inicial, se calcula UNA vez (stock inicial de la
+  // semana pasada + lo congelado − lo descongelado esa semana) y se guarda
+  // como la fila de esta semana. A diferencia del diseño anterior, esto ya NO
+  // se recalcula ni se reescribe en cada apertura de la pantalla — una vez
+  // que existe la fila de la semana, se usa tal cual (así un ajuste manual
+  // por conteo físico no se pierde solo porque alguien volvió a abrir la
+  // pantalla).
+  const cfgVieja = cargarConfigSubrecetas(); // solo para migrar valores del diseño anterior, una vez
+  const escrituraStockInicialPendientes = [];
+  productos.forEach(r => {
+    const yaExiste = _stockInicialProdCache.some(f => f.ID_receta === r.ID_receta && f.semana_ID === semanaActual);
+    if (yaExiste) return;
+
+    const filaAnterior = _stockInicialProdCache.find(f => f.ID_receta === r.ID_receta && f.semana_ID === semanaAnterior);
+    let base;
+    if (filaAnterior) {
+      base = parseFloat(filaAnterior.stock_inicial) || 0;
+    } else if (_stockInicialProdCache.length === 0 && (cfgVieja.bol?.stock_productos || {})[r.ID_receta] !== undefined) {
+      // Primera vez que corre esta hoja nueva: rescata el valor que estaba
+      // guardado con el diseño anterior (bloque JSON), para no partir de 0.
+      base = parseFloat(cfgVieja.bol.stock_productos[r.ID_receta]) || 0;
+    } else {
+      base = 0;
+    }
+    const { cong, descong } = _totalesCongDescongSemana(r.ID_receta, semanaAnterior);
+    const nuevoValor = Math.max(0, base + cong - descong);
+
+    _stockInicialProdCache.push({ ID_receta: r.ID_receta, nombre: r.nombre, semana_ID: semanaActual, stock_inicial: nuevoValor });
+    escrituraStockInicialPendientes.push(escribirEnSheet('guardar_stock_inicial_productos', {
+      ID_receta: r.ID_receta, nombre: r.nombre, semana: semanaActual, stock_inicial: nuevoValor
+    }));
+  });
+  if (escrituraStockInicialPendientes.length) await Promise.allSettled(escrituraStockInicialPendientes);
 
   const cfg = cargarConfigSubrecetas();
   const bolCfg = cfg.bol || {};
   const capacidadProductos = bolCfg.capacidad_productos || 200;
-  const stockInicial = bolCfg.stock_productos || {};
+  const stockInicial = {};
+  _stockInicialProdCache.filter(f => f.semana_ID === semanaActual).forEach(f => { stockInicial[f.ID_receta] = parseFloat(f.stock_inicial) || 0; });
 
   const congelacionSemana = _planCongelacionProdCache.filter(p => p.semana_ID === semanaActual);
   const descongelacionSemana = _planDescongelacionProdCache.filter(p => p.semana_ID === semanaActual);
@@ -7548,7 +7566,7 @@ async function renderVistaPlanProductosCongelados() {
           return `
           <div style="padding:10px 0;border-bottom:1px solid var(--border)">
             <div style="margin-bottom:6px">
-              <span style="font-size:12px;font-weight:600">${r.nombre}</span>
+              <button onclick="verTrazabilidadStockInicial('${r.ID_receta}')" style="background:none;border:none;padding:0;cursor:pointer;font-size:12px;font-weight:600;color:inherit;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px">${r.nombre} <i class="ti ti-info-circle" style="font-size:11px;color:var(--txt3)"></i></button>
             </div>
             <div style="overflow-x:auto">
               <table style="width:100%;border-collapse:collapse;font-size:10px;min-width:520px">
@@ -7558,7 +7576,7 @@ async function renderVistaPlanProductosCongelados() {
                 </tr></thead>
                 <tbody><tr>
                   <td style="padding:3px 4px;text-align:center;background:#E0F2F1;border-right:2px solid #80CBC4">
-                    <input type="number" id="stock-prod-${r.ID_receta}" class="celda-stock-inicial-congelado" data-receta-id="${r.ID_receta}" min="0" step="1" value="${stockInicial[r.ID_receta] || 0}"
+                    <input type="number" id="stock-prod-${r.ID_receta}" class="celda-stock-inicial-congelado" data-receta-id="${r.ID_receta}" data-original="${stockInicial[r.ID_receta] || 0}" min="0" step="1" value="${stockInicial[r.ID_receta] || 0}"
                       style="width:56px;padding:3px 4px;border:1px solid #80CBC4;border-radius:var(--r-sm);font-size:10px;text-align:center;font-family:'DM Mono',monospace;background:#fff" placeholder="0">
                   </td>
                   ${serie.map((s,i) => `<td style="padding:3px 4px;text-align:center;font-family:'DM Mono',monospace;${i===7?'border-left:2px solid #CE93D8;background:#F3E5F5':''};${s.stock > capacidadProductos ? 'color:#C62828;font-weight:700' : ''}">${s.stock}</td>`).join('')}
@@ -7640,17 +7658,16 @@ async function guardarPlanProductosCongelados() {
   bloquearBtn(btn, 'Guardando plan...');
 
   try {
-    // Stock inicial: se guarda entero de una vez (config local, no requiere red por celda).
-    const cfg = cargarConfigSubrecetas();
-    if (!cfg.bol) cfg.bol = {};
-    if (!cfg.bol.stock_productos) cfg.bol.stock_productos = {};
-    document.querySelectorAll('.celda-stock-inicial-congelado').forEach(input => {
-      cfg.bol.stock_productos[input.dataset.recetaId] = parseInt(input.value) || 0;
-    });
-    guardarConfigSubrecetas(cfg);
-
-    // Congelación / descongelación: solo se escriben las celdas que cambiaron.
+    // Stock inicial + congelación/descongelación: solo se escriben las celdas
+    // que realmente cambiaron desde que se cargó la pantalla.
     const pendientes = [];
+    document.querySelectorAll('.celda-stock-inicial-congelado').forEach(input => {
+      if (input.value === input.dataset.original) return;
+      pendientes.push(escribirEnSheet('guardar_stock_inicial_productos', {
+        ID_receta: input.dataset.recetaId, nombre: App.recetas.find(r=>r.ID_receta===input.dataset.recetaId)?.nombre || '',
+        semana: obtenerSemanaActual(), stock_inicial: parseInt(input.value) || 0
+      }));
+    });
     document.querySelectorAll('.celda-congelacion-producto').forEach(input => {
       if (input.value === input.dataset.original) return;
       pendientes.push(escribirEnSheet('guardar_celda_plan_congelacion_productos', {
@@ -7673,6 +7690,50 @@ async function guardarPlanProductosCongelados() {
     desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan', false);
     toast('Error al guardar el plan: ' + e.message);
   }
+}
+
+// Trazabilidad del stock inicial: de dónde salió el número con el que
+// arrancó esta semana, para un producto puntual. Se abre en una ventana al
+// hacer clic en el nombre del producto, en vez de mostrar esto siempre en la
+// pantalla, para no llenarla de información.
+function verTrazabilidadStockInicial(recetaId) {
+  const receta = App.recetas.find(r => r.ID_receta === recetaId);
+  const nombre = receta?.nombre || recetaId;
+  const semanaActual = obtenerSemanaActual();
+  const semanaAnterior = obtenerSemanaAnterior();
+
+  const filaAnterior = (_stockInicialProdCache || []).find(f => f.ID_receta === recetaId && f.semana_ID === semanaAnterior);
+  const stockAnteriorInicial = filaAnterior ? (parseFloat(filaAnterior.stock_inicial) || 0) : null;
+  const { cong, descong } = _totalesCongDescongSemana(recetaId, semanaAnterior);
+  const filaActual = (_stockInicialProdCache || []).find(f => f.ID_receta === recetaId && f.semana_ID === semanaActual);
+  const stockActualInicial = filaActual ? (parseFloat(filaActual.stock_inicial) || 0) : 0;
+
+  const lunesActual = obtenerSemanaHace(0).fechaRef;
+  const dLun = new Date(lunesActual);
+  const diaNum = dLun.getDay() || 7;
+  dLun.setDate(dLun.getDate() - diaNum + 1);
+  const fechaLunTxt = dLun.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' });
+
+  const html = `
+    <div style="font-size:13px;line-height:1.7">
+      ${stockAnteriorInicial === null ? `
+        <p style="color:var(--txt3)">No hay registro de la semana pasada (${formatearEtiquetaSemana(obtenerSemanaHace(1))}) para este producto — probablemente es la primera semana que se sigue.</p>
+      ` : `
+        <p>Semana pasada (<b>${formatearEtiquetaSemana(obtenerSemanaHace(1))}</b>):</p>
+        <p style="padding-left:10px">Stock inicial: <b>${stockAnteriorInicial}</b></p>
+        <p style="padding-left:10px">+ Se congeló: <b style="color:#1565C0">${cong}</b></p>
+        <p style="padding-left:10px">− Se descongeló: <b style="color:#E65100">${descong}</b></p>
+      `}
+      <p style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        Stock inicial <b>lunes ${fechaLunTxt}</b>: <b style="font-size:16px;color:#00695C">${stockActualInicial}</b>
+        ${!filaActual ? ' <span style="color:var(--txt3);font-size:11px">(aún no calculado)</span>' : ''}
+      </p>
+      <p style="font-size:11px;color:var(--txt3);margin-top:10px">
+        Este valor se calculó solo al llegar la semana. Si un conteo físico no calza, ajústelo a mano en la tabla y presione "Guardar plan" — la próxima semana partirá de lo que usted haya dejado guardado, no se recalcula solo mientras la semana esté en curso.
+      </p>
+    </div>`;
+
+  mostrarModalInfo(`Trazabilidad — ${nombre}`, html);
 }
 
 async function renderVistaPlanMasaBase() {
