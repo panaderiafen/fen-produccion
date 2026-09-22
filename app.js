@@ -7442,17 +7442,17 @@ async function renderVistaPlanProductosCongelados() {
   vista.innerHTML = '<div class="vista-header"><h1 class="vista-titulo">Productos Congelados</h1></div><p style="color:var(--txt3)">Cargando...</p>';
   mostrarVista('plan-productos-congelados');
 
-  try {
-    const p1 = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_congelacion_productos' }));
-    const r1 = await fetch(FEN.WEBAPP_URL + '?payload=' + p1, { redirect: 'follow', cache: 'no-store' });
-    _planCongelacionProdCache = (await r1.json()).filas || [];
-  } catch(e) { _planCongelacionProdCache = []; }
-
-  try {
-    const p2 = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_descongelacion_productos' }));
-    const r2 = await fetch(FEN.WEBAPP_URL + '?payload=' + p2, { redirect: 'follow', cache: 'no-store' });
-    _planDescongelacionProdCache = (await r2.json()).filas || [];
-  } catch(e) { _planDescongelacionProdCache = []; }
+  // Las dos lecturas se piden en paralelo (antes eran secuenciales: una
+  // esperaba a que la otra terminara del todo antes de empezar, duplicando
+  // el tiempo de carga de la pantalla).
+  const p1 = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_congelacion_productos' }));
+  const p2 = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_descongelacion_productos' }));
+  const [res1, res2] = await Promise.allSettled([
+    fetch(FEN.WEBAPP_URL + '?payload=' + p1, { redirect: 'follow', cache: 'no-store' }).then(r => r.json()),
+    fetch(FEN.WEBAPP_URL + '?payload=' + p2, { redirect: 'follow', cache: 'no-store' }).then(r => r.json())
+  ]);
+  _planCongelacionProdCache = (res1.status === 'fulfilled' ? res1.value.filas : null) || [];
+  _planDescongelacionProdCache = (res2.status === 'fulfilled' ? res2.value.filas : null) || [];
 
   const productos = App.recetas.filter(r => r.estado === 'consolidada' && r.se_congela === 'si');
   const dias = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
