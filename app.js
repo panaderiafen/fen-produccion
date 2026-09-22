@@ -7511,6 +7511,7 @@ async function renderVistaPlanProductosCongelados() {
         <h1 class="vista-titulo">Productos Congelados</h1>
         <p style="font-size:12px;color:var(--txt3);margin-top:2px">Semana ${formatearEtiquetaSemana(obtenerSemanaHace(0))} — mismo congelador que masa base, capacidad independiente</p>
       </div>
+      ${productos.length ? `<button class="btn-primario" id="btn-guardar-plan-congelados" onclick="guardarPlanProductosCongelados()"><i class="ti ti-device-floppy"></i> Guardar plan</button>` : ''}
     </div>
 
     ${!productos.length ? `
@@ -7557,8 +7558,7 @@ async function renderVistaPlanProductosCongelados() {
                 </tr></thead>
                 <tbody><tr>
                   <td style="padding:3px 4px;text-align:center;background:#E0F2F1;border-right:2px solid #80CBC4">
-                    <input type="number" id="stock-prod-${r.ID_receta}" min="0" step="1" value="${stockInicial[r.ID_receta] || 0}"
-                      onchange="guardarStockInicialProducto('${r.ID_receta}')"
+                    <input type="number" id="stock-prod-${r.ID_receta}" class="celda-stock-inicial-congelado" data-receta-id="${r.ID_receta}" min="0" step="1" value="${stockInicial[r.ID_receta] || 0}"
                       style="width:56px;padding:3px 4px;border:1px solid #80CBC4;border-radius:var(--r-sm);font-size:10px;text-align:center;font-family:'DM Mono',monospace;background:#fff" placeholder="0">
                   </td>
                   ${serie.map((s,i) => `<td style="padding:3px 4px;text-align:center;font-family:'DM Mono',monospace;${i===7?'border-left:2px solid #CE93D8;background:#F3E5F5':''};${s.stock > capacidadProductos ? 'color:#C62828;font-weight:700' : ''}">${s.stock}</td>`).join('')}
@@ -7593,8 +7593,8 @@ async function renderVistaPlanProductosCongelados() {
                     : congelacionSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d);
                   return `<td style="padding:4px;text-align:center;${i===7?'border-left:2px solid #CE93D8;background:#F3E5F5':''}">
                     <input type="number" min="0" step="1" value="${entrada ? entrada.cantidad_unidades : ''}" placeholder="0"
-                      style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;text-align:center;font-family:'DM Mono',monospace"
-                      onchange="guardarCeldaCongelacionProducto('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}','${i===7?'Lun':d}',this.value,'${i===7?semanaSiguiente:semanaActual}')">
+                      class="celda-congelacion-producto" data-receta-id="${r.ID_receta}" data-nombre="${r.nombre.replace(/"/g,'&quot;')}" data-dia="${i===7?'Lun':d}" data-semana="${i===7?semanaSiguiente:semanaActual}" data-original="${entrada ? entrada.cantidad_unidades : ''}"
+                      style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;text-align:center;font-family:'DM Mono',monospace">
                   </td>`;
                 }).join('')}
               </tr>`).join('')}
@@ -7621,8 +7621,8 @@ async function renderVistaPlanProductosCongelados() {
                     : descongelacionSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d);
                   return `<td style="padding:4px;text-align:center;${i===7?'border-left:2px solid #CE93D8;background:#F3E5F5':''}">
                     <input type="number" min="0" step="1" value="${entrada ? entrada.cantidad_unidades : ''}" placeholder="0"
-                      style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;text-align:center;font-family:'DM Mono',monospace"
-                      onchange="guardarCeldaDescongelacionProducto('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}','${i===7?'Lun':d}',this.value,'${i===7?semanaSiguiente:semanaActual}')">
+                      class="celda-descongelacion-producto" data-receta-id="${r.ID_receta}" data-nombre="${r.nombre.replace(/"/g,'&quot;')}" data-dia="${i===7?'Lun':d}" data-semana="${i===7?semanaSiguiente:semanaActual}" data-original="${entrada ? entrada.cantidad_unidades : ''}"
+                      style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;text-align:center;font-family:'DM Mono',monospace">
                   </td>`;
                 }).join('')}
               </tr>`).join('')}
@@ -7635,31 +7635,44 @@ async function renderVistaPlanProductosCongelados() {
   `;
 }
 
-function guardarStockInicialProducto(recetaId) {
-  const valor = parseInt(document.getElementById('stock-prod-' + recetaId)?.value) || 0;
-  const cfg = cargarConfigSubrecetas();
-  if (!cfg.bol) cfg.bol = {};
-  if (!cfg.bol.stock_productos) cfg.bol.stock_productos = {};
-  cfg.bol.stock_productos[recetaId] = valor;
-  guardarConfigSubrecetas(cfg);
-  toast('Stock actualizado');
-  renderVistaPlanProductosCongelados();
-}
+async function guardarPlanProductosCongelados() {
+  const btn = document.getElementById('btn-guardar-plan-congelados');
+  bloquearBtn(btn, 'Guardando plan...');
 
-async function guardarCeldaCongelacionProducto(recetaId, nombre, dia, valor, semana) {
-  const cantidad = parseFloat(valor) || 0;
-  await escribirEnSheet('guardar_celda_plan_congelacion_productos', {
-    ID_receta: recetaId, nombre, dia, semana: semana || obtenerSemanaActual(), cantidad_unidades: cantidad
-  });
-  await renderVistaPlanProductosCongelados();
-}
+  try {
+    // Stock inicial: se guarda entero de una vez (config local, no requiere red por celda).
+    const cfg = cargarConfigSubrecetas();
+    if (!cfg.bol) cfg.bol = {};
+    if (!cfg.bol.stock_productos) cfg.bol.stock_productos = {};
+    document.querySelectorAll('.celda-stock-inicial-congelado').forEach(input => {
+      cfg.bol.stock_productos[input.dataset.recetaId] = parseInt(input.value) || 0;
+    });
+    guardarConfigSubrecetas(cfg);
 
-async function guardarCeldaDescongelacionProducto(recetaId, nombre, dia, valor, semana) {
-  const cantidad = parseFloat(valor) || 0;
-  await escribirEnSheet('guardar_celda_plan_descongelacion_productos', {
-    ID_receta: recetaId, nombre, dia, semana: semana || obtenerSemanaActual(), cantidad_unidades: cantidad
-  });
-  await renderVistaPlanProductosCongelados();
+    // Congelación / descongelación: solo se escriben las celdas que cambiaron.
+    const pendientes = [];
+    document.querySelectorAll('.celda-congelacion-producto').forEach(input => {
+      if (input.value === input.dataset.original) return;
+      pendientes.push(escribirEnSheet('guardar_celda_plan_congelacion_productos', {
+        ID_receta: input.dataset.recetaId, nombre: input.dataset.nombre, dia: input.dataset.dia,
+        semana: input.dataset.semana || obtenerSemanaActual(), cantidad_unidades: parseFloat(input.value) || 0
+      }));
+    });
+    document.querySelectorAll('.celda-descongelacion-producto').forEach(input => {
+      if (input.value === input.dataset.original) return;
+      pendientes.push(escribirEnSheet('guardar_celda_plan_descongelacion_productos', {
+        ID_receta: input.dataset.recetaId, nombre: input.dataset.nombre, dia: input.dataset.dia,
+        semana: input.dataset.semana || obtenerSemanaActual(), cantidad_unidades: parseFloat(input.value) || 0
+      }));
+    });
+
+    await Promise.all(pendientes);
+    desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan', true);
+    await renderVistaPlanProductosCongelados();
+  } catch(e) {
+    desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan', false);
+    toast('Error al guardar el plan: ' + e.message);
+  }
 }
 
 async function renderVistaPlanMasaBase() {
