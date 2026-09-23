@@ -7358,43 +7358,19 @@ async function eliminarPlanPSPCUI(fila) {
 // ── BOL: PLANIFICACIÓN DIARIA DE MASA BASE ──────────────────────
 let _planMasaBaseCache = null;
 let _planDescongelacionMasaCache = null;
+let _stockInicialMasaCache = null;
 
-// Si esta es la primera vez que se entra en una semana nueva, calcula el stock
-// de cierre de la última semana registrada y lo usa como stock inicial de esta
-// semana — así nadie tiene que volver a contar ni reingresar nada cada lunes.
-// Si ya se había hecho el traspaso para esta semana, no hace nada (evita
-// recalcular en cada recarga de la pantalla).
-function avanzarStockSemanaMasaBase(masasBase, dias, semanaActual) {
-  const cfg = cargarConfigSubrecetas();
-  if (!cfg.bol) cfg.bol = {};
-  const semanaGuardada = cfg.bol.stock_masas_semana;
-
-  if (!semanaGuardada) {
-    // Primera vez que se usa el sistema — no hay semana anterior de la cual partir.
-    cfg.bol.stock_masas_semana = semanaActual;
-    guardarConfigSubrecetas(cfg);
-    return;
-  }
-  if (semanaGuardada === semanaActual) return; // ya está al día, nada que hacer
-
-  const stockPrevio = cfg.bol.stock_masas || {};
-  const planSemanaVieja = _planMasaBaseCache.filter(p => p.semana_ID === semanaGuardada);
-  const descongelacionSemanaVieja = _planDescongelacionMasaCache.filter(p => p.semana_ID === semanaGuardada);
-
-  const nuevoStock = {};
-  masasBase.forEach(r => {
-    let acumulado = parseFloat(stockPrevio[r.ID_receta]) || 0;
-    dias.forEach(d => {
-      const elaborado = parseFloat(planSemanaVieja.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
-      const descongelado = parseFloat(descongelacionSemanaVieja.find(p => p.ID_receta === r.ID_receta && p.dia === d)?.cantidad_unidades) || 0;
-      acumulado = acumulado + elaborado - descongelado;
-    });
-    nuevoStock[r.ID_receta] = acumulado;
-  });
-
-  cfg.bol.stock_masas = nuevoStock;
-  cfg.bol.stock_masas_semana = semanaActual;
-  guardarConfigSubrecetas(cfg);
+// Suma lo elaborado/descongelado de UNA masa en UNA semana, sobre todos los
+// días registrados en el cache (Lun-Dom) — mismo cálculo que se usa para el
+// avance automático de "stock inicial" y para la trazabilidad. Análogo a
+// _totalesCongDescongSemana, pero para masa base (campo "elaborado" en vez
+// de "congelado").
+function _totalesElaboradoDescongeladoSemana(recetaId, semanaId) {
+  const elaborado = _planMasaBaseCache.filter(p => p.ID_receta === recetaId && p.semana_ID === semanaId)
+    .reduce((s,p) => s + (parseFloat(p.cantidad_unidades) || 0), 0);
+  const descongelado = _planDescongelacionMasaCache.filter(p => p.ID_receta === recetaId && p.semana_ID === semanaId)
+    .reduce((s,p) => s + (parseFloat(p.cantidad_unidades) || 0), 0);
+  return { elaborado, descongelado };
 }
 
 // ── BOL: PLANIFICACIÓN DE PRODUCTOS TERMINADOS CONGELADOS ──────
@@ -7422,20 +7398,20 @@ async function renderVistaPlanProductosCongelados() {
   vista.innerHTML = '<div class="vista-header"><h1 class="vista-titulo">Productos Congelados</h1></div><p style="color:var(--txt3)">Cargando...</p>';
   mostrarVista('plan-productos-congelados');
 
-  // Las tres lecturas se piden en paralelo (antes eran secuenciales: cada una
-  // esperaba a que la anterior terminara del todo antes de empezar, sumando
-  // tiempo de carga innecesario).
-  const p1 = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_congelacion_productos' }));
-  const p2 = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_descongelacion_productos' }));
-  const p3 = encodeURIComponent(JSON.stringify({ accion: 'leer_stock_inicial_productos' }));
-  const [res1, res2, res3] = await Promise.allSettled([
-    fetch(FEN.WEBAPP_URL + '?payload=' + p1, { redirect: 'follow', cache: 'no-store' }).then(r => r.json()),
-    fetch(FEN.WEBAPP_URL + '?payload=' + p2, { redirect: 'follow', cache: 'no-store' }).then(r => r.json()),
-    fetch(FEN.WEBAPP_URL + '?payload=' + p3, { redirect: 'follow', cache: 'no-store' }).then(r => r.json())
+  // Las tres lecturas se piden en paralelo Y por la vía rápida: directo del
+  // Sheet publicado como CSV (igual que "Plan semanal", que siempre cargó
+  // rápido) en vez de pasar por el Apps Script Web App — que tiene que
+  // "arrancar en frío" cada vez y se puede encolar si hay más gente usando el
+  // sistema al mismo tiempo. Los guardados sí siguen yendo por el Web App
+  // (el CSV es de solo lectura), esto es solo para leer más rápido.
+  const [filasCong, filasDescong, filasStock] = await Promise.all([
+    leerHoja('BOL_plan_congelacion_productos'),
+    leerHoja('BOL_plan_descongelacion_productos'),
+    leerHoja('BOL_stock_inicial_productos')
   ]);
-  _planCongelacionProdCache = (res1.status === 'fulfilled' ? res1.value.filas : null) || [];
-  _planDescongelacionProdCache = (res2.status === 'fulfilled' ? res2.value.filas : null) || [];
-  _stockInicialProdCache = (res3.status === 'fulfilled' ? res3.value.filas : null) || [];
+  _planCongelacionProdCache = (filasCong || []).filter(f => f.ID_receta);
+  _planDescongelacionProdCache = (filasDescong || []).filter(f => f.ID_receta);
+  _stockInicialProdCache = (filasStock || []).filter(f => f.ID_receta);
 
   const productos = App.recetas.filter(r => r.estado === 'consolidada' && r.se_congela === 'si');
   const dias = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
@@ -7741,23 +7717,16 @@ async function renderVistaPlanMasaBase() {
   vista.innerHTML = '<div class="vista-header"><h1 class="vista-titulo">Planificación Masas Base</h1></div><p style="color:var(--txt3)">Cargando...</p>';
   mostrarVista('plan-masa-base');
 
-  try {
-    const payload = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_masa_base' }));
-    const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload, { redirect: 'follow', cache: 'no-store' });
-    const data = await res.json();
-    _planMasaBaseCache = data.filas || [];
-  } catch(e) {
-    _planMasaBaseCache = [];
-  }
-
-  try {
-    const payload3 = encodeURIComponent(JSON.stringify({ accion: 'leer_plan_descongelacion_masa' }));
-    const res3 = await fetch(FEN.WEBAPP_URL + '?payload=' + payload3, { redirect: 'follow', cache: 'no-store' });
-    const data3 = await res3.json();
-    _planDescongelacionMasaCache = data3.filas || [];
-  } catch(e) {
-    _planDescongelacionMasaCache = [];
-  }
+  // Lecturas en paralelo y por la vía rápida (CSV directo del Sheet, igual
+  // que "Plan semanal") en vez de pasar por el Apps Script Web App.
+  const [filasElab, filasDescong, filasStock] = await Promise.all([
+    leerHoja('BOL_plan_masa_base'),
+    leerHoja('BOL_plan_descongelacion_masa'),
+    leerHoja('BOL_stock_inicial_masa')
+  ]);
+  _planMasaBaseCache = (filasElab || []).filter(f => f.ID_receta);
+  _planDescongelacionMasaCache = (filasDescong || []).filter(f => f.ID_receta);
+  _stockInicialMasaCache = (filasStock || []).filter(f => f.ID_receta);
 
   const masasBase = App.recetas.filter(r =>
     r.estado === 'consolidada' && r.tipo_preparacion === 'masa_base' &&
@@ -7765,17 +7734,47 @@ async function renderVistaPlanMasaBase() {
   );
   const dias = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
   const semanaActual = obtenerSemanaActual();
+  const semanaAnterior = obtenerSemanaAnterior();
   const semanaSiguiente = obtenerSemanaHace(-1).id;
 
-  // Antes de mostrar nada: si esta es la primera vez que se entra en una semana
-  // nueva, heredar el stock inicial del cierre de la semana anterior — así nadie
-  // tiene que volver a contar ni reingresar nada cada lunes.
-  avanzarStockSemanaMasaBase(masasBase, dias, semanaActual);
+  // Avance automático de lunes a lunes, igual que en Productos Congelados: si
+  // esta semana todavía no tiene fila propia de stock inicial para una masa,
+  // se calcula UNA vez (stock inicial de la semana pasada + lo elaborado −
+  // lo descongelado esa semana) y se guarda como la fila de esta semana. Ya
+  // no se recalcula ni reescribe en cada apertura de la pantalla — un ajuste
+  // manual por conteo físico se mantiene durante toda la semana.
+  const cfgVieja = cargarConfigSubrecetas(); // solo para migrar valores del diseño anterior, una vez
+  const escrituraStockInicialPendientes = [];
+  masasBase.forEach(r => {
+    const yaExiste = _stockInicialMasaCache.some(f => f.ID_receta === r.ID_receta && f.semana_ID === semanaActual);
+    if (yaExiste) return;
+
+    const filaAnterior = _stockInicialMasaCache.find(f => f.ID_receta === r.ID_receta && f.semana_ID === semanaAnterior);
+    let base;
+    if (filaAnterior) {
+      base = parseFloat(filaAnterior.stock_inicial) || 0;
+    } else if (_stockInicialMasaCache.length === 0 && (cfgVieja.bol?.stock_masas || {})[r.ID_receta] !== undefined) {
+      // Primera vez que corre esta hoja nueva: rescata el valor que estaba
+      // guardado con el diseño anterior (bloque JSON), para no partir de 0.
+      base = parseFloat(cfgVieja.bol.stock_masas[r.ID_receta]) || 0;
+    } else {
+      base = 0;
+    }
+    const { elaborado, descongelado } = _totalesElaboradoDescongeladoSemana(r.ID_receta, semanaAnterior);
+    const nuevoValor = Math.max(0, base + elaborado - descongelado);
+
+    _stockInicialMasaCache.push({ ID_receta: r.ID_receta, nombre: r.nombre, semana_ID: semanaActual, stock_inicial: nuevoValor });
+    escrituraStockInicialPendientes.push(escribirEnSheet('guardar_stock_inicial_masa', {
+      ID_receta: r.ID_receta, nombre: r.nombre, semana: semanaActual, stock_inicial: nuevoValor
+    }));
+  });
+  if (escrituraStockInicialPendientes.length) await Promise.allSettled(escrituraStockInicialPendientes);
 
   const cfg = cargarConfigSubrecetas();
   const bolCfg = cfg.bol || {};
   const capacidadCongelador = bolCfg.capacidad_congelacion_masas || 40;
-  const stockInicial = bolCfg.stock_masas || {};
+  const stockInicial = {};
+  _stockInicialMasaCache.filter(f => f.semana_ID === semanaActual).forEach(f => { stockInicial[f.ID_receta] = parseFloat(f.stock_inicial) || 0; });
 
   // Vistas de la semana actual — el cache completo (todas las semanas) se
   // conserva en _planMasaBaseCache/_planDescongelacionMasaCache para poder
@@ -7827,6 +7826,7 @@ async function renderVistaPlanMasaBase() {
         <h1 class="vista-titulo">Planificación Masas Base</h1>
         <p style="font-size:12px;color:var(--txt3);margin-top:2px">Semana ${formatearEtiquetaSemana(obtenerSemanaHace(0))}</p>
       </div>
+      ${masasBase.length ? `<button class="btn-primario" id="btn-guardar-plan-masa-base" onclick="guardarPlanMasaBase()"><i class="ti ti-device-floppy"></i> Guardar plan</button>` : ''}
     </div>
 
     <div class="card" style="margin-bottom:16px">
@@ -7842,23 +7842,20 @@ async function renderVistaPlanMasaBase() {
           const serie = stockDiarioPorMasa[r.ID_receta];
           return `
           <div style="padding:10px 0;border-bottom:1px solid var(--border)">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-              <span style="font-size:12px;font-weight:600">${r.nombre}</span>
-              <div style="display:flex;gap:6px;align-items:center">
-                <label style="font-size:10px;color:var(--txt3)">Stock inicial (lunes):</label>
-                <input type="number" id="stock-actual-${r.ID_receta}" min="0" step="1" value="${stockInicial[r.ID_receta] || 0}"
-                  style="max-width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px" placeholder="0">
-                <button class="btn-secundario" style="font-size:10px;padding:4px 8px" onclick="guardarStockActualMasa('${r.ID_receta}')">
-                  <i class="ti ti-device-floppy"></i>
-                </button>
-              </div>
+            <div style="margin-bottom:6px">
+              <button onclick="verTrazabilidadStockInicialMasa('${r.ID_receta}')" style="background:none;border:none;padding:0;cursor:pointer;font-size:12px;font-weight:600;color:inherit;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px">${r.nombre} <i class="ti ti-info-circle" style="font-size:11px;color:var(--txt3)"></i></button>
             </div>
             <div style="overflow-x:auto">
-              <table style="width:100%;border-collapse:collapse;font-size:10px;min-width:460px">
+              <table style="width:100%;border-collapse:collapse;font-size:10px;min-width:520px">
                 <thead><tr>
+                  <th style="padding:3px 4px;text-align:center;color:#00695C;font-weight:600;border-right:2px solid #80CBC4">Stock inicial</th>
                   ${diasConProximo.map((d,i) => `<th style="padding:3px 4px;text-align:center;color:${i===7?'#6A1B9A':'var(--txt3)'};font-weight:600;${i===7?'border-left:2px solid #CE93D8':''}">${d}</th>`).join('')}
                 </tr></thead>
                 <tbody><tr>
+                  <td style="padding:3px 4px;text-align:center;background:#E0F2F1;border-right:2px solid #80CBC4">
+                    <input type="number" id="stock-actual-${r.ID_receta}" class="celda-stock-inicial-masa" data-receta-id="${r.ID_receta}" data-original="${stockInicial[r.ID_receta] || 0}" min="0" step="1" value="${stockInicial[r.ID_receta] || 0}"
+                      style="width:56px;padding:3px 4px;border:1px solid #80CBC4;border-radius:var(--r-sm);font-size:10px;text-align:center;font-family:'DM Mono',monospace;background:#fff" placeholder="0">
+                  </td>
                   ${serie.map((s,i) => `<td style="padding:3px 4px;text-align:center;font-family:'DM Mono',monospace;${i===7?'border-left:2px solid #CE93D8;background:#F3E5F5':''};${s.stock > capacidadCongelador ? 'color:#C62828;font-weight:700' : ''}">${s.stock}</td>`).join('')}
                 </tr></tbody>
               </table>
@@ -7867,7 +7864,8 @@ async function renderVistaPlanMasaBase() {
         }).join('')}
         <p style="font-size:11px;color:var(--txt3);margin-top:8px">
           El stock de cada día se calcula solo: stock inicial + lo elaborado − lo descongelado, acumulado desde el lunes.
-          Ajuste "Stock inicial" a mano solo si hace un conteo físico y no calza. Corre semana a semana, no se resetea.
+          <span style="color:#00695C">Ajuste "Stock inicial" (columna verde, antes del lunes) a mano solo si hace un conteo físico y no calza.</span>
+          Corre semana a semana, no se resetea.
           <span style="color:#6A1B9A">La columna "Próximo Lun" es planificación anticipada — al llegar esa semana, queda como su primer día automáticamente.</span>
         </p>
       </div>
@@ -7891,8 +7889,8 @@ async function renderVistaPlanMasaBase() {
                     : descongelacionSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d);
                   return `<td style="padding:4px;text-align:center;${i===7?'border-left:2px solid #CE93D8;background:#F3E5F5':''}">
                     <input type="number" min="0" step="1" value="${entrada ? entrada.cantidad_unidades : ''}" placeholder="0"
-                      style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;text-align:center;font-family:'DM Mono',monospace"
-                      onchange="guardarCeldaGrillaDescongelacion('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}','${i===7?'Lun':d}',this.value,'${i===7?semanaSiguiente:semanaActual}')">
+                      class="celda-descongelacion-masa" data-receta-id="${r.ID_receta}" data-nombre="${r.nombre.replace(/"/g,'&quot;')}" data-dia="${i===7?'Lun':d}" data-semana="${i===7?semanaSiguiente:semanaActual}" data-original="${entrada ? entrada.cantidad_unidades : ''}"
+                      style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;text-align:center;font-family:'DM Mono',monospace">
                   </td>`;
                 }).join('')}
               </tr>`).join('')}
@@ -7928,8 +7926,8 @@ async function renderVistaPlanMasaBase() {
                     : planSemana.find(p => p.ID_receta === r.ID_receta && p.dia === d);
                   return `<td style="padding:4px;text-align:center;${i===7?'border-left:2px solid #CE93D8;background:#F3E5F5':''}">
                     <input type="number" min="0" step="1" value="${entrada ? entrada.cantidad_unidades : ''}" placeholder="0"
-                      style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;text-align:center;font-family:'DM Mono',monospace"
-                      onchange="guardarCeldaGrillaMasaBase('${r.ID_receta}','${r.nombre.replace(/'/g,"\\'")}','${i===7?'Lun':d}',this.value,${pesoUnidadG},'${i===7?semanaSiguiente:semanaActual}')">
+                      class="celda-elaboracion-masa" data-receta-id="${r.ID_receta}" data-nombre="${r.nombre.replace(/"/g,'&quot;')}" data-dia="${i===7?'Lun':d}" data-semana="${i===7?semanaSiguiente:semanaActual}" data-peso="${pesoUnidadG}" data-original="${entrada ? entrada.cantidad_unidades : ''}"
+                      style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;text-align:center;font-family:'DM Mono',monospace">
                   </td>`;
                 }).join('')}
               </tr>`;
@@ -7947,20 +7945,86 @@ async function renderVistaPlanMasaBase() {
   renderListaCompraMasaBaseSemana(planSemana);
 }
 
-async function guardarCeldaGrillaDescongelacion(recetaId, nombre, dia, valor, semana) {
-  const cantidad = parseFloat(valor) || 0;
-  await escribirEnSheet('guardar_celda_plan_descongelacion_masa', {
-    ID_receta: recetaId, nombre, dia, semana: semana || obtenerSemanaActual(), cantidad_unidades: cantidad
-  });
-  await renderVistaPlanMasaBase();
+async function guardarPlanMasaBase() {
+  const btn = document.getElementById('btn-guardar-plan-masa-base');
+  bloquearBtn(btn, 'Guardando plan...');
+
+  try {
+    // Stock inicial + plan de elaboración + plan de descongelación: solo se
+    // escriben las celdas que realmente cambiaron desde que se cargó la pantalla.
+    const pendientes = [];
+    document.querySelectorAll('.celda-stock-inicial-masa').forEach(input => {
+      if (input.value === input.dataset.original) return;
+      pendientes.push(escribirEnSheet('guardar_stock_inicial_masa', {
+        ID_receta: input.dataset.recetaId, nombre: App.recetas.find(r=>r.ID_receta===input.dataset.recetaId)?.nombre || '',
+        semana: obtenerSemanaActual(), stock_inicial: parseInt(input.value) || 0
+      }));
+    });
+    document.querySelectorAll('.celda-elaboracion-masa').forEach(input => {
+      if (input.value === input.dataset.original) return;
+      pendientes.push(escribirEnSheet('guardar_celda_plan_masa_base', {
+        ID_receta: input.dataset.recetaId, nombre: input.dataset.nombre, dia: input.dataset.dia,
+        semana: input.dataset.semana || obtenerSemanaActual(), cantidad_unidades: parseFloat(input.value) || 0,
+        peso_unidad_g: parseFloat(input.dataset.peso) || 0
+      }));
+    });
+    document.querySelectorAll('.celda-descongelacion-masa').forEach(input => {
+      if (input.value === input.dataset.original) return;
+      pendientes.push(escribirEnSheet('guardar_celda_plan_descongelacion_masa', {
+        ID_receta: input.dataset.recetaId, nombre: input.dataset.nombre, dia: input.dataset.dia,
+        semana: input.dataset.semana || obtenerSemanaActual(), cantidad_unidades: parseFloat(input.value) || 0
+      }));
+    });
+
+    await Promise.all(pendientes);
+    desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan', true);
+    await renderVistaPlanMasaBase();
+  } catch(e) {
+    desbloquearBtn(btn, '<i class="ti ti-device-floppy"></i> Guardar plan', false);
+    toast('Error al guardar el plan: ' + e.message);
+  }
 }
 
-async function guardarCeldaGrillaMasaBase(recetaId, nombre, dia, valor, pesoUnidadG, semana) {
-  const cantidad = parseFloat(valor) || 0;
-  await escribirEnSheet('guardar_celda_plan_masa_base', {
-    ID_receta: recetaId, nombre, dia, semana: semana || obtenerSemanaActual(), cantidad_unidades: cantidad, peso_unidad_g: pesoUnidadG
-  });
-  await renderVistaPlanMasaBase();
+// Trazabilidad del stock inicial de una masa base — mismo criterio que
+// verTrazabilidadStockInicial (productos congelados).
+function verTrazabilidadStockInicialMasa(recetaId) {
+  const receta = App.recetas.find(r => r.ID_receta === recetaId);
+  const nombre = receta?.nombre || recetaId;
+  const semanaActual = obtenerSemanaActual();
+  const semanaAnterior = obtenerSemanaAnterior();
+
+  const filaAnterior = (_stockInicialMasaCache || []).find(f => f.ID_receta === recetaId && f.semana_ID === semanaAnterior);
+  const stockAnteriorInicial = filaAnterior ? (parseFloat(filaAnterior.stock_inicial) || 0) : null;
+  const { elaborado, descongelado } = _totalesElaboradoDescongeladoSemana(recetaId, semanaAnterior);
+  const filaActual = (_stockInicialMasaCache || []).find(f => f.ID_receta === recetaId && f.semana_ID === semanaActual);
+  const stockActualInicial = filaActual ? (parseFloat(filaActual.stock_inicial) || 0) : 0;
+
+  const lunesActual = obtenerSemanaHace(0).fechaRef;
+  const dLun = new Date(lunesActual);
+  const diaNum = dLun.getDay() || 7;
+  dLun.setDate(dLun.getDate() - diaNum + 1);
+  const fechaLunTxt = dLun.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' });
+
+  const html = `
+    <div style="font-size:13px;line-height:1.7">
+      ${stockAnteriorInicial === null ? `
+        <p style="color:var(--txt3)">No hay registro de la semana pasada (${formatearEtiquetaSemana(obtenerSemanaHace(1))}) para esta masa — probablemente es la primera semana que se sigue.</p>
+      ` : `
+        <p>Semana pasada (<b>${formatearEtiquetaSemana(obtenerSemanaHace(1))}</b>):</p>
+        <p style="padding-left:10px">Stock inicial: <b>${stockAnteriorInicial}</b></p>
+        <p style="padding-left:10px">+ Se elaboró: <b style="color:#1565C0">${elaborado}</b></p>
+        <p style="padding-left:10px">− Se descongeló: <b style="color:#E65100">${descongelado}</b></p>
+      `}
+      <p style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        Stock inicial <b>lunes ${fechaLunTxt}</b>: <b style="font-size:16px;color:#00695C">${stockActualInicial}</b>
+        ${!filaActual ? ' <span style="color:var(--txt3);font-size:11px">(aún no calculado)</span>' : ''}
+      </p>
+      <p style="font-size:11px;color:var(--txt3);margin-top:10px">
+        Este valor se calculó solo al llegar la semana. Si un conteo físico no calza, ajústelo a mano en la tabla y presione "Guardar plan" — la próxima semana partirá de lo que usted haya dejado guardado, no se recalcula solo mientras la semana esté en curso.
+      </p>
+    </div>`;
+
+  mostrarModalInfo(`Trazabilidad — ${nombre}`, html);
 }
 
 // Tarjetas apiladas por MASA (no por día) — cada una resume el total semanal y,
@@ -8083,17 +8147,6 @@ function renderListaCompraMasaBaseSemana(planSemana) {
         (incluye sub-recetas anidadas como Poolish).
       </p>
     </div>`;
-}
-
-function guardarStockActualMasa(recetaId) {
-  const valor = parseInt(document.getElementById('stock-actual-' + recetaId)?.value) || 0;
-  const cfg = cargarConfigSubrecetas();
-  if (!cfg.bol) cfg.bol = {};
-  if (!cfg.bol.stock_masas) cfg.bol.stock_masas = {};
-  cfg.bol.stock_masas[recetaId] = valor;
-  guardarConfigSubrecetas(cfg);
-  toast('Stock actualizado');
-  renderVistaPlanMasaBase();
 }
 
 function toggleDetalleMasaBase(fila, recetaId, cantidadUnidades) {
