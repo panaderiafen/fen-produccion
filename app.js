@@ -1,5 +1,7 @@
 // ═══════════════════════════════════════════════
-//  fën — App principal v1.1
+//  fën — App principal v2.0.0
+//  v2.0.0 (seguridad): entrada con PIN / contraseña del dueño (acceso.js),
+//  sin clave escrita en el código, y sesión en todas las llamadas (config.js).
 //  Grupo 1: Visual / Grupo 2: Plan semanal
 // ═══════════════════════════════════════════════
 
@@ -51,9 +53,12 @@ function formatearRendimiento(r) {
 }
 
 // ── INIT ──────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  FenSesion.setJefa(null); // al recargar, la jefa vuelve a ingresar su PIN
   renderLoginCards();
-});
+  await accesoCargarEstado();
+  renderLoginCards();
+}); 
 
 function renderLoginCards() {
   const grid = document.getElementById('login-grid');
@@ -66,9 +71,9 @@ function renderLoginCards() {
     card.innerHTML = `
       <div class="lc-icono"><i class="ti ${area.icon}"></i></div>
       <span class="lc-nombre">${area.nombre}</span>
-      <span class="lc-desc">Recetas · Planificación · Maestro</span>
+      <span class="lc-desc">${esc(accesoDescripcionArea(codigo))}</span>
     `;
-    card.onclick = () => entrar(codigo, 'jefa');
+    card.onclick = () => accesoArea(codigo);
     grid.appendChild(card);
   });
   const admin = document.createElement('button');
@@ -80,13 +85,9 @@ function renderLoginCards() {
     <span class="lc-nombre">Administración</span>
     <span class="lc-desc">Aprobaciones · Costos · Materias primas</span>
   `;
-  admin.onclick = () => {
-    const clave = prompt('Clave de administración:');
-    if (clave === null) return;
-    if (clave !== 'fen2026admin') { alert('Clave incorrecta'); return; }
-    entrar(null, 'admin');
-  };
+  admin.onclick = () => accesoAdmin();
   grid.appendChild(admin);
+  accesoPieLogin();
 }
 
 async function entrar(areaCodigo, rol, desdeAdmin = false) {
@@ -94,6 +95,9 @@ async function entrar(areaCodigo, rol, desdeAdmin = false) {
   App.areaCodigo = areaCodigo;
   App.area = areaCodigo ? FEN.AREAS[areaCodigo] : null;
   App._desdeAdmin = desdeAdmin;
+  // Las jefas no ven costos: se ocultan los elementos marcados "solo-admin"
+  // (el servidor además no les envía ningún costo).
+  document.body.classList.toggle('rol-jefa', rol === 'jefa' && !desdeAdmin);
 
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
@@ -105,7 +109,8 @@ async function entrar(areaCodigo, rol, desdeAdmin = false) {
 
   document.getElementById('topbar-nombre').textContent = App.area?.nombre || 'Administración';
   document.getElementById('topbar-icon').className = `ti ${App.area?.icon || 'ti-shield-check'}`;
-  document.getElementById('topbar-usuario-txt').textContent = rol === 'admin' ? 'Administrador' : `Jefa de ${App.area?.nombre}`;
+  document.getElementById('topbar-usuario-txt').textContent = rol === 'admin' ? 'Administrador'
+    : (App.nombreUsuario && !desdeAdmin ? `${App.nombreUsuario.split(' ')[0]} · ${App.area?.nombre}` : `Jefa de ${App.area?.nombre}`);
   document.getElementById('topbar-avatar-txt').textContent = rol === 'admin' ? 'AD' : areaCodigo;
 
   renderSidebar();
@@ -157,6 +162,7 @@ async function entrarComoAdmin(areaCodigo) {
 
 function volverAAdmin() {
   App.rol = 'admin';
+  document.body.classList.remove('rol-jefa');
   App.areaCodigo = null;
   App.area = null;
   App._desdeAdmin = false;
@@ -192,19 +198,9 @@ function actualizarTopbarAdmin() {
 
 // ── GET FORZADO PARA OPERACIONES CRÍTICAS ────────────────────
 async function getSheet(accion, datos) {
-  const body = JSON.stringify({ accion, ...datos });
-  // POST no-cors — no retorna respuesta pero sí llega al Sheet
-  try {
-    await fetch(FEN.WEBAPP_URL, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body
-    });
-    return { ok: true, msg: 'Enviado' };
-  } catch(e) {
-    return { ok: false, msg: e.message };
-  }
+  // v2: antes era un POST "no-cors" que no podía leer la respuesta.
+  // Ahora se recibe la respuesta real del servidor.
+  return fenApi(accion, datos);
 }
 
 // ── SISTEMA DE AVISOS ────────────────────────────────────────
@@ -299,7 +295,11 @@ async function sincronizarTodo(btn) {
   btn.disabled = true;
   icon.style.animation = 'spin .7s linear infinite';
   Cache.invalidarTodo();
-  try { localStorage.clear(); } catch(e) {}
+  // Borra lo guardado en este equipo, salvo la autorización y la sesión
+  // (claves fen_prod_*), para no tener que volver a entrar.
+  try {
+    Object.keys(localStorage).filter(k => k.indexOf('fen_prod_') !== 0).forEach(k => localStorage.removeItem(k));
+  } catch(e) {}
   await sincronizarConfigDesdeSheet(); // re-traer la config recién borrada, para no perderla
   await cargarMP();
   await cargarRecetas();
@@ -320,9 +320,15 @@ async function sincronizarTodo(btn) {
 
 function salir() {
   App.rol = null; App.area = null; App.areaCodigo = null;
-  App.recetas = []; App.planSemana = {};
+  App.recetas = []; App.planSemana = {}; App.materiasPrimas = [];
+  App.nombreUsuario = null;
+  Cache.invalidarTodo(); // que nada de una sesión quede en memoria para la siguiente
+  document.body.classList.remove('rol-jefa');
+  const volver = document.getElementById('btn-volver-admin');
+  if (volver) volver.remove();
   document.getElementById('app').classList.add('hidden');
   document.getElementById('login-screen').classList.remove('hidden');
+  accesoSalir();
 }
 
 // ── SIDEBAR ───────────────────────────────────────────────────
@@ -392,6 +398,7 @@ function renderSidebar() {
       ]},
       { id: 'configuracion', label: 'Configuración', icon: 'ti-adjustments', items: [
         { id: 'correos-contacto', icon: 'ti-mail', label: 'Correos de contacto' },
+        { id: 'seguridad',        icon: 'ti-lock', label: 'Seguridad y acceso' },
       ]},
     ];
 
@@ -470,7 +477,7 @@ function navegarA(vistaId) {
       { id: 'catalogo', items: ['maestro-admin','productos-reventa'] },
       { id: 'costeo', items: ['config-costeo','costos','auditoria-costos','inversiones','rentabilidad-real','meta-venta','informe-auditoria'] },
       { id: 'analisis', items: ['estimacion-bol','analisis-merma','ventas-mensuales','informe-general','estado-resultados'] },
-      { id: 'configuracion', items: ['correos-contacto'] },
+      { id: 'configuracion', items: ['correos-contacto','seguridad'] },
     ];
     const grupo = gruposAdmin.find(g => g.items.includes(vistaId));
     if (grupo && !App._gruposAbiertos[grupo.id]) {
@@ -495,6 +502,7 @@ function navegarA(vistaId) {
     case 'recetas-del-dia': renderVistaRecetasDelDia(); cargarAvisos(); break;
     case 'maestro':         renderVistaMaestro(); break;
     case 'aprobaciones':    renderVistaAprobaciones(); break;
+    case 'seguridad':       renderVistaSeguridad(); break;
     case 'materias-primas': renderVistaMP(); break;
     case 'maestro-admin':   renderVistaMaestroAdmin(); break;
     case 'costos':              renderVistaCostos(); break;

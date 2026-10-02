@@ -1,10 +1,13 @@
 // ═══════════════════════════════════════════════
-//  fën — Configuración global
+//  fën producción — Configuración y conexión  v2.0.0
+//  Este archivo es público en GitHub Pages: aquí NO va ninguna clave.
+//  La planilla ya no está publicada: todo se lee y escribe a través del
+//  Apps Script, que revisa la sesión de quien pide (ver Seguridad.gs).
 // ═══════════════════════════════════════════════
 
 const FEN = {
-  SHEET_ID: '1lGL6SPgvBAZfRU4WUKUEr7ZEo1WD0Wq92qoyghk8pyY',
-  VERSION: '1.0.0',
+  VERSION: '2.0.0',
+  SHEET_ID: '1lGL6SPgvBAZfRU4WUKUEr7ZEo1WD0Wq92qoyghk8pyY', // solo referencia; la planilla queda privada
 
   AREAS: {
     PAN: { nombre: 'Panadería',    color: '#E65100', bg: '#FFF8E1', icon: 'ti-bread',  hoja_recetas: 'PAN_recetas', hoja_plan: 'PAN_planificacion', tiene_pan: true  },
@@ -21,146 +24,121 @@ const FEN = {
     consolidada:          { label: 'Consolidada',           color: '#2E7D32', bg: '#E8F5E9' },
   },
 
-  // URL base para leer sheets como CSV (público)
-  csvUrl(hoja) {
-    return `https://docs.google.com/spreadsheets/d/${this.SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(hoja)}`;
-  },
-
-  // URL para Google Apps Script Web App (escritura)
+  // URL del Apps Script (Implementar → Gestionar implementaciones). No es secreta:
+  // sin una sesión válida, el script no entrega ni guarda nada.
   WEBAPP_URL: 'https://script.google.com/macros/s/AKfycbw-D1gOezUuFEhhqXQ69zYR0Sp4Bekg3CHhy3lEMzB8CV9kp6ty0iXTreyq5aULmz5L8g/exec',
 };
 
-// ── Leer hoja como array de objetos ─────────────────────────
-async function leerHoja(nombreHoja) {
-  try {
-    // cache: 'no-store' evita que el navegador sirva una copia vieja del CSV — y el
-    // parámetro &_=timestamp asegura que ni siquiera la URL se vea "igual" a una
-    // ya cacheada (Google GVIZ a veces cachea agresivamente del lado del servidor
-    // también, esto ayuda a que se trate como una consulta nueva).
-    const url = FEN.csvUrl(nombreHoja) + '&_=' + Date.now();
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) throw new Error('No se pudo leer la hoja: ' + nombreHoja);
-    const texto = await res.text();
-    return csvAObjetos(texto);
-  } catch(e) {
-    console.error('Error leyendo hoja:', nombreHoja, e);
-    return [];
-  }
+// ── Sesión en este equipo ───────────────────────────────────
+//  dispositivo: el equipo quedó autorizado por el dueño (dura ~1 año)
+//  admin:       sesión de Administración (hasta "Salir"; 30 días si se marcó
+//               "Recordar en este equipo", si no, mientras la pestaña esté abierta)
+//  jefa:        sesión de la jefa (12 horas, solo en esta pestaña, o hasta "Salir")
+const FenSesion = {
+  _leer(almacen, k) { try { return almacen.getItem(k); } catch (e) { return null; } },
+  _poner(almacen, k, v) { try { v ? almacen.setItem(k, v) : almacen.removeItem(k); } catch (e) {} },
+  dispositivo()  { return this._leer(localStorage, 'fen_prod_dispositivo'); },
+  // Admin: en localStorage solo si se marcó "Recordar en este equipo";
+  // si no, dura lo que la pestaña abierta.
+  admin()        { return this._leer(localStorage, 'fen_prod_admin') || this._leer(sessionStorage, 'fen_prod_admin'); },
+  jefa()         { return this._leer(sessionStorage, 'fen_prod_jefa'); },
+  setDispositivo(t) { this._poner(localStorage, 'fen_prod_dispositivo', t); },
+  setAdmin(t, recordar) {
+    this._poner(localStorage, 'fen_prod_admin', recordar ? t : null);
+    this._poner(sessionStorage, 'fen_prod_admin', recordar ? null : t);
+  },
+  setJefa(t)        { this._poner(sessionStorage, 'fen_prod_jefa', t); },
+  // La sesión con la que se trabaja ahora (jefa en esta pestaña, si no admin)
+  actual() { return this.jefa() || this.admin(); },
+};
+
+const _fetchOriginal = window.fetch.bind(window);
+
+function _idem() {
+  return crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12));
 }
 
-function csvAObjetos(csv) {
-  const filas = parseCsvCompleto(csv);
-  if (filas.length < 2) return [];
-  const headers = filas[0];
-  return filas.slice(1).map(valores => {
+// Llamada al Apps Script: POST con JSON, con la sesión de este equipo y una
+// clave única por escritura (idem) para que nunca se registre dos veces.
+// Si Google desvía el POST (llega como GET sin datos: code "version"),
+// reintenta por GET con el mismo JSON.
+async function fenApi(accion, datos = {}, opciones = {}) {
+  const cuerpo = Object.assign({}, datos, { accion, idem: _idem() });
+  if (!('token' in cuerpo)) cuerpo.token = FenSesion.actual();
+  const texto = JSON.stringify(cuerpo);
+  let data;
+  try {
+    const res = await _fetchOriginal(FEN.WEBAPP_URL, { method: 'POST', body: texto, cache: 'no-store' });
+    data = await res.json();
+    if (data && data.code === 'version') {
+      const r2 = await _fetchOriginal(FEN.WEBAPP_URL + '?p=' + encodeURIComponent(texto), { cache: 'no-store' });
+      data = await r2.json();
+    }
+  } catch (e) {
+    return { ok: false, msg: 'Sin conexión con el servidor. Revisa internet e intenta de nuevo.', code: 'red' };
+  }
+  if (data && data.code === 'sesion' && !opciones.sinAviso && typeof fenSesionVencida === 'function') {
+    fenSesionVencida();
+  }
+  return data;
+}
+
+// La app v1 llamaba al script directamente en ~70 lugares, con
+// fetch(FEN.WEBAPP_URL + '?payload=...') o con POST "no-cors" (sin poder leer
+// la respuesta). En vez de reescribir cada uno, aquí se intercepta toda
+// llamada al script y se envía por fenApi: con sesión, con clave idem, y
+// devolviendo siempre la respuesta real del servidor.
+window.fetch = async function (recurso, init) {
+  const url = typeof recurso === 'string' ? recurso : (recurso && recurso.url) || '';
+  if (!FEN.WEBAPP_URL || url.indexOf(FEN.WEBAPP_URL) !== 0) return _fetchOriginal(recurso, init);
+  let datos = {};
+  try {
+    const q = url.split('?')[1] || '';
+    const payload = new URLSearchParams(q).get('payload');
+    if (payload) datos = JSON.parse(payload);
+    else if (init && typeof init.body === 'string') datos = JSON.parse(init.body);
+  } catch (e) {
+    datos = {};
+  }
+  const accion = datos.accion;
+  delete datos.accion;
+  const data = await fenApi(accion, datos);
+  return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+};
+
+// ── Leer hoja como array de objetos ─────────────────────────
+// Antes se leía la planilla publicada (CSV). Ahora la entrega el script,
+// que a las jefas no les manda columnas de costos ni precios.
+async function leerHoja(nombreHoja) {
+  const data = await fenApi('leer_hoja', { hoja: nombreHoja });
+  if (!data || data.ok === false) {
+    if (!data || data.code !== 'sesion') console.error('Error leyendo hoja:', nombreHoja, data && data.msg);
+    return [];
+  }
+  const headers = (data.headers || []).map(h => String(h).trim().replace(/"/g, ''));
+  return (data.filas || []).map(valores => {
     const obj = {};
     headers.forEach((h, i) => {
-      let v = (valores[i]||'').trim().replace(/^"|"$/g,'');
-      // Si la celda del Sheet tenía formato de miles o de moneda (ej. "$1,681.00"),
-      // el CSV exportado trae el texto formateado en vez del número crudo — se limpia
-      // acá para que todo lo que consuma este valor reciba un número parseable.
+      let v = String(valores[i] ?? '').trim();
+      // Igual que con el CSV: "$1,681.00" → "1681.00" para que se pueda leer como número.
       if (/^\$?-?\d{1,3}(,\d{3})*(\.\d+)?$/.test(v) && /\d/.test(v)) v = v.replace(/[$,]/g, '');
-      obj[h.trim().replace(/"/g,'')] = v;
+      obj[h] = v;
     });
     return obj;
   }).filter(o => Object.values(o).some(v => v));
 }
 
-// Parser de CSV completo, no línea por línea — cortar por '\n' antes de mirar
-// las comillas rompía cualquier celda con texto de varias líneas (ej. pasos de
-// preparación redactados como párrafo): el salto de línea DENTRO de una celda
-// entre comillas se interpretaba como si fuera el fin de esa fila, partiendo
-// una sola receta en muchas filas fantasma, cada una con un fragmento del texto.
-// Este parser recorre todo el texto una sola vez, llevando la cuenta de si está
-// dentro de comillas, y solo trata una coma o un salto de línea como separador
-// real cuando NO está dentro de un campo entre comillas.
-function parseCsvCompleto(texto) {
-  const filas = [];
-  let fila = [];
-  let campo = '';
-  let dentroComillas = false;
-
-  for (let i = 0; i < texto.length; i++) {
-    const c = texto[i];
-    if (c === '"') {
-      if (dentroComillas && texto[i+1] === '"') { campo += '"'; i++; }
-      else dentroComillas = !dentroComillas;
-    } else if (c === ',' && !dentroComillas) {
-      fila.push(campo);
-      campo = '';
-    } else if ((c === '\n' || c === '\r') && !dentroComillas) {
-      // \r\n cuenta como un solo salto — evita filas vacías de más
-      if (c === '\r' && texto[i+1] === '\n') i++;
-      fila.push(campo);
-      campo = '';
-      if (fila.some(v => v.trim())) filas.push(fila); // omitir filas totalmente vacías
-      fila = [];
-    } else {
-      campo += c;
-    }
-  }
-  // Última fila, si el texto no terminó con salto de línea
-  if (campo !== '' || fila.length) {
-    fila.push(campo);
-    if (fila.some(v => v.trim())) filas.push(fila);
-  }
-  return filas;
-}
-
-function parseCsvLinea(linea) {
-  const resultado = [];
-  let campo = '';
-  let dentroComillas = false;
-  for (let i = 0; i < linea.length; i++) {
-    const c = linea[i];
-    if (c === '"') {
-      if (dentroComillas && linea[i+1] === '"') { campo += '"'; i++; }
-      else dentroComillas = !dentroComillas;
-    } else if (c === ',' && !dentroComillas) {
-      resultado.push(campo);
-      campo = '';
-    } else {
-      campo += c;
-    }
-  }
-  resultado.push(campo);
-  return resultado;
-}
-
-// ── Escribir en Sheet via Apps Script Web App ────────────────
+// ── Escribir en la planilla vía Apps Script ─────────────────
+// Ahora siempre se recibe la respuesta real (antes, los envíos grandes iban
+// "a ciegas" y la app suponía que habían llegado).
 async function escribirEnSheet(accion, datos) {
-  if (!FEN.WEBAPP_URL) {
-    console.warn('WEBAPP_URL no configurada');
-    return { ok: false, msg: 'Sin conexión al Sheet' };
-  }
+  if (!FEN.WEBAPP_URL) return { ok: false, msg: 'Sin conexión al Sheet' };
+  return fenApi(accion, datos);
+}
 
-  const body = JSON.stringify({ accion, ...datos });
-
-  // Intentar GET solo si el payload es seguro (sin tildes ni caracteres especiales)
-  const esSeguoParaGET = body.length < 600 && !/[áéíóúñÁÉÍÓÚÑüÜ¿¡]/.test(body);
-  if (esSeguoParaGET) {
-    try {
-      const payload = encodeURIComponent(body);
-      const res = await fetch(FEN.WEBAPP_URL + '?payload=' + payload);
-      return await res.json();
-    } catch(e) {
-      console.warn('[fën] GET falló, usando POST:', e.message);
-    }
-  }
-
-  // POST con no-cors para payloads grandes o con caracteres especiales
-  try {
-    await fetch(FEN.WEBAPP_URL, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body
-    });
-    return { ok: true, msg: 'Enviado' };
-  } catch(e) {
-    console.error('[fën] Error POST Sheet:', e);
-    return { ok: false, msg: e.message };
-  }
+// Escapa texto antes de ponerlo en HTML.
+function esc(t) {
+  return String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 // ── Cache simple en memoria ──────────────────────────────────
