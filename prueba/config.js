@@ -26,7 +26,7 @@ const FEN = {
 
   // URL del Apps Script (Implementar → Gestionar implementaciones). No es secreta:
   // sin una sesión válida, el script no entrega ni guarda nada.
-  WEBAPP_URL: 'https://script.google.com/macros/s/AKfycbw-D1gOezUuFEhhqXQ69zYR0Sp4Bekg3CHhy3lEMzB8CV9kp6ty0iXTreyq5aULmz5L8g/exec',
+  WEBAPP_URL: 'https://script.google.com/macros/s/AKfycbyQrSXfVjLOSqgD59-J_VS4qLvoUqRgRA7UGj8byd72C0ql2RaVHzu0GOyyLKzbtQ_5/exec',
 };
 
 // ── Sesión en este equipo ───────────────────────────────────
