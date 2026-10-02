@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>fën — Sistema de producción</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="main.css?v=2.0.0">
+</head>
+<body>
+
+<!-- ── LOGIN ───────────────────────────────────── -->
+<div id="login-screen">
+  <div class="login-marca">
+    <div class="login-logo">
+      <img src="logosecundario.jpg" alt="fën" style="width:72px;height:72px;object-fit:contain;border-radius:18px" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <i class="ti ti-seed" style="display:none"></i>
+    </div>
+    <p>Sistema de producción · Recetas y costos</p>
+  </div>
+  <div class="login-grid" id="login-grid"></div>
+</div>
+
+<!-- ── APP ─────────────────────────────────────── -->
+<div id="app" class="hidden">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar-marca">
+      <img src="logoprincipal.jpg" alt="fën" style="width:28px;height:28px;object-fit:contain;border-radius:6px" onerror="this.style.display='none'">
+    </div>
+    <div class="topbar-area">
+      <i id="topbar-icon" class="ti ti-bread"></i>
+      <span id="topbar-nombre">Área</span>
+    </div>
+    <div id="topbar-alerta" class="topbar-alerta hidden">
+      <i class="ti ti-alert-circle"></i>
+      <span>0 pendientes</span>
+    </div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-usuario">
+      <div class="topbar-avatar"><span id="topbar-avatar-txt">—</span></div>
+      <span id="topbar-usuario-txt"></span>
+    </div>
+    <button class="btn-salir" onclick="sincronizarTodo(this)" id="btn-sync-global" title="Sincronizar datos">
+      <i class="ti ti-refresh"></i>
+    </button>
+    <button class="btn-salir" onclick="salir()">
+      <i class="ti ti-logout"></i> Salir
+    </button>
+  </header>
+
+  <div class="layout">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-nav" id="sidebar-nav"></div>
+    </aside>
+
+    <!-- Contenido -->
+    <main class="content">
+
+      <!-- Vista: vacía -->
+      <div class="vista active" id="vista-empty">
+        <div class="empty-state">
+          <i class="ti ti-seed"></i>
+                <p>Selecciona una sección para comenzar</p>
+        </div>
+      </div>
+
+      <!-- Vista: formulario receta -->
+      <div class="vista" id="vista-form-receta"></div>
+
+      <!-- Vista: seguridad y acceso (Administración) -->
+      <div class="vista" id="vista-seguridad"></div>
+
+      <!-- Vista: mis recetas -->
+      <div class="vista" id="vista-mis-recetas"></div>
+
+      <!-- Vista: ver receta -->
+      <div class="vista" id="vista-ver-receta"></div>
+
+      <!-- Vista: planificación -->
+      <div class="vista" id="vista-planificacion"></div>
+
+      <!-- Vista: recetas del día -->
+      <div class="vista" id="vista-recetas-dia"></div>
+
+      <!-- Vista: maestro jefa -->
+      <div class="vista" id="vista-maestro"></div>
+
+      <!-- Vista: aprobaciones admin -->
+      <div class="vista" id="vista-aprobaciones"></div>
+
+      <!-- Vista: materias primas admin -->
+      <div class="vista" id="vista-mp"></div>
+
+      <!-- Vista: costos admin -->
+      <div class="vista" id="vista-costos"></div>
+
+      <!-- Vista: maestro admin -->
+      <div class="vista" id="vista-maestro-admin"></div>
+
+      <!-- Vista: config sub recetas -->
+      <div class="vista" id="vista-config-subrecetas"></div>
+
+      <!-- Vista: resumen semanal -->
+      <div class="vista" id="vista-resumen-semanal"></div>
+      <div class="vista" id="vista-consolidado-mensual"></div>
+      <div class="vista" id="vista-registros-caf"></div>
+      <div class="vista" id="vista-registro-merma"></div>
+      <div class="vista" id="vista-control-stock"></div>
+      <div class="vista" id="vista-analisis-merma"></div>
+      <div class="vista" id="vista-auditoria-costos"></div>
+      <div class="vista" id="vista-inversiones"></div>
+      <div class="vista" id="vista-rentabilidad-real"></div>
+      <div class="vista" id="vista-meta-venta"></div>
+      <div class="vista" id="vista-informe-auditoria"></div>
+      <div class="vista" id="vista-informe-general"></div>
+      <div class="vista" id="vista-estado-resultados"></div>
+      <div class="vista" id="vista-config-costeo"></div>
+      <div class="vista" id="vista-correos-contacto"></div>
+      <div class="vista" id="vista-productos-reventa"></div>
+      <div class="vista" id="vista-ventas-mensuales"></div>
+      <div class="vista" id="vista-pre-elaboraciones"></div>
+      <div class="vista" id="vista-rellenos-otras-recetas"></div>
+      <div class="vista" id="vista-plan-ps-pc"></div>
+      <div class="vista" id="vista-plan-masa-base"></div>
+      <div class="vista" id="vista-plan-productos-congelados"></div>
+      <div class="vista" id="vista-estimacion-bol"></div>
+
+    </main>
+  </div>
+</div>
+
+<!-- Loading overlay -->
+<div id="loading-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(255,243,233,.85);display:flex;align-items:center;justify-content:center;z-index:500;gap:12px;font-size:14px;color:#003a79">
+  <div class="spinner" style="border-top-color:#003a79"></div>
+  <span>Cargando...</span>
+</div>
+
+<!-- Modal: Solicitar MP -->
+<div class="modal-fondo hidden" id="modal-solicitar-mp">
+  <div class="modal" style="max-width:440px;text-align:left">
+    <div class="modal-ico" style="background:#E3F2FD;color:#1565C0">
+      <i class="ti ti-list-plus"></i>
+    </div>
+    <h3 style="text-align:center">Solicitar materia prima</h3>
+    <p style="text-align:center;font-size:13px;color:var(--txt2);margin-bottom:20px">
+      Admin habilitará la MP para tu área. Puedes continuar con la receta mientras tanto.
+    </p>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Tipo</label>
+        <select id="solicitar-mp-tipo" style="width:100%;padding:8px 12px;border:none;font-size:13px;font-family:inherit;background:none">
+          <option value="mp">Materia Prima</option>
+          <option value="insumo">Insumo (envase, etiqueta, packaging...)</option>
+        </select>
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Nombre de la MP <span class="req">*</span></label>
+        <input type="text" id="solicitar-mp-nombre" placeholder="Ej: Mantequilla de maní">
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Unidad de medida en la receta</label>
+        <select id="solicitar-mp-unidad" style="width:100%;padding:8px 12px;border:none;font-size:13px;font-family:inherit;background:none" onchange="actualizarLabelGramosSolicitud()">
+          <option value="gramos">Gramos (g)</option>
+          <option value="unidades">Unidades (u)</option>
+          <option value="ml">Mililitros (ml)</option>
+        </select>
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label id="label-solicitar-mp-cantidad">Cantidad (para agregar temporalmente)</label>
+        <input type="number" id="solicitar-mp-gramos" placeholder="0" min="0" step="0.01">
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Nombre temporal en receta</label>
+        <input type="text" id="solicitar-mp-tmp" placeholder="Como quieres que aparezca mientras tanto">
+      </div>
+
+    </div>
+    <div class="modal-acciones" style="margin-top:20px">
+      <button class="btn-secundario" onclick="cerrarModalSolicitarMP()">Cancelar</button>
+      <button class="btn-primario" onclick="enviarSolicitudMP(this)">
+        <i class="ti ti-send"></i> Enviar solicitud
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Solicitar insumo -->
+<div class="modal-fondo hidden" id="modal-solicitar-insumo">
+  <div class="modal" style="max-width:440px;text-align:left">
+    <div class="modal-ico" style="background:#FFF3E0;color:#E65100">
+      <i class="ti ti-package"></i>
+    </div>
+    <h3 style="text-align:center">Solicitar insumo</h3>
+    <p style="text-align:center;font-size:13px;color:var(--txt2);margin-bottom:20px">
+      Envases, etiquetas, packaging, vasos, etc. Admin habilitará el insumo para tu área. Puedes continuar con la receta mientras tanto.
+    </p>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Nombre del insumo <span class="req">*</span></label>
+        <input type="text" id="solicitar-insumo-nombre" placeholder="Ej: Vaso 8oz">
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Cantidad por unidad de producto (para agregar temporalmente)</label>
+        <input type="number" id="solicitar-insumo-cantidad" placeholder="1" min="0" step="1">
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Nombre temporal en receta</label>
+        <input type="text" id="solicitar-insumo-tmp" placeholder="Como quieres que aparezca mientras tanto">
+      </div>
+    </div>
+    <div class="modal-acciones" style="margin-top:20px">
+      <button class="btn-secundario" onclick="cerrarModalSolicitarInsumo()">Cancelar</button>
+      <button class="btn-primario" onclick="enviarSolicitudInsumo(this)">
+        <i class="ti ti-send"></i> Enviar solicitud
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Crear MP/Insumo directo (Admin) -->
+<div class="modal-fondo hidden" id="modal-crear-mp-admin">
+  <div class="modal" style="max-width:460px;text-align:left">
+    <div class="modal-ico" style="background:#E3F2FD;color:#1565C0">
+      <i class="ti ti-list-plus"></i>
+    </div>
+    <h3 style="text-align:center">Nueva MP / Insumo</h3>
+    <p style="text-align:center;font-size:13px;color:var(--txt2);margin-bottom:20px">
+      Se crea directamente en el maestro, sin flujo de aprobación.
+    </p>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Tipo</label>
+        <select id="crear-mp-tipo" style="width:100%;padding:8px 12px;border:none;font-size:13px;font-family:inherit;background:none">
+          <option value="mp">Materia Prima</option>
+          <option value="insumo">Insumo (envase, etiqueta, packaging...)</option>
+        </select>
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Nombre <span class="req">*</span></label>
+        <input type="text" id="crear-mp-nombre" placeholder="Ej: Vaso 8oz">
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Categoría</label>
+        <input type="text" id="crear-mp-categoria" placeholder="Ej: Insumos, Lácteos, Harinas...">
+      </div>
+      <div style="display:flex;gap:12px">
+        <div class="campo" style="flex:1;border:1px solid var(--border);border-radius:var(--r-md)">
+          <label>Unidad de compra</label>
+          <select id="crear-mp-unidad-compra" style="width:100%;padding:8px 12px;border:none;font-size:13px;font-family:inherit;background:none">
+            <option value="kg">Kilogramo (kg)</option>
+            <option value="lt">Litro (lt)</option>
+            <option value="un">Unidad (un)</option>
+          </select>
+        </div>
+        <div class="campo" style="flex:1;border:1px solid var(--border);border-radius:var(--r-md)">
+          <label>Costo neto</label>
+          <input type="number" id="crear-mp-costo" placeholder="0" min="0" step="1">
+        </div>
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Áreas habilitadas <span style="font-weight:400;color:var(--txt3)">(ninguna marcada = todas)</span></label>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;padding:6px 0">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400"><input type="checkbox" value="PAN" class="chk-area-crear-mp"> Panadería</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400"><input type="checkbox" value="BOL" class="chk-area-crear-mp"> Bollería</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400"><input type="checkbox" value="CAF" class="chk-area-crear-mp"> Cafetería</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400"><input type="checkbox" value="PAS" class="chk-area-crear-mp"> Pastelería</label>
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px">
+        <input type="checkbox" id="crear-mp-activa" checked> Activa (disponible de inmediato en los desplegables)
+      </label>
+    </div>
+    <div class="modal-acciones" style="margin-top:20px">
+      <button class="btn-secundario" onclick="cerrarModalCrearMPAdmin()">Cancelar</button>
+      <button class="btn-primario" onclick="crearMPAdmin(this)">
+        <i class="ti ti-plus"></i> Crear
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Registro de merma -->
+<div class="modal-fondo hidden" id="modal-registro-merma">
+  <div class="modal" style="max-width:460px;text-align:left">
+    <div class="modal-ico" style="background:#FFEBEE;color:#C62828">
+      <i class="ti ti-trash"></i>
+    </div>
+    <h3 style="text-align:center">Nuevo registro de merma</h3>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px">
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>¿Qué se perdió?</label>
+        <select id="merma-tipo-perdida" onchange="onCambioTipoPerdidaMerma()" style="width:100%;padding:8px 12px;border:none;font-size:13px;font-family:inherit;background:none">
+          <option value="receta">Producto / preparación (con receta)</option>
+          <option value="mp">Materia prima individual (aún sin procesar)</option>
+        </select>
+      </div>
+      <div class="campo" id="merma-campo-receta" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Receta</label>
+        <select id="merma-receta-id" onchange="onCambioItemMerma()" style="width:100%;padding:8px 12px;border:none;font-size:13px;font-family:inherit;background:none">
+          <option value="">— Seleccionar —</option>
+        </select>
+      </div>
+      <div class="campo hidden" id="merma-campo-mp" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Materia prima</label>
+        <select id="merma-mp-id" onchange="onCambioItemMerma()" style="width:100%;padding:8px 12px;border:none;font-size:13px;font-family:inherit;background:none">
+          <option value="">— Seleccionar —</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:12px">
+        <div class="campo" style="flex:1;border:1px solid var(--border);border-radius:var(--r-md)">
+          <label>Cantidad</label>
+          <input type="number" id="merma-cantidad" placeholder="0" min="0" step="0.1" oninput="calcularCostoPreviewMerma()">
+        </div>
+        <div class="campo" style="flex:1;border:1px solid var(--border);border-radius:var(--r-md);display:flex;flex-direction:column;justify-content:center">
+          <label>Unidad</label>
+          <div id="merma-unidad-label" style="font-size:13px;padding:8px 12px 8px 0;color:var(--txt2)">unidades</div>
+        </div>
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Motivo</label>
+        <select id="merma-motivo" style="width:100%;padding:8px 12px;border:none;font-size:13px;font-family:inherit;background:none">
+          <option value="derrame_error">Derrame / error</option>
+          <option value="devolucion_cliente">Devolución de cliente</option>
+          <option value="vencimiento">Vencimiento</option>
+          <option value="prueba_receta">Prueba de receta</option>
+          <option value="otro">Otro</option>
+        </select>
+      </div>
+      <div class="campo" style="border:1px solid var(--border);border-radius:var(--r-md)">
+        <label>Nota (opcional)</label>
+        <input type="text" id="merma-nota" placeholder="Ej: cliente se arrepintió">
+      </div>
+      <div class="campo full solo-admin" style="background:var(--bg);border-radius:var(--r-sm);padding:10px 14px;text-align:center">
+        <div style="font-size:11px;color:var(--txt3)">Costo estimado perdido</div>
+        <div style="font-size:22px;font-weight:700;color:#C62828;font-family:'DM Mono',monospace" id="merma-costo-preview">$0</div>
+      </div>
+    </div>
+    <div class="modal-acciones" style="margin-top:20px">
+      <button class="btn-secundario" onclick="document.getElementById('modal-registro-merma').classList.add('hidden')">Cancelar</button>
+      <button class="btn-primario" onclick="guardarRegistroMerma(this)">
+        <i class="ti ti-check"></i> Guardar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Acciones de receta (Editar / Ver / Eliminar) -->
+<div class="modal-fondo hidden" id="modal-acciones-receta">
+  <div class="modal" style="max-width:380px;text-align:left">
+    <h3 id="acciones-receta-titulo" style="text-align:center;margin-bottom:20px">—</h3>
+    <div style="display:flex;flex-direction:column;gap:8px" id="acciones-receta-botones">
+      <!-- Botones inyectados por JS -->
+    </div>
+    <div class="modal-acciones" style="margin-top:20px">
+      <button class="btn-secundario" style="width:100%" onclick="document.getElementById('modal-acciones-receta').classList.add('hidden')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Ver receta rápido -->
+<div class="modal-fondo hidden" id="modal-ver-receta">
+  <div class="modal" style="max-width:640px;max-height:85vh;overflow-y:auto;text-align:left">
+    <div id="ver-receta-modal-contenido"></div>
+    <div class="modal-acciones" style="margin-top:16px">
+      <button class="btn-secundario" style="width:100%" onclick="document.getElementById('modal-ver-receta').classList.add('hidden')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Buscar materia prima (existe en el sistema pero no habilitada para mi área) -->
+<div class="modal-fondo hidden" id="modal-buscar-mp">
+  <div class="modal" style="max-width:480px;max-height:85vh;overflow-y:auto;text-align:left">
+    <h3 style="margin:0 0 4px">Buscar materia prima</h3>
+    <p style="font-size:12px;color:var(--txt3);margin:0 0 12px">
+      Antes de solicitar una nueva, revise si ya existe en el sistema (aunque esté habilitada para otra área).
+    </p>
+    <input type="text" id="buscar-mp-input" placeholder="Escriba el nombre..."
+      oninput="filtrarResultadosBuscarMP()"
+      style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:14px;margin-bottom:12px;box-sizing:border-box">
+    <div id="buscar-mp-resultados" style="min-height:60px;max-height:320px;overflow-y:auto"></div>
+    <div id="buscar-mp-fallback" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)"></div>
+    <button class="btn-secundario" style="width:100%;margin-top:10px" onclick="cerrarModalBuscarMP()">Cerrar</button>
+  </div>
+</div>
+
+<!-- Modal: Calculadora (para fracciones de sub-recetas en modo Unidades) -->
+<div class="modal-fondo hidden" id="modal-calculadora">
+  <div class="modal" style="max-width:280px;text-align:left">
+    <p style="font-size:12px;color:var(--txt3);margin-bottom:10px">
+      Ej: si necesita 1 de cada 12, escriba <strong>1/12</strong> y presione =
+    </p>
+    <input type="text" id="calc-display" readonly
+      style="width:100%;font-size:24px;text-align:right;padding:12px;border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:10px;font-family:'DM Mono',monospace;box-sizing:border-box">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+      <button type="button" class="btn-secundario" onclick="calcClear()">C</button>
+      <button type="button" class="btn-secundario" onclick="calcBorrarUltimo()"><i class="ti ti-backspace"></i></button>
+      <button type="button" class="btn-secundario" onclick="calcInput('(')">(</button>
+      <button type="button" class="btn-secundario" onclick="calcInput(')')">)</button>
+
+      <button type="button" class="btn-secundario" onclick="calcInput('7')">7</button>
+      <button type="button" class="btn-secundario" onclick="calcInput('8')">8</button>
+      <button type="button" class="btn-secundario" onclick="calcInput('9')">9</button>
+      <button type="button" class="btn-secundario" onclick="calcInput('/')">÷</button>
+
+      <button type="button" class="btn-secundario" onclick="calcInput('4')">4</button>
+      <button type="button" class="btn-secundario" onclick="calcInput('5')">5</button>
+      <button type="button" class="btn-secundario" onclick="calcInput('6')">6</button>
+      <button type="button" class="btn-secundario" onclick="calcInput('*')">×</button>
+
+      <button type="button" class="btn-secundario" onclick="calcInput('1')">1</button>
+      <button type="button" class="btn-secundario" onclick="calcInput('2')">2</button>
+      <button type="button" class="btn-secundario" onclick="calcInput('3')">3</button>
+      <button type="button" class="btn-secundario" onclick="calcInput('-')">−</button>
+
+      <button type="button" class="btn-secundario" onclick="calcInput('0')">0</button>
+      <button type="button" class="btn-secundario" onclick="calcInput('.')">.</button>
+      <button type="button" class="btn-primario" onclick="calcEquals()">=</button>
+      <button type="button" class="btn-secundario" onclick="calcInput('+')">+</button>
+    </div>
+    <button class="btn-primario" style="width:100%;margin-top:12px" onclick="calcAplicar()">
+      <i class="ti ti-check"></i> Usar este valor
+    </button>
+    <button class="btn-secundario" style="width:100%;margin-top:6px" onclick="cerrarModalCalculadora()">Cancelar</button>
+  </div>
+</div>
+<div class="modal-fondo hidden" id="modal-acciones-mp">
+  <div class="modal" style="max-width:380px;text-align:left">
+    <h3 id="acciones-mp-titulo" style="text-align:center;margin-bottom:4px">—</h3>
+    <p id="acciones-mp-subtitulo" style="text-align:center;font-size:12px;color:var(--txt3);margin-bottom:20px">—</p>
+    <div style="display:flex;flex-direction:column;gap:8px" id="acciones-mp-botones">
+      <!-- Botones inyectados por JS -->
+    </div>
+    <div class="modal-acciones" style="margin-top:20px">
+      <button class="btn-secundario" style="width:100%" onclick="document.getElementById('modal-acciones-mp').classList.add('hidden')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Stock BOL -->
+<div class="modal-fondo hidden" id="modal-stock-bol">
+  <div class="modal" style="max-width:460px;text-align:left">
+    <div class="modal-ico" style="background:#E3F2FD;color:#1565C0">
+      <i class="ti ti-snowflake"></i>
+    </div>
+    <h3 style="text-align:center">Stock congelado actual</h3>
+    <p style="font-size:13px;color:var(--txt2);text-align:center;margin-bottom:16px">
+      Ingresa las unidades disponibles en congelador. El sistema descontará este stock del plan.
+    </p>
+    <div id="stock-bol-body"></div>
+    <div class="modal-acciones">
+      <button class="btn-secundario" onclick="document.getElementById('modal-stock-bol').classList.add('hidden')">Cancelar</button>
+      <button class="btn-primario" onclick="guardarStockBOL()">
+        <i class="ti ti-device-floppy"></i> Guardar stock
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Modificador de receta por día -->
+<div class="modal-fondo hidden" id="modal-modificador">
+  <div class="modal" style="max-width:480px;text-align:left">
+    <div class="modal-ico" style="background:#FFF3E0;color:#E65100">
+      <i class="ti ti-adjustments-horizontal"></i>
+    </div>
+    <h3 id="mod-titulo" style="text-align:center;margin-bottom:4px"></h3>
+    <input type="hidden" id="mod-receta-id">
+    <input type="hidden" id="mod-dia-idx">
+    <input type="hidden" id="mod-harina-original">
+    <div id="mod-body" style="max-height:340px;overflow-y:auto;padding:4px 0"></div>
+    <div class="modal-acciones" style="flex-wrap:wrap;gap:8px">
+      <button class="btn-peligro" style="font-size:12px"
+        onclick="limpiarModificador(document.getElementById('mod-receta-id').value, parseInt(document.getElementById('mod-dia-idx').value))">
+        <i class="ti ti-refresh"></i> Volver a original
+      </button>
+      <button class="btn-secundario" onclick="document.getElementById('modal-modificador').classList.add('hidden')">
+        Cancelar
+      </button>
+      <button class="btn-primario" onclick="guardarModificador()">
+        <i class="ti ti-check"></i> Guardar ajustes
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Eliminar receta -->
+<div class="modal-fondo hidden" id="modal-eliminar-receta">
+  <div class="modal">
+    <div class="modal-ico" style="background:#FFEBEE;color:#C62828">
+      <i class="ti ti-trash"></i>
+    </div>
+    <h3>Eliminar receta</h3>
+    <p>¿Estás seguro que quieres eliminar <strong id="eliminar-receta-nombre"></strong>?
+    Esta acción eliminará la receta del área y del maestro. No se puede deshacer.</p>
+    <div class="modal-acciones">
+      <button class="btn-secundario"
+        onclick="document.getElementById('modal-eliminar-receta').classList.add('hidden')">
+        Cancelar
+      </button>
+      <button class="btn-primario" id="btn-confirmar-eliminar"
+        style="background:#C62828">
+        <i class="ti ti-trash"></i> Eliminar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Tandas receta del día -->
+<div class="modal-fondo hidden" id="modal-tandas">
+  <div class="modal" style="max-width:520px;text-align:left">
+    <div class="modal-ico" style="background:#FFF3E0;color:#E65100">
+      <i class="ti ti-stack-2"></i>
+    </div>
+    <h3 id="tandas-titulo" style="text-align:center;margin-bottom:4px"></h3>
+    <p style="font-size:12px;color:var(--txt3);text-align:center;margin-bottom:12px">
+      Total: <strong id="tandas-total"></strong> unidades — no modifica el plan
+    </p>
+    <input type="hidden" id="tandas-receta-id">
+    <input type="hidden" id="tandas-total-val">
+    <div id="tandas-body" style="max-height:380px;overflow-y:auto"></div>
+    <div style="margin-top:10px">
+      <button class="btn-secundario" onclick="agregarTanda()" style="width:100%;font-size:13px">
+        <i class="ti ti-plus"></i> Agregar tanda
+      </button>
+    </div>
+    <div class="modal-acciones">
+      <button class="btn-secundario" onclick="document.getElementById('modal-tandas').classList.add('hidden')">Cancelar</button>
+      <button class="btn-primario" onclick="guardarTandasModal()">
+        <i class="ti ti-check"></i> Guardar tandas
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Tandas MM blanca -->
+<div class="modal-fondo hidden" id="modal-tandas-mm">
+  <div class="modal" style="max-width:480px;text-align:left">
+    <div class="modal-ico" style="background:#F0F7EF;color:#2E4A1E">
+      <span style="font-size:22px">🌱</span>
+    </div>
+    <h3 id="mm-tandas-titulo" style="text-align:center;margin-bottom:4px"></h3>
+    <p style="font-size:12px;color:var(--txt3);text-align:center;margin-bottom:12px">
+      Total: <strong id="mm-tandas-total"></strong>
+    </p>
+    <input type="hidden" id="mm-total-gramos">
+    <input type="hidden" id="mm-sr-id">
+    <input type="hidden" id="mm-peso-unidad-g">
+    <div style="display:flex;gap:6px;margin-bottom:10px" id="mm-modo-tabs">
+      <button type="button" class="btn-secundario" id="mm-tab-cantidad" style="flex:1;font-size:12px;padding:6px" onclick="cambiarModoMMTandas('cantidad')">N.° de tandas</button>
+      <button type="button" class="btn-secundario" id="mm-tab-tamano" style="flex:1;font-size:12px;padding:6px" onclick="cambiarModoMMTandas('tamano')">Unidades por tanda</button>
+    </div>
+    <input type="hidden" id="mm-modo-division" value="cantidad">
+    <div id="mm-controles-cantidad" style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 14px;background:var(--bg);border-radius:var(--r-md)">
+      <label style="font-size:13px;font-weight:500">Dividir en</label>
+      <input type="number" id="mm-num-tandas" min="1" max="6" value="2"
+        style="width:60px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:14px;font-weight:600;text-align:center;font-family:'DM Mono',monospace"
+        oninput="actualizarMMTandas()">
+      <label style="font-size:13px;font-weight:500">tandas iguales</label>
+    </div>
+    <div id="mm-controles-tamano" class="hidden" style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 14px;background:var(--bg);border-radius:var(--r-md)">
+      <label style="font-size:13px;font-weight:500">Tandas de</label>
+      <input type="number" id="mm-uni-por-tanda" min="1" step="1" value="30"
+        style="width:70px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:14px;font-weight:600;text-align:center;font-family:'DM Mono',monospace"
+        oninput="actualizarMMTandas()">
+      <label style="font-size:13px;font-weight:500">unidades cada una</label>
+    </div>
+    <div id="mm-tandas-body" style="max-height:340px;overflow-y:auto"></div>
+    <div class="modal-acciones">
+      <button class="btn-secundario" onclick="document.getElementById('modal-tandas-mm').classList.add('hidden')">Cerrar</button>
+      <button class="btn-primario" onclick="guardarMMTandas()">
+        <i class="ti ti-check"></i> Guardar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Movimiento de stock CAF -->
+<div class="modal-fondo hidden" id="modal-mov-stock">
+  <div class="modal" style="max-width:440px;text-align:left">
+    <div class="modal-ico" style="background:#FFEBEE;color:#B71C1C">
+      <i class="ti ti-package"></i>
+    </div>
+    <h3 style="text-align:center">Registrar movimiento</h3>
+    <div class="form-grid" style="margin-top:14px">
+      <div class="campo full">
+        <label>Item</label>
+        <select id="mov-stock-mp" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px"></select>
+      </div>
+      <div class="campo">
+        <label>Tipo</label>
+        <select id="mov-stock-tipo" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+          <option value="compra">Compra (entrada)</option>
+          <option value="consumo">Consumo</option>
+          <option value="merma">Merma</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label>Cantidad</label>
+        <input type="number" id="mov-stock-cantidad" min="0" step="0.01" placeholder="0">
+      </div>
+      <div class="campo full">
+        <label>Barista</label>
+        <select id="mov-stock-barista" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px"></select>
+      </div>
+      <div class="campo full">
+        <label>Nota (opcional)</label>
+        <input type="text" id="mov-stock-nota" placeholder="Ej: compra proveedor X">
+      </div>
+    </div>
+    <div class="modal-acciones">
+      <button class="btn-secundario" onclick="document.getElementById('modal-mov-stock').classList.add('hidden')">Cancelar</button>
+      <button class="btn-primario" onclick="guardarMovStock(this)">
+        <i class="ti ti-check"></i> Registrar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Asignar MP existente -->
+<div class="modal-fondo hidden" id="modal-asignar-mp">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-ico" style="background:#FFF3E0;color:#E65100">
+      <i class="ti ti-link"></i>
+    </div>
+    <h3>Asignar a MP existente</h3>
+    <p style="font-size:13px;color:var(--txt2);margin-bottom:12px">
+      La solicitud "<strong id="asignar-mp-nueva-nombre"></strong>" se reemplazará por una MP ya existente en el maestro.
+    </p>
+    <input type="hidden" id="asignar-mp-nueva-id">
+    <input type="hidden" id="asignar-mp-area">
+    <input type="hidden" id="asignar-mp-receta">
+    <div class="campo" style="margin-bottom:16px">
+      <label>MP existente a usar</label>
+      <select id="asignar-mp-select"
+        style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:inherit;font-size:13px">
+      </select>
+    </div>
+    <div class="modal-acciones">
+      <button class="btn-secundario" onclick="document.getElementById('modal-asignar-mp').classList.add('hidden')">Cancelar</button>
+      <button class="btn-primario" onclick="confirmarAsignarMP(this)">
+        <i class="ti ti-check"></i> Confirmar asignación
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Tarea manual BOL -->
+<div class="modal-fondo hidden" id="modal-tarea-manual-bol">
+  <div class="modal" style="max-width:420px;text-align:left">
+    <div class="modal-ico" style="background:#FFF8E1;color:#F57C00">
+      <i class="ti ti-plus"></i>
+    </div>
+    <h3 style="text-align:center">Agregar tarea</h3>
+    <input type="hidden" id="tarea-manual-dia">
+    <div class="form-grid" style="margin-top:12px">
+      <div class="campo">
+        <label>Hora</label>
+        <input type="time" id="tarea-manual-hora" value="10:00">
+      </div>
+      <div class="campo full">
+        <label>Título</label>
+        <input type="text" id="tarea-manual-titulo" placeholder="Ej: Revisar stock de mantequilla">
+      </div>
+      <div class="campo full">
+        <label>Detalle (opcional)</label>
+        <input type="text" id="tarea-manual-detalle" placeholder="Notas adicionales">
+      </div>
+    </div>
+    <div class="modal-acciones">
+      <button class="btn-secundario" onclick="document.getElementById('modal-tarea-manual-bol').classList.add('hidden')">Cancelar</button>
+      <button class="btn-primario" onclick="guardarTareaManualBOL()">
+        <i class="ti ti-check"></i> Agregar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Devolver Receta -->
+<div class="modal-fondo hidden" id="modal-devolver-receta">
+  <div class="modal" style="max-width:440px;text-align:left">
+    <div class="modal-ico" style="background:#FFEBEE;color:#C62828"><i class="ti ti-arrow-back-up"></i></div>
+    <h3 style="text-align:center;margin-bottom:6px">Devolver receta</h3>
+    <p style="text-align:center;font-size:13px;color:var(--txt3);margin-bottom:16px" id="devolver-receta-nombre-display"></p>
+    <input type="hidden" id="devolver-receta-id">
+    <input type="hidden" id="devolver-receta-area">
+    <div class="campo full">
+      <label>Comentario para la jefa (opcional)</label>
+      <textarea id="devolver-receta-comentario" rows="4" placeholder="Ej: Falta especificar la temperatura de horneado, revisar el rendimiento..."
+        style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit;resize:vertical"></textarea>
+    </div>
+    <div class="modal-acciones">
+      <button class="btn-secundario" onclick="document.getElementById('modal-devolver-receta').classList.add('hidden')">Cancelar</button>
+      <button class="btn-primario" id="btn-confirmar-devolver" onclick="rechazarReceta()" style="background:#C62828">
+        <i class="ti ti-check"></i> Confirmar devolución
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Registro CAF -->
+<div class="modal-fondo hidden" id="modal-registro-caf">
+  <div class="modal" style="max-width:440px;text-align:left">
+    <div class="modal-ico" style="background:#FFF8E1;color:#795548"><i class="ti ti-coffee"></i></div>
+    <h3 style="text-align:center;margin-bottom:16px">Nuevo registro de turno</h3>
+    <div class="form-grid">
+      <div class="campo">
+        <label>Barista</label>
+        <select id="rcaf-barista" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+          BARISTAS_OPTIONS
+        </select>
+      </div>
+      <div class="campo">
+        <label>Turno</label>
+        <select id="rcaf-turno" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+          <option>Mañana</option>
+          <option>Tarde</option>
+          <option>Noche</option>
+        </select>
+      </div>
+      <div class="campo full">
+        <label>Tipo de registro</label>
+        <select id="rcaf-tipo" oninput="actualizarTotalGrCaf()" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+          <option value="calibracion">☕ Calibración</option>
+          <option value="merma">🗑️ Merma de turno</option>
+          <option value="prueba_receta">🧪 Prueba de receta</option>
+        </select>
+      </div>
+      <div class="campo" id="rcaf-shots-row">
+        <label>N° de shots</label>
+        <input type="number" id="rcaf-shots" min="1" value="1" oninput="actualizarTotalGrCaf()"
+          style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace">
+      </div>
+      <div class="campo">
+        <label>Gramos por shot / total</label>
+        <input type="number" id="rcaf-gramos" min="0" step="0.1" value="14" oninput="actualizarTotalGrCaf()"
+          style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:'DM Mono',monospace">
+      </div>
+      <div class="campo full" style="background:var(--bg);border-radius:var(--r-sm);padding:10px 14px;text-align:center">
+        <div style="font-size:11px;color:var(--txt3)">Total café</div>
+        <div style="font-size:22px;font-weight:700;color:#795548;font-family:'DM Mono',monospace" id="rcaf-total-gr">14g</div>
+      </div>
+      <div class="campo full">
+        <label>Nota (opcional)</label>
+        <input type="text" id="rcaf-nota" placeholder="Ej: derrame en portafiltro"
+          style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+      </div>
+    </div>
+    <div class="modal-acciones">
+      <button class="btn-secundario" onclick="document.getElementById('modal-registro-caf').classList.add('hidden')">Cancelar</button>
+      <button class="btn-primario" onclick="guardarRegistroCaf(this)">
+        <i class="ti ti-check"></i> Guardar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="config.js?v=2.0.0"></script>
+<script src="acceso.js?v=2.0.0"></script>
+<script src="subrecetas.js?v=2.0.0"></script>
+<script src="app.js?v=2.0.0"></script>
+</body>
+</html>
