@@ -27,7 +27,7 @@
 //   Luego ejecutar instalarSeguridad() para probar la conexión.
 // ═══════════════════════════════════════════════════════════
 
-const SEG_VERSION = '2.0.0';
+const SEG_VERSION = '2.1.0';
 const SEG_SESION_ADMIN_DIAS  = 30;
 const SEG_SESION_JEFA_HORAS  = 12;
 const SEG_DISPOSITIVO_DIAS   = 400;
@@ -142,7 +142,8 @@ function segDespachar(p) {
         } else {
           if (accion === 'guardar_registro_merma') segValorizarMerma(datos);
           r = nueva ? nueva.fn(datos, ses) : ejecutarAccionLegada(accion, datos);
-          if (idem) { try { segCache().put(idem, JSON.stringify(r), 600); } catch (e) {} }
+          // v2.1: solo se recuerda un resultado exitoso; un reintento después de un error se vuelve a ejecutar
+          if (idem && r && r.ok !== false) { try { segCache().put(idem, JSON.stringify(r), 600); } catch (e) {} }
         }
       } finally {
         lock.releaseLock();
@@ -206,7 +207,11 @@ function segRevisarJefa(accion, d, ses) {
 // Una sesión de jefa sigue valiendo solo si su equipo sigue autorizado y
 // ella sigue siendo jefa de esa área.
 function segJefaVigente(ses) {
-  if (!ses.dispositivoId || !segProps().getProperty('PSES_' + ses.dispositivoId)) return false;
+  // v2.1: además de existir, la autorización del equipo debe estar vigente
+  if (!ses.dispositivoId) return false;
+  const raw = segProps().getProperty('PSES_' + ses.dispositivoId);
+  if (!raw) return false;
+  try { if (JSON.parse(raw).vence < Date.now()) return false; } catch (e) { return false; }
   return (segLeerJefas()[ses.area] || []).indexOf(String(ses.email).toLowerCase()) >= 0;
 }
 
@@ -358,7 +363,8 @@ function segEstado(d) {
     ok: true,
     version: SEG_VERSION,
     dispositivo: dispOk ? { nombre: disp.nombre } : null,
-    sesion: ses && (ses.rol === 'admin' || ses.rol === 'jefa') ? { rol: ses.rol, area: ses.area || null, nombre: ses.nombre || '' } : null,
+    // v2.1: una sesión de jefa solo cuenta si sigue vigente (equipo autorizado y sigue siendo jefa del área)
+    sesion: ses && (ses.rol === 'admin' || (ses.rol === 'jefa' && segJefaVigente(ses))) ? { rol: ses.rol, area: ses.area || null, nombre: ses.nombre || '' } : null,
   };
   if (dispOk || (ses && ses.rol === 'admin')) r.areas = segAreasConPersonas();
   return r;
