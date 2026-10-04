@@ -27,7 +27,7 @@
 //   Luego ejecutar instalarSeguridad() para probar la conexión.
 // ═══════════════════════════════════════════════════════════
 
-const SEG_VERSION = '2.1.0';
+const SEG_VERSION = '2.1.2';
 const SEG_SESION_ADMIN_DIAS  = 30;
 const SEG_SESION_JEFA_HORAS  = 12;
 const SEG_DISPOSITIVO_DIAS   = 400;
@@ -206,13 +206,16 @@ function segRevisarJefa(accion, d, ses) {
 
 // Una sesión de jefa sigue valiendo solo si su equipo sigue autorizado y
 // ella sigue siendo jefa de esa área.
-function segJefaVigente(ses) {
+function segJefaVigente(ses) { return !segJefaMotivo(ses); }
+
+// v2.1.1: por qué una sesión de jefa ya no vale ('' = vale). La app lo muestra al recargar.
+function segJefaMotivo(ses) {
   // v2.1: además de existir, la autorización del equipo debe estar vigente
-  if (!ses.dispositivoId) return false;
+  if (!ses.dispositivoId) return 'equipo';
   const raw = segProps().getProperty('PSES_' + ses.dispositivoId);
-  if (!raw) return false;
-  try { if (JSON.parse(raw).vence < Date.now()) return false; } catch (e) { return false; }
-  return (segLeerJefas()[ses.area] || []).indexOf(String(ses.email).toLowerCase()) >= 0;
+  if (!raw) return 'equipo';
+  try { if (JSON.parse(raw).vence < Date.now()) return 'equipo'; } catch (e) { return 'equipo'; }
+  return (segLeerJefas()[ses.area] || []).indexOf(String(ses.email).toLowerCase()) >= 0 ? '' : 'no_jefa';
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -286,7 +289,9 @@ function segPersonas(forzar) {
   }
   const r = segAsistencia('srvPersonas');
   if (!r.success) return null;
-  try { segCache().put('seg_personas', JSON.stringify(r.personas), 600); } catch (e) {}
+  // v2.1.2: 6 horas (antes 10 min). Cada vez que se pasaba ese tiempo, la pantalla de entrada
+  // esperaba a Asistencia. Administración → Seguridad la refresca al abrirse.
+  try { segCache().put('seg_personas', JSON.stringify(r.personas), 21600); } catch (e) {}
   return r.personas;
 }
 
@@ -366,6 +371,8 @@ function segEstado(d) {
     // v2.1: una sesión de jefa solo cuenta si sigue vigente (equipo autorizado y sigue siendo jefa del área)
     sesion: ses && (ses.rol === 'admin' || (ses.rol === 'jefa' && segJefaVigente(ses))) ? { rol: ses.rol, area: ses.area || null, nombre: ses.nombre || '' } : null,
   };
+  // v2.1.1: si se preguntó por una sesión y no vale, se dice por qué
+  if (d.sesion && !r.sesion) r.sesionMotivo = !ses ? 'vencida' : (ses.rol === 'jefa' ? segJefaMotivo(ses) : 'rol');
   if (dispOk || (ses && ses.rol === 'admin')) r.areas = segAreasConPersonas();
   return r;
 }

@@ -1,11 +1,20 @@
 // ═══════════════════════════════════════════════
-//  fën producción — Acceso v2.1.0
+//  fën producción — Acceso v2.1.2
 //  Entrada de jefas (PIN de Asistencia), Administración (contraseña del
 //  dueño, la misma del panel de Asistencia), autorización de equipos y la
 //  sección Administración → Seguridad.
 // ═══════════════════════════════════════════════
 
 const Acceso = { estado: null };
+
+// v2.1.2: quién entra a cada área queda guardado en el equipo; las tarjetas lo muestran
+// al instante y se actualiza en segundo plano (antes había que esperar al servidor).
+function accesoAreasGuardadas() {
+  try { return JSON.parse(localStorage.getItem('fen_prod_areas') || 'null'); } catch (e) { return null; }
+}
+function accesoAreas() {
+  return (Acceso.estado && Acceso.estado.areas) || (FenSesion.dispositivo() ? accesoAreasGuardadas() : null);
+}
 
 // Pregunta al servidor qué sabe de este equipo. Si una sesión guardada ya no
 // sirve (venció o se cerró desde Seguridad), se olvida.
@@ -20,12 +29,14 @@ async function accesoCargarEstado() {
   if ((!r.sesion || r.sesion.rol !== 'admin') && adm && FenSesion.admin() === adm) FenSesion.setAdmin(null);
   if (FenSesion.dispositivo() !== disp || FenSesion.admin() !== adm) return accesoCargarEstado();
   Acceso.estado = r;
+  try { if (r.areas) localStorage.setItem('fen_prod_areas', JSON.stringify(r.areas)); } catch (e) {}
   return r;
 }
 
 // Texto de cada tarjeta de área: quién puede entrar.
 function accesoDescripcionArea(codigo) {
-  const a = Acceso.estado && Acceso.estado.areas && Acceso.estado.areas.find(x => x.codigo === codigo);
+  const lista = accesoAreas();
+  const a = lista && lista.find(x => x.codigo === codigo);
   if (!a) return 'Recetas · Planificación · Maestro';
   if (!a.personas.length) return 'Sin jefa asignada';
   return 'Entra: ' + a.personas.map(p => p.nombre.split(' ')[0]).join(', ');
@@ -194,8 +205,9 @@ async function accesoArea(codigo) {
     const ok = await accesoAutorizarEquipo();
     if (!ok) return;
   }
-  if (!Acceso.estado || !Acceso.estado.areas) await accesoCargarEstado();
-  const area = Acceso.estado && Acceso.estado.areas && Acceso.estado.areas.find(a => a.codigo === codigo);
+  if (!accesoAreas()) await accesoCargarEstado();
+  const lista = accesoAreas();
+  const area = lista && lista.find(a => a.codigo === codigo);
   if (!area) { toast('No se pudo conectar con el servidor. Intenta de nuevo.', 'error'); return; }
   if (!area.personas.length) {
     const m = accesoModal(`
@@ -246,7 +258,7 @@ function accesoPin(area, persona) {
       token: null, dispositivo: FenSesion.dispositivo(), area: area.codigo, email: persona.email, pin,
     }, { sinAviso: true });
     if (res && res.ok) {
-      FenSesion.setJefa(res.token);
+      FenSesion.setJefa(res.token, { area: area.codigo, nombre: res.nombre || '' });
       App.nombreUsuario = res.nombre;
       accesoCerrarModal();
       entrar(area.codigo, 'jefa');
@@ -280,17 +292,60 @@ function accesoPin(area, persona) {
 // área), entra directo a su área. Si no, se olvida y se muestran las tarjetas.
 async function accesoRetomarJefa() {
   const t = FenSesion.jefa();
-  if (!t) return false;
-  const r = await fenApi('estado', { token: null, dispositivo: FenSesion.dispositivo(), sesion: t }, { sinAviso: true });
-  if (!r || r.ok === false) return false; // sin conexión: se intentará de nuevo al tocar el área
+  if (!t) { accesoDiag('sin_sesion'); return false; }
+  // v2.1.2: si el equipo sabe de qué área es el turno, entra al tiro. El servidor revisa la
+  // sesión en cada pedido de datos: si ya no vale, aparece "Tu sesión venció" y vuelve a las tarjetas.
+  const info = FenSesion.jefaInfo();
+  if (info && FEN.AREAS[info.area]) {
+    accesoDiag('local');
+    App.nombreUsuario = info.nombre || null;
+    await entrar(info.area, 'jefa');
+    return true;
+  }
+  // Turno abierto con una versión anterior (sin área guardada): se pregunta al servidor,
+  // con las tarjetas bloqueadas para que tocarlas no corte el turno a medio retomar.
+  const grid = document.getElementById('login-grid');
+  if (grid) grid.classList.add('retomando');
+  try { return await accesoRetomarJefaServidor(t); }
+  finally { if (grid) grid.classList.remove('retomando'); }
+}
+
+async function accesoRetomarJefaServidor(t) {
+  const preguntar = () => fenApi('estado', { token: null, dispositivo: FenSesion.dispositivo(), sesion: t }, { sinAviso: true });
+  let r = await preguntar();
+  // v2.1.1: si la red falló al abrir (pasa al despertar la tablet), se reintenta una vez
+  if (!r || r.ok === false) { await new Promise(ok => setTimeout(ok, 2000)); r = await preguntar(); }
+  if (!r || r.ok === false) {
+    accesoDiag('red');
+    toast('No se pudo conectar para retomar tu turno. Revisa internet y recarga.', 'error');
+    return false; // la sesión se conserva: al recargar con internet entra sola
+  }
   const s = r.sesion;
   if (!s || s.rol !== 'jefa' || !s.area || !FEN.AREAS[s.area]) {
     if (FenSesion.jefa() === t) FenSesion.setJefa(null);
+    const motivo = r.sesionMotivo || (s ? 'rol' : 'desconocido');
+    accesoDiag(motivo);
+    const textos = {
+      vencida: 'Tu turno terminó (12 horas) o se cerró desde Administración. Entra con tu PIN.',
+      equipo: 'La autorización de este equipo venció o se revocó. Entra de nuevo.',
+      no_jefa: 'Ya no tienes acceso a esa área. Habla con Administración.',
+    };
+    toast(textos[motivo] || 'Vuelve a entrar con tu PIN.', 'error');
     return false;
   }
+  // Queda guardada en el equipo, con su área, para que la próxima vez entre al tiro
+  if (FenSesion.jefa() === t) FenSesion.setJefa(t, { area: s.area, nombre: s.nombre || '' });
+  accesoDiag('ok');
   App.nombreUsuario = s.nombre || null;
   await entrar(s.area, 'jefa');
   return true;
+}
+
+// v2.1.1: deja anotado el resultado del último intento de retomar el turno.
+// Para revisarlo: F12 → Consola → localStorage.getItem('fen_prod_diag')
+function accesoDiag(motivo) {
+  try { localStorage.setItem('fen_prod_diag', new Date().toLocaleString('es-CL') + ' · ' + motivo + ' · app v' + FEN.VERSION); } catch (e) {}
+  try { console.log('[fën] retomar turno:', motivo); } catch (e) {}
 }
 
 // ── Salir y sesión vencida ──────────────────────────────────

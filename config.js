@@ -1,12 +1,12 @@
 // ═══════════════════════════════════════════════
-//  fën producción — Configuración y conexión  v2.1.0
+//  fën producción — Configuración y conexión  v2.1.2
 //  Este archivo es público en GitHub Pages: aquí NO va ninguna clave.
 //  La planilla ya no está publicada: todo se lee y escribe a través del
 //  Apps Script, que revisa la sesión de quien pide (ver Seguridad.gs).
 // ═══════════════════════════════════════════════
 
 const FEN = {
-  VERSION: '2.1.0',
+  VERSION: '2.1.2',
   SHEET_ID: '1lGL6SPgvBAZfRU4WUKUEr7ZEo1WD0Wq92qoyghk8pyY', // solo referencia; la planilla queda privada
 
   AREAS: {
@@ -43,13 +43,20 @@ const FenSesion = {
   // Admin: en localStorage solo si se marcó "Recordar en este equipo";
   // si no, dura lo que la pestaña abierta.
   admin()        { return this._leer(localStorage, 'fen_prod_admin') || this._leer(sessionStorage, 'fen_prod_admin'); },
-  jefa()         { return this._leer(localStorage, 'fen_prod_jefa'); },
+  // v2.1.1: también lee donde la guardaba la v2.0 (solo la pestaña), para no perder un turno ya abierto
+  jefa()         { return this._leer(localStorage, 'fen_prod_jefa') || this._leer(sessionStorage, 'fen_prod_jefa'); },
   setDispositivo(t) { this._poner(localStorage, 'fen_prod_dispositivo', t); },
   setAdmin(t, recordar) {
     this._poner(localStorage, 'fen_prod_admin', recordar ? t : null);
     this._poner(sessionStorage, 'fen_prod_admin', recordar ? null : t);
   },
-  setJefa(t)        { this._poner(localStorage, 'fen_prod_jefa', t); this._poner(sessionStorage, 'fen_prod_jefa', null); },
+  // v2.1.2: junto al turno se guarda su área y nombre, para entrar al recargar sin esperar al servidor
+  setJefa(t, info) {
+    this._poner(localStorage, 'fen_prod_jefa', t); this._poner(sessionStorage, 'fen_prod_jefa', null);
+    if (!t) this._poner(localStorage, 'fen_prod_jefa_info', null);
+    else if (info) this._poner(localStorage, 'fen_prod_jefa_info', JSON.stringify(info));
+  },
+  jefaInfo() { try { return JSON.parse(this._leer(localStorage, 'fen_prod_jefa_info') || 'null'); } catch (e) { return null; } },
   // La sesión con la que se trabaja ahora (jefa en esta pestaña, si no admin)
   actual() { return this.jefa() || this.admin(); },
 };

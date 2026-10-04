@@ -1577,3 +1577,6 @@ body.rol-jefa .solo-admin { display: none !important; }
   .seg-sesion { flex-direction: column; align-items: flex-start; }
   .modal-acceso { padding: 24px 18px; }
 }
+
+/* v2.1.2: mientras se retoma el turno de una jefa, las tarjetas no se pueden tocar */
+.login-grid.retomando { opacity: .45; pointer-events: none; transition: opacity .2s; }

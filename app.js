@@ -54,10 +54,16 @@ function formatearRendimiento(r) {
 
 // ── INIT ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
-  renderLoginCards();
+  renderLoginCards(); // v2.1.2: con lo guardado en el equipo, ya muestra quién entra
+  // v2.1.2: si hay una jefa con su turno abierto y se sabe su área, entra sin esperar al servidor;
+  // la pantalla de entrada se actualiza en segundo plano
+  if (FenSesion.jefa() && FenSesion.jefaInfo()) {
+    accesoCargarEstado().then(renderLoginCards);
+    await accesoRetomarJefa();
+    return;
+  }
   await accesoCargarEstado();
   renderLoginCards();
-  // v2.1: si en este equipo hay una jefa con su turno vigente, vuelve directo a su área sin PIN
   await accesoRetomarJefa();
 }); 
 
