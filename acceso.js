@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════
-//  fën producción — Acceso v2.0.0
+//  fën producción — Acceso v2.1.0
 //  Entrada de jefas (PIN de Asistencia), Administración (contraseña del
 //  dueño, la misma del panel de Asistencia), autorización de equipos y la
 //  sección Administración → Seguridad.
@@ -272,6 +272,25 @@ function accesoPin(area, persona) {
     else if (ev.key === 'Escape') tecla('cancelar');
   });
   m.tabIndex = -1; m.focus();
+}
+
+// ── v2.1: retomar el turno de una jefa al abrir o recargar ───
+// Si este equipo tiene guardada la sesión de una jefa y el servidor dice que
+// sigue vigente (12 horas, equipo autorizado y ella sigue siendo jefa del
+// área), entra directo a su área. Si no, se olvida y se muestran las tarjetas.
+async function accesoRetomarJefa() {
+  const t = FenSesion.jefa();
+  if (!t) return false;
+  const r = await fenApi('estado', { token: null, dispositivo: FenSesion.dispositivo(), sesion: t }, { sinAviso: true });
+  if (!r || r.ok === false) return false; // sin conexión: se intentará de nuevo al tocar el área
+  const s = r.sesion;
+  if (!s || s.rol !== 'jefa' || !s.area || !FEN.AREAS[s.area]) {
+    if (FenSesion.jefa() === t) FenSesion.setJefa(null);
+    return false;
+  }
+  App.nombreUsuario = s.nombre || null;
+  await entrar(s.area, 'jefa');
+  return true;
 }
 
 // ── Salir y sesión vencida ──────────────────────────────────

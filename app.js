@@ -54,10 +54,11 @@ function formatearRendimiento(r) {
 
 // ── INIT ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
-  FenSesion.setJefa(null); // al recargar, la jefa vuelve a ingresar su PIN
   renderLoginCards();
   await accesoCargarEstado();
   renderLoginCards();
+  // v2.1: si en este equipo hay una jefa con su turno vigente, vuelve directo a su área sin PIN
+  await accesoRetomarJefa();
 }); 
 
 function renderLoginCards() {
@@ -115,10 +116,13 @@ async function entrar(areaCodigo, rol, desdeAdmin = false) {
 
   renderSidebar();
   mostrarLoading('Cargando datos...');
-  await sincronizarConfigDesdeSheet(); // trae la config guardada en el Sheet (ej. capacidad congelador) a localStorage
-  await cargarMP();
-  await cargarRecetas(true);
-  await cargarPlanSemana();
+  // v2.1: las cuatro cargas son independientes; se piden a la vez en vez de una tras otra
+  await Promise.all([
+    sincronizarConfigDesdeSheet(), // trae la config guardada en el Sheet (ej. capacidad congelador) a localStorage
+    cargarMP(),
+    cargarRecetas(true),
+    cargarPlanSemana(),
+  ]);
 
   // BOL: cargar plan masas y estado tareas del día actual en background
   if (areaCodigo === 'BOL') {
@@ -295,10 +299,17 @@ async function sincronizarTodo(btn) {
   btn.disabled = true;
   icon.style.animation = 'spin .7s linear infinite';
   Cache.invalidarTodo();
-  // Borra lo guardado en este equipo, salvo la autorización y la sesión
-  // (claves fen_prod_*), para no tener que volver a entrar.
+  // Borra lo que Producción guardó en este equipo, salvo la autorización y la
+  // sesión (claves fen_prod_*), para no tener que volver a entrar.
+  // v2.1: antes borraba TODO lo guardado en el sitio panaderiafen.github.io, también
+  // lo de otras apps en el mismo equipo (la tablet de Asistencia, la dirección del
+  // script de B2B, las sesiones de Gastos, la impresora de la caja). Ahora solo
+  // borra claves de Producción (empiezan con "fen_") y respeta las de las demás apps.
   try {
-    Object.keys(localStorage).filter(k => k.indexOf('fen_prod_') !== 0).forEach(k => localStorage.removeItem(k));
+    const deOtrasApps = ['fen_prod', 'fen_asis_', 'fen_gs', 'fen_gastos', 'fen_b2b', 'fen_caja', 'fen_sistema', 'fen_ventas', 'fen_logistica'];
+    Object.keys(localStorage)
+      .filter(k => k.indexOf('fen_') === 0 && !deOtrasApps.some(p => k.indexOf(p) === 0))
+      .forEach(k => localStorage.removeItem(k));
   } catch(e) {}
   await sincronizarConfigDesdeSheet(); // re-traer la config recién borrada, para no perderla
   await cargarMP();

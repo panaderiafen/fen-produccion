@@ -1,12 +1,12 @@
 // ═══════════════════════════════════════════════
-//  fën producción — Configuración y conexión  v2.0.0
+//  fën producción — Configuración y conexión  v2.1.0
 //  Este archivo es público en GitHub Pages: aquí NO va ninguna clave.
 //  La planilla ya no está publicada: todo se lee y escribe a través del
 //  Apps Script, que revisa la sesión de quien pide (ver Seguridad.gs).
 // ═══════════════════════════════════════════════
 
 const FEN = {
-  VERSION: '2.0.0',
+  VERSION: '2.1.0',
   SHEET_ID: '1lGL6SPgvBAZfRU4WUKUEr7ZEo1WD0Wq92qoyghk8pyY', // solo referencia; la planilla queda privada
 
   AREAS: {
@@ -33,7 +33,9 @@ const FEN = {
 //  dispositivo: el equipo quedó autorizado por el dueño (dura ~1 año)
 //  admin:       sesión de Administración (hasta "Salir"; 30 días si se marcó
 //               "Recordar en este equipo", si no, mientras la pestaña esté abierta)
-//  jefa:        sesión de la jefa (12 horas, solo en esta pestaña, o hasta "Salir")
+//  jefa:        sesión de la jefa: dura su turno (12 horas) o hasta "Salir".
+//               v2.1: se guarda en el equipo (ya autorizado), así apagar la
+//               pantalla o recargar no vuelve a pedir el PIN.
 const FenSesion = {
   _leer(almacen, k) { try { return almacen.getItem(k); } catch (e) { return null; } },
   _poner(almacen, k, v) { try { v ? almacen.setItem(k, v) : almacen.removeItem(k); } catch (e) {} },
@@ -41,13 +43,13 @@ const FenSesion = {
   // Admin: en localStorage solo si se marcó "Recordar en este equipo";
   // si no, dura lo que la pestaña abierta.
   admin()        { return this._leer(localStorage, 'fen_prod_admin') || this._leer(sessionStorage, 'fen_prod_admin'); },
-  jefa()         { return this._leer(sessionStorage, 'fen_prod_jefa'); },
+  jefa()         { return this._leer(localStorage, 'fen_prod_jefa'); },
   setDispositivo(t) { this._poner(localStorage, 'fen_prod_dispositivo', t); },
   setAdmin(t, recordar) {
     this._poner(localStorage, 'fen_prod_admin', recordar ? t : null);
     this._poner(sessionStorage, 'fen_prod_admin', recordar ? null : t);
   },
-  setJefa(t)        { this._poner(sessionStorage, 'fen_prod_jefa', t); },
+  setJefa(t)        { this._poner(localStorage, 'fen_prod_jefa', t); this._poner(sessionStorage, 'fen_prod_jefa', null); },
   // La sesión con la que se trabaja ahora (jefa en esta pestaña, si no admin)
   actual() { return this.jefa() || this.admin(); },
 };
